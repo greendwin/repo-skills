@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "tasker": {
+      "type": "stdio",
+      "command": "tasker",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
+    }
+  }
+}

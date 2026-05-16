@@ -27,8 +27,9 @@ status: pending
 
 - [x] [s01t01](s01t01-slice-1-project-scaffold.md): Slice 1 — Project scaffold
 - [x] [s01t02](s01t02-slice-2-repo-discovery-skill.md): Slice 2 — Repo discovery + `skill list`
-- [ ] [s01t03](s01t03-slice-3-skill-install-name.md): Slice 3 — `skill install <name>` + `skill uninstall <name>`
+- [x] [s01t03](s01t03-slice-3-skill-install-name.md): Slice 3 — `skill install <name>` + `skill uninstall <name>`
 - [ ] [s01t04](s01t04-slice-4-skill-update-name.md): Slice 4 — `skill update [name]`
 - [ ] [s01t05](s01t05-slice-5-skill-peek-diff.md): Slice 5 — `skill peek [--diff] [name]`
 - [ ] [s01t06](s01t06-slice-6-interactive-skill-install.md): Slice 6 — Interactive `skill install` (no args)
 - [ ] [s01t07](s01t07-slice-7-skill-merge-name.md): Slice 7 — `skill merge <name>` + `--continue` / `--abort`
+- [ ] [s01t08](s01t08-rework-cli-from-click-to.md): Rework CLI from click to typer + typer_di

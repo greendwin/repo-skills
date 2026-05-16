@@ -1,12 +1,11 @@
-from click.testing import CliRunner
+from pytest_subtests import SubTests
 
 from skill_cli.main import cli
+from tests.helper import assert_invoke
 
 
 def test_help_lists_all_commands() -> None:
-    runner = CliRunner()
-    result = runner.invoke(cli, ["--help"])
-    assert result.exit_code == 0
+    result = assert_invoke(cli, ["--help"])
     for cmd in ("install", "update", "peek", "merge", "list", "uninstall"):
         assert cmd in result.output
 
@@ -14,9 +13,7 @@ def test_help_lists_all_commands() -> None:
 COMMANDS = ("install", "update", "peek", "merge", "list", "uninstall")
 
 
-def test_each_subcommand_has_help(subtests) -> None:  # type: ignore[no-untyped-def]
-    runner = CliRunner()
+def test_each_subcommand_has_help(subtests: SubTests) -> None:
     for cmd in COMMANDS:
         with subtests.test(cmd=cmd):
-            result = runner.invoke(cli, [cmd, "--help"])
-            assert result.exit_code == 0
+            assert_invoke(cli, [cmd, "--help"])

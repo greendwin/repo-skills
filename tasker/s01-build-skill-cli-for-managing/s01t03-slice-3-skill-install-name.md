@@ -1,7 +1,7 @@
 ---
 id: s01t03
 slug: slice-3-skill-install-name
-status: pending
+status: done
 ---
 
 # Slice 3 — `skill install <name>` + `skill uninstall <name>`

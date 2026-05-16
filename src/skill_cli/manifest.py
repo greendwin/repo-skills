@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -23,8 +24,14 @@ class Manifest(BaseModel):
 
     @classmethod
     def load(cls, path: Path) -> Manifest:
-        if not path.exists():
+        if not os.path.exists(path):
             return cls()
 
-        data = path.read_text()
+        with open(path) as f:
+            data = f.read()
         return cls.model_validate_json(data)
+
+    def save(self, path: Path) -> None:
+        os.makedirs(str(path.parent), exist_ok=True)
+        with open(str(path), "w") as f:
+            f.write(self.model_dump_json(indent=2) + "\n")

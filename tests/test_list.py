@@ -1,35 +1,32 @@
-from pathlib import Path
-
-from click.testing import CliRunner
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from skill_cli.main import cli
+from tests.helper import (
+    INSTALL_DIR,
+    REPO_SKILLS_DIR,
+    assert_invoke,
+    create_installed_skill,
+    create_repo_skill,
+)
 
 
 def test_list_shows_repo_skills_as_not_installed(
     fs: FakeFilesystem,
 ) -> None:
-    repo_skills = Path("/repo/skills")
-    fs.create_dir(repo_skills / "grill-me")
-    fs.create_file(repo_skills / "grill-me" / "SKILL.md")
-    fs.create_dir(repo_skills / "tdd")
-    fs.create_file(repo_skills / "tdd" / "SKILL.md")
+    create_repo_skill(fs, "grill-me")
+    create_repo_skill(fs, "tdd")
+    fs.create_dir(INSTALL_DIR)
 
-    install_dir = Path("/home/user/.claude/skills")
-    fs.create_dir(install_dir)
-
-    runner = CliRunner()
-    result = runner.invoke(
+    result = assert_invoke(
         cli,
         [
             "list",
             "--repo-skills-dir",
-            str(repo_skills),
+            str(REPO_SKILLS_DIR),
             "--install-dir",
-            str(install_dir),
+            str(INSTALL_DIR),
         ],
     )
-    assert result.exit_code == 0
     assert "grill-me" in result.output
     assert "tdd" in result.output
     assert "not installed" in result.output
@@ -38,26 +35,19 @@ def test_list_shows_repo_skills_as_not_installed(
 def test_list_shows_installed_skills(
     fs: FakeFilesystem,
 ) -> None:
-    repo_skills = Path("/repo/skills")
-    fs.create_dir(repo_skills / "grill-me")
-    fs.create_file(repo_skills / "grill-me" / "SKILL.md")
+    create_repo_skill(fs, "grill-me")
+    create_installed_skill(fs, "grill-me")
 
-    install_dir = Path("/home/user/.claude/skills")
-    fs.create_dir(install_dir / "grill-me")
-    fs.create_file(install_dir / "grill-me" / "SKILL.md")
-
-    runner = CliRunner()
-    result = runner.invoke(
+    result = assert_invoke(
         cli,
         [
             "list",
             "--repo-skills-dir",
-            str(repo_skills),
+            str(REPO_SKILLS_DIR),
             "--install-dir",
-            str(install_dir),
+            str(INSTALL_DIR),
         ],
     )
-    assert result.exit_code == 0
     assert "grill-me" in result.output
     assert "installed" in result.output
     assert "not installed" not in result.output
@@ -66,25 +56,19 @@ def test_list_shows_installed_skills(
 def test_list_shows_orphan_skills(
     fs: FakeFilesystem,
 ) -> None:
-    repo_skills = Path("/repo/skills")
-    fs.create_dir(repo_skills)
+    fs.create_dir(REPO_SKILLS_DIR)
+    create_installed_skill(fs, "sentry")
 
-    install_dir = Path("/home/user/.claude/skills")
-    fs.create_dir(install_dir / "sentry")
-    fs.create_file(install_dir / "sentry" / "SKILL.md")
-
-    runner = CliRunner()
-    result = runner.invoke(
+    result = assert_invoke(
         cli,
         [
             "list",
             "--repo-skills-dir",
-            str(repo_skills),
+            str(REPO_SKILLS_DIR),
             "--install-dir",
-            str(install_dir),
+            str(INSTALL_DIR),
         ],
     )
-    assert result.exit_code == 0
     assert "sentry" in result.output
     assert "orphan" in result.output
 
@@ -92,23 +76,18 @@ def test_list_shows_orphan_skills(
 def test_list_ignores_dotfiles_in_install_dir(
     fs: FakeFilesystem,
 ) -> None:
-    repo_skills = Path("/repo/skills")
-    fs.create_dir(repo_skills / "tdd")
+    create_repo_skill(fs, "tdd")
+    fs.create_dir(INSTALL_DIR)
+    fs.create_file(INSTALL_DIR / ".skill-install.json", contents="{}")
 
-    install_dir = Path("/home/user/.claude/skills")
-    fs.create_dir(install_dir)
-    fs.create_file(install_dir / ".skill-install.json", contents="{}")
-
-    runner = CliRunner()
-    result = runner.invoke(
+    result = assert_invoke(
         cli,
         [
             "list",
             "--repo-skills-dir",
-            str(repo_skills),
+            str(REPO_SKILLS_DIR),
             "--install-dir",
-            str(install_dir),
+            str(INSTALL_DIR),
         ],
     )
-    assert result.exit_code == 0
     assert ".skill-install" not in result.output

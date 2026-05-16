@@ -1,7 +1,7 @@
 ---
 id: s01t02
 slug: slice-2-repo-discovery-skill
-status: pending
+status: done
 ---
 
 # Slice 2 — Repo discovery + `skill list`

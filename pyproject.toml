@@ -2,13 +2,21 @@
 name = "skill-cli"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["click>=8.0"]
+dependencies = ["click>=8.0", "pydantic>=2.0"]
 
 [project.scripts]
 skill = "skill_cli.main:cli"
 
 [dependency-groups]
-dev = ["black", "flake8", "isort", "mypy", "pytest", "pytest-subtests>=0.15.0"]
+dev = [
+    "black",
+    "flake8",
+    "isort",
+    "mypy",
+    "pyfakefs>=6.2.0",
+    "pytest",
+    "pytest-subtests>=0.15.0",
+]
 
 [build-system]
 requires = ["hatchling"]

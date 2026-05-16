@@ -1,0 +1,32 @@
+---
+id: s01t04
+slug: slice-4-skill-update-name
+status: pending
+---
+
+# Slice 4 — `skill update [name]`
+
+**Goal:** Rework `skill update` and `skill install` with full git integration — auto-detect commits, validate repo state, pull before sync.
+
+## Decisions
+
+- **Never silently overwrite** — if installed files match repo, add manifest entry; if they differ, abort with conflict error
+- **Auto-detect commit via `git log -1 --format=%H -- <skill-path>`** — verified against working tree content; manifest never stores `""`
+- **Dirty repo is a hard stop** — if skill path has uncommitted changes, refuse to install/update
+- **Must be on main branch** — auto-detected via `git symbolic-ref refs/remotes/origin/HEAD`, fallback to `main`
+- **`git pull` before install/update** — `--offline` flag skips the pull; without it, pull failure is a hard stop
+- **Both `install` and `update` share repo validation** — same rules (clean, main branch, pull)
+- **Remove `--commit` from both commands** — commit is always automatic and verified
+- **New `_git.py` module behind a protocol** — fake in CLI tests (pyfakefs), real repos in integration tests
+- **Caller controls pull** — command logic decides whether to call pull; pull method itself has no offline param
+- **History search is a separate future task** — not part of this work
+
+## Key files
+`src/skill_cli/main.py`, `src/skill_cli/manifest.py`, `tests/test_update.py`, `tests/test_install.py`, `tests/helper.py`
+
+## Subtasks
+
+- [ ] [s01t0401](s01t0401-git-protocol-and-fake-implementation.md): Git protocol and fake implementation
+- [ ] [s01t0402](s01t0402-wire-git-validation-into-install.md): Wire git validation into `install`
+- [ ] [s01t0403](s01t0403-wire-git-validation-into-update.md): Wire git validation into `update`
+- [ ] [s01t0404](s01t0404-real-gitrepo-implementation.md): Real `GitRepo` implementation

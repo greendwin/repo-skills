@@ -1,0 +1,20 @@
+# symlinked agent-sandbox
+sandbox
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Tools
+.mypy_cache/
+.pytest_cache/
+
+# uv
+uv.lock
+
+# tox
+.tox/

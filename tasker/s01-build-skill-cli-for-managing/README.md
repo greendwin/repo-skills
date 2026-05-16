@@ -1,7 +1,7 @@
 ---
 id: s01
 slug: build-skill-cli-for-managing
-status: in-progress
+status: pending
 ---
 
 # Build `skill` CLI for managing Claude Code skills
@@ -25,7 +25,7 @@ status: in-progress
 
 ## Subtasks
 
-- [~] [s01t01](s01t01-slice-1-project-scaffold.md): Slice 1 — Project scaffold
+- [x] [s01t01](s01t01-slice-1-project-scaffold.md): Slice 1 — Project scaffold
 - [ ] [s01t02](s01t02-slice-2-repo-discovery-skill.md): Slice 2 — Repo discovery + `skill list`
 - [ ] [s01t03](s01t03-slice-3-skill-install-name.md): Slice 3 — `skill install <name>` + `skill uninstall <name>`
 - [ ] [s01t04](s01t04-slice-4-skill-update-name.md): Slice 4 — `skill update [name]`

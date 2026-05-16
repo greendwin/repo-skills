@@ -1,7 +1,7 @@
 ---
 id: s01t01
 slug: slice-1-project-scaffold
-status: in-progress
+status: done
 ---
 
 # Slice 1 — Project scaffold

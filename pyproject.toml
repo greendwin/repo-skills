@@ -2,10 +2,10 @@
 name = "skill-cli"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["click>=8.0", "pydantic>=2.0"]
+dependencies = ["typer>=0.9.0", "typer-di>=0.1.5", "pydantic>=2.0"]
 
 [project.scripts]
-skill = "skill_cli.main:cli"
+skill = "skill_cli.main:app"
 
 [dependency-groups]
 dev = [

@@ -32,4 +32,5 @@ status: pending
 - [ ] [s01t05](s01t05-slice-5-skill-peek-diff.md): Slice 5 — `skill peek [--diff] [name]`
 - [ ] [s01t06](s01t06-slice-6-interactive-skill-install.md): Slice 6 — Interactive `skill install` (no args)
 - [ ] [s01t07](s01t07-slice-7-skill-merge-name.md): Slice 7 — `skill merge <name>` + `--continue` / `--abort`
-- [ ] [s01t08](s01t08-rework-cli-from-click-to.md): Rework CLI from click to typer + typer_di
+- [x] [s01t08](s01t08-rework-cli-from-click-to.md): Rework CLI from click to typer + typer_di
+- [ ] s01t09: List command should be pretty

@@ -1,7 +1,7 @@
 ---
 id: s01t08
 slug: rework-cli-from-click-to
-status: pending
+status: done
 ---
 
 # Rework CLI from click to typer + typer_di

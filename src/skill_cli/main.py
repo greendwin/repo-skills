@@ -1,11 +1,22 @@
+from __future__ import annotations
+
 import os
 import shutil
 from pathlib import Path
+from typing import Annotated, Optional
 
-import click
+import typer
+from typer_di import Depends, TyperDI
 
 from skill_cli.discovery import find_install_dir, find_repo_skills_dir
 from skill_cli.manifest import Manifest, SkillEntry, default_manifest_path
+
+app = TyperDI(
+    help="Manage Claude Code skills.",
+    add_completion=False,
+    no_args_is_help=True,
+    pretty_exceptions_show_locals=False,
+)
 
 
 def _copytree(src: Path, dst: Path) -> None:
@@ -20,95 +31,117 @@ def _copytree(src: Path, dst: Path) -> None:
                 f_out.write(f_in.read())
 
 
-@click.group()
-def cli() -> None:
-    """Manage Claude Code skills."""
+def resolve_repo_dir(
+    repo_skills_dir: Annotated[
+        Optional[str],
+        typer.Option("--repo-skills-dir", help="Path to the repo skills directory."),
+    ] = None,
+) -> Optional[Path]:
+    if repo_skills_dir:
+        return Path(repo_skills_dir)
+    return find_repo_skills_dir()
 
 
-@cli.command()
-@click.argument("name")
-@click.option("--repo-skills-dir", type=click.Path())
-@click.option("--install-dir", type=click.Path())
-@click.option("--manifest-path", type=click.Path())
-@click.option("--commit", type=str, default=None)
-def install(
-    name: str,
-    repo_skills_dir: str | None,
-    install_dir: str | None,
-    manifest_path: str | None,
-    commit: str | None,
-) -> None:
-    """Install a skill from the repo."""
+def resolve_install_dir(
+    install_dir: Annotated[
+        Optional[str],
+        typer.Option("--install-dir", help="Path to the skill install directory."),
+    ] = None,
+) -> Optional[Path]:
+    if install_dir:
+        return Path(install_dir)
+    return find_install_dir()
 
-    repo_dir = Path(repo_skills_dir) if repo_skills_dir else find_repo_skills_dir()
-    inst_dir = Path(install_dir) if install_dir else find_install_dir()
-    mpath = Path(manifest_path) if manifest_path else default_manifest_path()
 
+def resolve_manifest_path(
+    manifest_path: Annotated[
+        Optional[str],
+        typer.Option("--manifest-path", help="Path to the manifest file."),
+    ] = None,
+) -> Path:
+    if manifest_path:
+        return Path(manifest_path)
+    return default_manifest_path()
+
+
+def _require_repo_dir(repo_dir: Optional[Path]) -> Path:
     if repo_dir is None:
-        click.echo("Cannot find skills repo. Run from within the repo.", err=True)
-        raise SystemExit(1)
+        typer.echo("Cannot find skills repo. Run from within the repo.", err=True)
+        raise typer.Exit(1)
+    return repo_dir
 
-    src = repo_dir / name
-    if not src.is_dir():
-        click.echo(f"Skill '{name}' not found in repo.", err=True)
-        raise SystemExit(1)
 
+def _require_install_dir(inst_dir: Optional[Path]) -> Path:
     if inst_dir is None:
-        inst_dir = Path(mpath).parent
-    os.makedirs(str(inst_dir), exist_ok=True)
+        typer.echo("Cannot find install directory.", err=True)
+        raise typer.Exit(1)
+    return inst_dir
 
-    dst = inst_dir / name
+
+@app.command(help="Install a skill from the repo.")
+def install(
+    *,
+    name: str,
+    commit: Annotated[
+        Optional[str],
+        typer.Option("--commit", help="Commit hash to record in manifest."),
+    ] = None,
+    repo_dir: Optional[Path] = Depends(resolve_repo_dir),
+    install_dir: Optional[Path] = Depends(resolve_install_dir),
+    manifest_path: Path = Depends(resolve_manifest_path),
+) -> None:
+    repo = _require_repo_dir(repo_dir)
+
+    src = repo / name
+    if not src.is_dir():
+        typer.echo(f"Skill '{name}' not found in repo.", err=True)
+        raise typer.Exit(1)
+
+    if install_dir is None:
+        install_dir = manifest_path.parent
+    os.makedirs(str(install_dir), exist_ok=True)
+
+    dst = install_dir / name
     if dst.exists():
-        click.echo(f"Skill '{name}' is already installed.", err=True)
-        raise SystemExit(1)
+        typer.echo(f"Skill '{name}' is already installed.", err=True)
+        raise typer.Exit(1)
 
     _copytree(src, dst)
 
-    manifest = Manifest.load(mpath)
-    manifest.repo_path = str(repo_dir.parent)
+    manifest = Manifest.load(manifest_path)
+    manifest.repo_path = str(repo.parent)
     manifest.skills[name] = SkillEntry(commit=commit or "")
-    manifest.save(mpath)
+    manifest.save(manifest_path)
 
-    click.echo(f"Installed '{name}'.")
+    typer.echo(f"Installed '{name}'.")
 
 
-@cli.command()
+@app.command(help="Update installed skills from the repo.")
 def update() -> None:
-    """Update installed skills from the repo."""
+    pass
 
 
-@cli.command()
+@app.command(help="Show changes between repo and installed skills.")
 def peek() -> None:
-    """Show changes between repo and installed skills."""
+    pass
 
 
-@cli.command()
+@app.command(help="Resolve conflicts between repo and installed skills.")
 def merge() -> None:
-    """Resolve conflicts between repo and installed skills."""
+    pass
 
 
-@cli.command(name="list")
-@click.option("--repo-skills-dir", type=click.Path())
-@click.option("--install-dir", type=click.Path())
+@app.command(name="list", help="List available and installed skills.")
 def list_(
-    repo_skills_dir: str | None,
-    install_dir: str | None,
+    repo_dir: Optional[Path] = Depends(resolve_repo_dir),
+    install_dir: Optional[Path] = Depends(resolve_install_dir),
 ) -> None:
-    """List available and installed skills."""
-    repo_dir = Path(repo_skills_dir) if repo_skills_dir else find_repo_skills_dir()
-    inst_dir = Path(install_dir) if install_dir else find_install_dir()
+    repo = _require_repo_dir(repo_dir)
+    dest = _require_install_dir(install_dir)
 
-    if repo_dir is None:
-        click.echo("Cannot find skills repo. Run from within the repo.", err=True)
-        raise SystemExit(1)
-
-    if inst_dir is None:
-        click.echo("Cannot find install directory.", err=True)
-        raise SystemExit(1)
-
-    repo_skills = {d.name for d in repo_dir.iterdir() if d.is_dir()}
+    repo_skills = {d.name for d in repo.iterdir() if d.is_dir()}
     installed = {
-        d.name for d in inst_dir.iterdir() if d.is_dir() and not d.name.startswith(".")
+        d.name for d in dest.iterdir() if d.is_dir() and not d.name.startswith(".")
     }
 
     all_names = sorted(repo_skills | installed)
@@ -121,31 +154,21 @@ def list_(
             status = "not installed"
         else:
             status = "orphan"
-        click.echo(f"  {name:30s} {status}")
+        typer.echo(f"  {name:30s} {status}")
 
 
-@cli.command()
-@click.argument("name")
-@click.option("--install-dir", type=click.Path())
-@click.option("--manifest-path", type=click.Path())
+@app.command(help="Uninstall a skill.")
 def uninstall(
     name: str,
-    install_dir: str | None,
-    manifest_path: str | None,
+    inst_dir: Optional[Path] = Depends(resolve_install_dir),
+    mpath: Path = Depends(resolve_manifest_path),
 ) -> None:
-    """Uninstall a skill."""
+    dest = _require_install_dir(inst_dir)
 
-    mpath = Path(manifest_path) if manifest_path else default_manifest_path()
-    inst_dir = Path(install_dir) if install_dir else find_install_dir()
-
-    if inst_dir is None:
-        click.echo("Cannot find install directory.", err=True)
-        raise SystemExit(1)
-
-    dst = inst_dir / name
+    dst = dest / name
     if not dst.exists():
-        click.echo(f"Skill '{name}' is not installed.", err=True)
-        raise SystemExit(1)
+        typer.echo(f"Skill '{name}' is not installed.", err=True)
+        raise typer.Exit(1)
 
     shutil.rmtree(str(dst))
 
@@ -153,4 +176,4 @@ def uninstall(
     manifest.skills.pop(name, None)
     manifest.save(mpath)
 
-    click.echo(f"Uninstalled '{name}'.")
+    typer.echo(f"Uninstalled '{name}'.")

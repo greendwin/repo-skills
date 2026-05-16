@@ -1,6 +1,5 @@
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from skill_cli.main import cli
 from skill_cli.manifest import Manifest, SkillEntry
 from tests.helper import (
     INSTALL_DIR,
@@ -22,15 +21,12 @@ def test_uninstall_removes_skill_directory(
     manifest.save(MANIFEST_PATH)
 
     assert_invoke(
-        cli,
-        [
-            "uninstall",
-            "tdd",
-            "--install-dir",
-            str(INSTALL_DIR),
-            "--manifest-path",
-            str(MANIFEST_PATH),
-        ],
+        "uninstall",
+        "tdd",
+        "--install-dir",
+        str(INSTALL_DIR),
+        "--manifest-path",
+        str(MANIFEST_PATH),
     )
 
     assert not (INSTALL_DIR / "tdd").exists()
@@ -51,15 +47,12 @@ def test_uninstall_removes_manifest_entry(
     manifest.save(MANIFEST_PATH)
 
     assert_invoke(
-        cli,
-        [
-            "uninstall",
-            "tdd",
-            "--install-dir",
-            str(INSTALL_DIR),
-            "--manifest-path",
-            str(MANIFEST_PATH),
-        ],
+        "uninstall",
+        "tdd",
+        "--install-dir",
+        str(INSTALL_DIR),
+        "--manifest-path",
+        str(MANIFEST_PATH),
     )
 
     manifest = Manifest.load(MANIFEST_PATH)
@@ -73,15 +66,12 @@ def test_uninstall_fails_if_not_installed(
     fs.create_dir(INSTALL_DIR)
 
     result = assert_invoke(
-        cli,
-        [
-            "uninstall",
-            "nope",
-            "--install-dir",
-            str(INSTALL_DIR),
-            "--manifest-path",
-            str(MANIFEST_PATH),
-        ],
+        "uninstall",
+        "nope",
+        "--install-dir",
+        str(INSTALL_DIR),
+        "--manifest-path",
+        str(MANIFEST_PATH),
         exit_code=1,
     )
     assert "not installed" in result.output

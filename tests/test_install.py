@@ -1,6 +1,5 @@
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from skill_cli.main import cli
 from skill_cli.manifest import Manifest
 from tests.helper import (
     INSTALL_DIR,
@@ -19,19 +18,16 @@ def test_install_copies_skill_to_install_dir(
     fs.create_dir(INSTALL_DIR)
 
     assert_invoke(
-        cli,
-        [
-            "install",
-            "tdd",
-            "--repo-skills-dir",
-            str(REPO_SKILLS_DIR),
-            "--install-dir",
-            str(INSTALL_DIR),
-            "--manifest-path",
-            str(MANIFEST_PATH),
-            "--commit",
-            "abc1234",
-        ],
+        "install",
+        "tdd",
+        "--repo-skills-dir",
+        str(REPO_SKILLS_DIR),
+        "--install-dir",
+        str(INSTALL_DIR),
+        "--manifest-path",
+        str(MANIFEST_PATH),
+        "--commit",
+        "abc1234",
     )
 
     with open(str(INSTALL_DIR / "tdd" / "SKILL.md")) as f:
@@ -47,19 +43,16 @@ def test_install_writes_manifest_entry(
     fs.create_dir(INSTALL_DIR)
 
     assert_invoke(
-        cli,
-        [
-            "install",
-            "tdd",
-            "--repo-skills-dir",
-            str(REPO_SKILLS_DIR),
-            "--install-dir",
-            str(INSTALL_DIR),
-            "--manifest-path",
-            str(MANIFEST_PATH),
-            "--commit",
-            "abc1234",
-        ],
+        "install",
+        "tdd",
+        "--repo-skills-dir",
+        str(REPO_SKILLS_DIR),
+        "--install-dir",
+        str(INSTALL_DIR),
+        "--manifest-path",
+        str(MANIFEST_PATH),
+        "--commit",
+        "abc1234",
     )
 
     manifest = Manifest.load(MANIFEST_PATH)
@@ -75,17 +68,14 @@ def test_install_fails_if_skill_not_in_repo(
     fs.create_dir(INSTALL_DIR)
 
     result = assert_invoke(
-        cli,
-        [
-            "install",
-            "nope",
-            "--repo-skills-dir",
-            str(REPO_SKILLS_DIR),
-            "--install-dir",
-            str(INSTALL_DIR),
-            "--manifest-path",
-            str(MANIFEST_PATH),
-        ],
+        "install",
+        "nope",
+        "--repo-skills-dir",
+        str(REPO_SKILLS_DIR),
+        "--install-dir",
+        str(INSTALL_DIR),
+        "--manifest-path",
+        str(MANIFEST_PATH),
         exit_code=1,
     )
     assert "not found" in result.output
@@ -98,17 +88,14 @@ def test_install_fails_if_already_installed(
     fs.create_dir(INSTALL_DIR / "tdd")
 
     result = assert_invoke(
-        cli,
-        [
-            "install",
-            "tdd",
-            "--repo-skills-dir",
-            str(REPO_SKILLS_DIR),
-            "--install-dir",
-            str(INSTALL_DIR),
-            "--manifest-path",
-            str(MANIFEST_PATH),
-        ],
+        "install",
+        "tdd",
+        "--repo-skills-dir",
+        str(REPO_SKILLS_DIR),
+        "--install-dir",
+        str(INSTALL_DIR),
+        "--manifest-path",
+        str(MANIFEST_PATH),
         exit_code=1,
     )
     assert "already installed" in result.output

@@ -1,11 +1,11 @@
 ---
 id: s01t0401
 slug: git-protocol-and-fake-implementation
-status: pending
+status: done
 ---
 
-# Git protocol and fake implementation
+# Git protocol + wire into `install`
 
-**Goal:** Define the `GitRepo` protocol in `_git.py` with methods: `pull()`, `get_skill_commit(skill_path)`, `is_clean(skill_path)`, `get_main_branch()`, `current_branch()`, `verify_commit_content(commit, skill_path)`. Implement a `FakeGitRepo` for tests.
-**Decisions:** New `_git.py` module behind a protocol; fake in CLI tests
-**Key files:** `src/skill_cli/_git.py`, `tests/helper.py`
+**Goal:** Define `GitRepo` protocol in `_git.py`, implement `FakeGitRepo` for tests, and wire git validation into the `install` command. Remove `--commit` from install. Add `--offline` flag. Before copying: validate main branch, optionally pull, check clean, auto-detect commit, verify content matches.
+**Decisions:** New `_git.py` module behind a protocol; fake in CLI tests; remove `--commit`; shared repo validation; pull before install; dirty = stop; must be on main
+**Key files:** `src/skill_cli/_git.py`, `src/skill_cli/main.py`, `tests/test_install.py`, `tests/helper.py`

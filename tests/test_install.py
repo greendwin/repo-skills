@@ -1,3 +1,6 @@
+from collections.abc import Generator
+
+import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from skill_cli.manifest import Manifest
@@ -5,9 +8,20 @@ from tests.helper import (
     INSTALL_DIR,
     MANIFEST_PATH,
     REPO_SKILLS_DIR,
+    FakeGitRepo,
     assert_invoke,
     create_repo_skill,
+    install_fake_git,
+    uninstall_fake_git,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fake_git() -> Generator[FakeGitRepo]:
+    fake = FakeGitRepo(commits={"tdd": "abc1234", "nope": "abc1234"})
+    install_fake_git(fake)
+    yield fake
+    uninstall_fake_git()
 
 
 def test_install_copies_skill_to_install_dir(
@@ -26,8 +40,7 @@ def test_install_copies_skill_to_install_dir(
         str(INSTALL_DIR),
         "--manifest-path",
         str(MANIFEST_PATH),
-        "--commit",
-        "abc1234",
+        "--offline",
     )
 
     with open(str(INSTALL_DIR / "tdd" / "SKILL.md")) as f:
@@ -36,7 +49,7 @@ def test_install_copies_skill_to_install_dir(
         assert f.read() == "# Python tests"
 
 
-def test_install_writes_manifest_entry(
+def test_install_writes_manifest_with_auto_detected_commit(
     fs: FakeFilesystem,
 ) -> None:
     create_repo_skill(fs, "tdd")
@@ -51,8 +64,7 @@ def test_install_writes_manifest_entry(
         str(INSTALL_DIR),
         "--manifest-path",
         str(MANIFEST_PATH),
-        "--commit",
-        "abc1234",
+        "--offline",
     )
 
     manifest = Manifest.load(MANIFEST_PATH)
@@ -76,6 +88,7 @@ def test_install_fails_if_skill_not_in_repo(
         str(INSTALL_DIR),
         "--manifest-path",
         str(MANIFEST_PATH),
+        "--offline",
         exit_code=1,
     )
     assert "not found" in result.output
@@ -96,6 +109,119 @@ def test_install_fails_if_already_installed(
         str(INSTALL_DIR),
         "--manifest-path",
         str(MANIFEST_PATH),
+        "--offline",
         exit_code=1,
     )
     assert "already installed" in result.output
+
+
+def test_install_fails_if_not_on_main_branch(
+    fs: FakeFilesystem,
+    _fake_git: FakeGitRepo,
+) -> None:
+    _fake_git.branch = "feature/xyz"
+    create_repo_skill(fs, "tdd")
+    fs.create_dir(INSTALL_DIR)
+
+    result = assert_invoke(
+        "install",
+        "tdd",
+        "--repo-skills-dir",
+        str(REPO_SKILLS_DIR),
+        "--install-dir",
+        str(INSTALL_DIR),
+        "--manifest-path",
+        str(MANIFEST_PATH),
+        "--offline",
+        exit_code=1,
+    )
+    assert "Not on main branch" in result.output
+
+
+def test_install_fails_if_repo_is_dirty(
+    fs: FakeFilesystem,
+    _fake_git: FakeGitRepo,
+) -> None:
+    _fake_git.clean = False
+    create_repo_skill(fs, "tdd")
+    fs.create_dir(INSTALL_DIR)
+
+    result = assert_invoke(
+        "install",
+        "tdd",
+        "--repo-skills-dir",
+        str(REPO_SKILLS_DIR),
+        "--install-dir",
+        str(INSTALL_DIR),
+        "--manifest-path",
+        str(MANIFEST_PATH),
+        "--offline",
+        exit_code=1,
+    )
+    assert "uncommitted changes" in result.output
+
+
+def test_install_fails_if_commit_content_mismatch(
+    fs: FakeFilesystem,
+    _fake_git: FakeGitRepo,
+) -> None:
+    _fake_git.verified["tdd"] = False
+    create_repo_skill(fs, "tdd")
+    fs.create_dir(INSTALL_DIR)
+
+    result = assert_invoke(
+        "install",
+        "tdd",
+        "--repo-skills-dir",
+        str(REPO_SKILLS_DIR),
+        "--install-dir",
+        str(INSTALL_DIR),
+        "--manifest-path",
+        str(MANIFEST_PATH),
+        "--offline",
+        exit_code=1,
+    )
+    assert "does not match commit" in result.output
+
+
+def test_install_pulls_by_default(
+    fs: FakeFilesystem,
+    _fake_git: FakeGitRepo,
+) -> None:
+    create_repo_skill(fs, "tdd")
+    fs.create_dir(INSTALL_DIR)
+
+    assert_invoke(
+        "install",
+        "tdd",
+        "--repo-skills-dir",
+        str(REPO_SKILLS_DIR),
+        "--install-dir",
+        str(INSTALL_DIR),
+        "--manifest-path",
+        str(MANIFEST_PATH),
+    )
+
+    assert _fake_git.pulled is True
+
+
+def test_install_skips_pull_when_offline(
+    fs: FakeFilesystem,
+    _fake_git: FakeGitRepo,
+) -> None:
+    create_repo_skill(fs, "tdd")
+    fs.create_dir(INSTALL_DIR)
+
+    assert_invoke(
+        "install",
+        "tdd",
+        "--repo-skills-dir",
+        str(REPO_SKILLS_DIR),
+        "--install-dir",
+        str(INSTALL_DIR),
+        "--manifest-path",
+        str(MANIFEST_PATH),
+        "--offline",
+    )
+
+    assert _fake_git.pulled is False

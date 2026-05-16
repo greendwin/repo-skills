@@ -26,7 +26,7 @@ status: pending
 
 ## Subtasks
 
-- [ ] [s01t0401](s01t0401-git-protocol-and-fake-implementation.md): Git protocol and fake implementation
-- [ ] [s01t0402](s01t0402-wire-git-validation-into-install.md): Wire git validation into `install`
+- [x] [s01t0401](s01t0401-git-protocol-and-fake-implementation.md): Git protocol + wire into `install`
+- [x] [s01t0402](s01t0402-wire-git-validation-into-install.md): Wire git validation into `install`
 - [ ] [s01t0403](s01t0403-wire-git-validation-into-update.md): Wire git validation into `update`
 - [ ] [s01t0404](s01t0404-real-gitrepo-implementation.md): Real `GitRepo` implementation

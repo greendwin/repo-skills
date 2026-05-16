@@ -15,7 +15,7 @@ def default_manifest_path() -> Path:
 
 
 class SkillEntry(BaseModel):
-    commit: str = ""
+    commit: str | None = None
 
 
 class Manifest(BaseModel):

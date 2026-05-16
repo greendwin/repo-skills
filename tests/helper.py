@@ -1,16 +1,55 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 
+import typer
 from click.testing import Result
 from pyfakefs.fake_filesystem import FakeFilesystem
 from typer.testing import CliRunner
 
+import skill_cli.main as main_mod
 from skill_cli.main import app
 
 REPO_SKILLS_DIR = Path("/repo/skills")
 INSTALL_DIR = Path("/home/user/.claude/skills")
 MANIFEST_PATH = INSTALL_DIR / ".skill-install.json"
+
+
+@dataclass
+class FakeGitRepo:
+    main_branch: str = "main"
+    branch: str = "main"
+    clean: bool = True
+    commits: dict[str, str] = field(default_factory=dict)
+    verified: dict[str, bool] = field(default_factory=dict)
+    pulled: bool = False
+
+    def pull(self) -> None:
+        self.pulled = True
+
+    def get_main_branch(self) -> str:
+        return self.main_branch
+
+    def current_branch(self) -> str:
+        return self.branch
+
+    def is_clean(self) -> bool:
+        return self.clean
+
+    def get_skill_commit(self, skill_name: str) -> str:
+        return self.commits.get(skill_name, "")
+
+    def verify_commit_content(self, commit: str, skill_name: str) -> bool:
+        return self.verified.get(skill_name, True)
+
+
+def install_fake_git(fake: FakeGitRepo) -> None:
+    main_mod._git_repo_factory = lambda _path: fake
+
+
+def uninstall_fake_git() -> None:
+    main_mod._git_repo_factory = None
 
 
 def assert_invoke(
@@ -19,6 +58,14 @@ def assert_invoke(
 ) -> Result:
     runner = CliRunner(env={"NO_COLOR": "1"})
     result = runner.invoke(app, args)
+
+    if (
+        exit_code == 0
+        and result.exception is not None
+        and not isinstance(result.exception, typer.Exit)
+    ):
+        raise result.exception
+
     assert result.exit_code == exit_code, (
         f"Expected exit code {exit_code}, got {result.exit_code}.\n"
         f"Output: {result.output}\n"

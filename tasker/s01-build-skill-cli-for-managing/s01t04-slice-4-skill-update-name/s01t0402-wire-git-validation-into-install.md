@@ -1,7 +1,7 @@
 ---
 id: s01t0402
 slug: wire-git-validation-into-install
-status: pending
+status: done
 ---
 
 # Wire git validation into `install`

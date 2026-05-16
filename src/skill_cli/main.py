@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import textwrap
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -11,6 +12,7 @@ from rich.console import Console
 from rich.text import Text
 from typer_di import Depends, TyperDI
 
+from skill_cli._git import GitRepo
 from skill_cli.discovery import find_install_dir, find_repo_skills_dir
 from skill_cli.manifest import Manifest, SkillEntry, default_manifest_path
 
@@ -67,6 +69,17 @@ def resolve_manifest_path(
     return default_manifest_path()
 
 
+_git_repo_factory: Callable[[Path], GitRepo] | None = None
+
+
+def resolve_git_repo(repo_dir: Path) -> GitRepo:
+    if _git_repo_factory is not None:
+        return _git_repo_factory(repo_dir)
+    from skill_cli._git_real import RealGitRepo
+
+    return RealGitRepo(repo_dir)
+
+
 def _require_repo_dir(repo_dir: Optional[Path]) -> Path:
     if repo_dir is None:
         typer.echo("Cannot find skills repo. Run from within the repo.", err=True)
@@ -85,15 +98,21 @@ def _require_install_dir(inst_dir: Optional[Path]) -> Path:
 def install(
     *,
     name: str,
-    commit: Annotated[
-        Optional[str],
-        typer.Option("--commit", help="Commit hash to record in manifest."),
-    ] = None,
+    offline: Annotated[
+        bool,
+        typer.Option("--offline", help="Skip git pull."),
+    ] = False,
     repo_dir: Optional[Path] = Depends(resolve_repo_dir),
     install_dir: Optional[Path] = Depends(resolve_install_dir),
     manifest_path: Path = Depends(resolve_manifest_path),
 ) -> None:
     repo = _require_repo_dir(repo_dir)
+    git = resolve_git_repo(repo.parent)
+
+    if not offline:
+        git.pull()
+
+    _validate_repo(git)
 
     src = repo / name
     if not src.is_dir():
@@ -109,19 +128,137 @@ def install(
         typer.echo(f"Skill '{name}' is already installed.", err=True)
         raise typer.Exit(1)
 
+    commit = _resolve_commit(git, name)
+
     _copytree(src, dst)
 
     manifest = Manifest.load(manifest_path)
     manifest.repo_path = str(repo.parent)
-    manifest.skills[name] = SkillEntry(commit=commit or "")
+    manifest.skills[name] = SkillEntry(commit=commit)
     manifest.save(manifest_path)
 
     typer.echo(f"Installed '{name}'.")
 
 
+def _validate_repo(git: GitRepo) -> None:
+    main = git.get_main_branch()
+    current = git.current_branch()
+    if current != main:
+        typer.echo(
+            f"Not on main branch (on '{current}', expected '{main}').",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    if not git.is_clean():
+        typer.echo("Repo has uncommitted changes.", err=True)
+        raise typer.Exit(1)
+
+
+def _resolve_commit(git: GitRepo, skill_name: str) -> str:
+    commit = git.get_skill_commit(skill_name)
+    if not git.verify_commit_content(commit, skill_name):
+        typer.echo(
+            f"Skill '{skill_name}' content does not match commit {commit}.",
+            err=True,
+        )
+        raise typer.Exit(1)
+    return commit
+
+
 @app.command(help="Update installed skills from the repo.")
-def update() -> None:
-    pass
+def update(
+    *,
+    name: Annotated[
+        Optional[str],
+        typer.Argument(help="Skill to update (all if omitted)."),
+    ] = None,
+    commit: Annotated[
+        Optional[str],
+        typer.Option("--commit", help="New commit hash to record in manifest."),
+    ] = None,
+    repo_dir: Optional[Path] = Depends(resolve_repo_dir),
+    install_dir: Optional[Path] = Depends(resolve_install_dir),
+    manifest_path: Path = Depends(resolve_manifest_path),
+) -> None:
+    repo = _require_repo_dir(repo_dir)
+    inst = _require_install_dir(install_dir)
+    manifest = Manifest.load(manifest_path)
+
+    if name:
+        names = [name]
+    else:
+        on_disk = (
+            {
+                d.name
+                for d in inst.iterdir()
+                if d.is_dir() and not d.name.startswith(".")
+            }
+            if inst.exists()
+            else set()
+        )
+        names = sorted(on_disk | set(manifest.skills.keys()))
+
+    for skill_name in names:
+        dst = inst / skill_name
+        if skill_name not in manifest.skills and not dst.exists():
+            typer.echo(f"Skill '{skill_name}' is not installed.", err=True)
+            raise typer.Exit(1)
+
+        entry = manifest.skills.get(skill_name, SkillEntry())
+        if commit and entry.commit == commit:
+            typer.echo(f"'{skill_name}' is already up to date.")
+            continue
+
+        src = repo / skill_name
+
+        if not src.is_dir():
+            typer.echo(f"Skill '{skill_name}' not found in repo.", err=True)
+            raise typer.Exit(1)
+
+        if dst.exists() and _has_conflict(src, dst):
+            typer.echo(
+                f"Conflict in '{skill_name}': both repo and local have"
+                " changes.\n"
+                "Use 'skill peek --diff' to view differences"
+                " or 'skill merge' to resolve.",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+        if dst.exists():
+            shutil.rmtree(str(dst))
+        _copytree(src, dst)
+
+        manifest.skills[skill_name] = SkillEntry(commit=commit or "")
+        typer.echo(f"Updated '{skill_name}'.")
+
+    manifest.save(manifest_path)
+
+
+def _has_conflict(src: Path, dst: Path) -> bool:
+    src_files = _collect_files(src)
+    dst_files = _collect_files(dst)
+
+    if set(src_files.keys()) != set(dst_files.keys()):
+        return True
+
+    for rel_path, src_content in src_files.items():
+        if dst_files[rel_path] != src_content:
+            return True
+
+    return False
+
+
+def _collect_files(root: Path) -> dict[str, bytes]:
+    result: dict[str, bytes] = {}
+    for dirpath, _, filenames in os.walk(str(root)):
+        for fname in filenames:
+            full = os.path.join(dirpath, fname)
+            rel = os.path.relpath(full, str(root))
+            with open(full, "rb") as f:
+                result[rel] = f.read()
+    return result
 
 
 @app.command(help="Show changes between repo and installed skills.")

@@ -43,9 +43,9 @@ def test_install_copies_skill_to_install_dir(
         "--offline",
     )
 
-    with open(str(INSTALL_DIR / "tdd" / "SKILL.md")) as f:
+    with open(INSTALL_DIR / "tdd" / "SKILL.md") as f:
         assert f.read() == "# tdd"
-    with open(str(INSTALL_DIR / "tdd" / "tests.python.md")) as f:
+    with open(INSTALL_DIR / "tdd" / "tests.python.md") as f:
         assert f.read() == "# Python tests"
 
 

@@ -1,7 +1,7 @@
 ---
 id: s01t0403
 slug: wire-git-validation-into-update
-status: pending
+status: done
 ---
 
 # Wire git validation into `update`

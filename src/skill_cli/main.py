@@ -4,6 +4,7 @@ import os
 import shutil
 import textwrap
 from collections.abc import Callable
+from enum import Enum
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -24,38 +25,54 @@ app = TyperDI(
 )
 
 
-def _copytree(src: Path, dst: Path) -> None:
-    os.makedirs(str(dst), exist_ok=True)
-    for item in os.listdir(str(src)):
-        s = os.path.join(str(src), item)
-        d = os.path.join(str(dst), item)
-        if os.path.isdir(s):
-            _copytree(Path(s), Path(d))
-        else:
-            with open(s, "rb") as f_in, open(d, "wb") as f_out:
-                f_out.write(f_in.read())
-
-
 def resolve_repo_dir(
     repo_skills_dir: Annotated[
         Optional[str],
-        typer.Option("--repo-skills-dir", help="Path to the repo skills directory."),
+        typer.Option(
+            "--repo-skills-dir",
+            help="Path to the repo skills directory.",
+            file_okay=False,
+            dir_okay=True,
+            exists=True,
+        ),
     ] = None,
-) -> Optional[Path]:
+) -> Path:
     if repo_skills_dir:
         return Path(repo_skills_dir)
-    return find_repo_skills_dir()
+
+    repo_dir = find_repo_skills_dir()
+    if repo_dir is None:
+        typer.echo("Cannot find skills repo. Run from within the repo.", err=True)
+        raise typer.Exit(1)
+
+    return repo_dir
 
 
-def resolve_install_dir(
+def resolve_install_dir_opt(
     install_dir: Annotated[
         Optional[str],
-        typer.Option("--install-dir", help="Path to the skill install directory."),
+        typer.Option(
+            "--install-dir",
+            help="Path to the skill install directory.",
+            file_okay=False,
+            dir_okay=True,
+            exists=True,
+        ),
     ] = None,
 ) -> Optional[Path]:
     if install_dir:
         return Path(install_dir)
     return find_install_dir()
+
+
+def resolve_install_dir(
+    install_dir: Optional[Path] = Depends(resolve_install_dir_opt),
+) -> Path:
+    if install_dir is None:
+        typer.echo("Cannot find install directory.", err=True)
+        raise typer.Exit(1)
+
+    return install_dir
 
 
 def resolve_manifest_path(
@@ -69,6 +86,13 @@ def resolve_manifest_path(
     return default_manifest_path()
 
 
+class UpdateStatus(Enum):
+    UPDATED = "updated"
+    UP_TO_DATE = "up-to-date"
+    CONFLICT = "conflict"
+    ERROR = "error"
+
+
 _git_repo_factory: Callable[[Path], GitRepo] | None = None
 
 
@@ -80,20 +104,6 @@ def resolve_git_repo(repo_dir: Path) -> GitRepo:
     return RealGitRepo(repo_dir)
 
 
-def _require_repo_dir(repo_dir: Optional[Path]) -> Path:
-    if repo_dir is None:
-        typer.echo("Cannot find skills repo. Run from within the repo.", err=True)
-        raise typer.Exit(1)
-    return repo_dir
-
-
-def _require_install_dir(inst_dir: Optional[Path]) -> Path:
-    if inst_dir is None:
-        typer.echo("Cannot find install directory.", err=True)
-        raise typer.Exit(1)
-    return inst_dir
-
-
 @app.command(help="Install a skill from the repo.")
 def install(
     *,
@@ -102,26 +112,25 @@ def install(
         bool,
         typer.Option("--offline", help="Skip git pull."),
     ] = False,
-    repo_dir: Optional[Path] = Depends(resolve_repo_dir),
-    install_dir: Optional[Path] = Depends(resolve_install_dir),
+    repo_dir: Path = Depends(resolve_repo_dir),
+    install_dir: Optional[Path] = Depends(resolve_install_dir_opt),
     manifest_path: Path = Depends(resolve_manifest_path),
 ) -> None:
-    repo = _require_repo_dir(repo_dir)
-    git = resolve_git_repo(repo.parent)
+    git = resolve_git_repo(repo_dir.parent)
 
     if not offline:
         git.pull()
 
     _validate_repo(git)
 
-    src = repo / name
+    src = repo_dir / name
     if not src.is_dir():
         typer.echo(f"Skill '{name}' not found in repo.", err=True)
         raise typer.Exit(1)
 
     if install_dir is None:
         install_dir = manifest_path.parent
-    os.makedirs(str(install_dir), exist_ok=True)
+    install_dir.mkdir(parents=True, exist_ok=True)
 
     dst = install_dir / name
     if dst.exists():
@@ -130,10 +139,10 @@ def install(
 
     commit = _resolve_commit(git, name)
 
-    _copytree(src, dst)
+    shutil.copytree(src, dst)
 
     manifest = Manifest.load(manifest_path)
-    manifest.repo_path = str(repo.parent)
+    manifest.repo_path = str(repo_dir.parent)
     manifest.skills[name] = SkillEntry(commit=commit)
     manifest.save(manifest_path)
 
@@ -173,67 +182,123 @@ def update(
         Optional[str],
         typer.Argument(help="Skill to update (all if omitted)."),
     ] = None,
-    commit: Annotated[
-        Optional[str],
-        typer.Option("--commit", help="New commit hash to record in manifest."),
-    ] = None,
-    repo_dir: Optional[Path] = Depends(resolve_repo_dir),
-    install_dir: Optional[Path] = Depends(resolve_install_dir),
+    offline: Annotated[
+        bool,
+        typer.Option("--offline", help="Skip git pull."),
+    ] = False,
+    repo_dir: Path = Depends(resolve_repo_dir),
+    install_dir: Path = Depends(resolve_install_dir),
     manifest_path: Path = Depends(resolve_manifest_path),
 ) -> None:
-    repo = _require_repo_dir(repo_dir)
-    inst = _require_install_dir(install_dir)
+    git = resolve_git_repo(repo_dir.parent)
+
+    if not offline:
+        git.pull()
+
+    _validate_repo(git)
+
     manifest = Manifest.load(manifest_path)
 
-    if name:
-        names = [name]
-    else:
-        on_disk = (
-            {
-                d.name
-                for d in inst.iterdir()
-                if d.is_dir() and not d.name.startswith(".")
-            }
-            if inst.exists()
-            else set()
-        )
-        names = sorted(on_disk | set(manifest.skills.keys()))
+    names = _collect_skills(
+        selected_skill=name, manifest=manifest, install_dir=install_dir
+    )
+
+    results: list[tuple[str, UpdateStatus]] = []
 
     for skill_name in names:
-        dst = inst / skill_name
+        dst = install_dir / skill_name
         if skill_name not in manifest.skills and not dst.exists():
             typer.echo(f"Skill '{skill_name}' is not installed.", err=True)
             raise typer.Exit(1)
 
-        entry = manifest.skills.get(skill_name, SkillEntry())
-        if commit and entry.commit == commit:
-            typer.echo(f"'{skill_name}' is already up to date.")
-            continue
-
-        src = repo / skill_name
+        src = repo_dir / skill_name
 
         if not src.is_dir():
             typer.echo(f"Skill '{skill_name}' not found in repo.", err=True)
             raise typer.Exit(1)
 
+        commit = git.get_skill_commit(skill_name)
+        if not git.verify_commit_content(commit, skill_name):
+            results.append((skill_name, UpdateStatus.ERROR))
+            continue
+
+        entry = manifest.skills.get(skill_name, SkillEntry())
+        if entry.commit == commit:
+            results.append((skill_name, UpdateStatus.UP_TO_DATE))
+            continue
+
+        if dst.exists() and not _has_conflict(src, dst):
+            manifest.skills[skill_name] = SkillEntry(commit=commit)
+            results.append((skill_name, UpdateStatus.UP_TO_DATE))
+            continue
+
         if dst.exists() and _has_conflict(src, dst):
-            typer.echo(
-                f"Conflict in '{skill_name}': both repo and local have"
-                " changes.\n"
-                "Use 'skill peek --diff' to view differences"
-                " or 'skill merge' to resolve.",
-                err=True,
-            )
-            raise typer.Exit(1)
+            results.append((skill_name, UpdateStatus.CONFLICT))
+            continue
 
-        if dst.exists():
-            shutil.rmtree(str(dst))
-        _copytree(src, dst)
+        shutil.copytree(src, dst)
 
-        manifest.skills[skill_name] = SkillEntry(commit=commit or "")
-        typer.echo(f"Updated '{skill_name}'.")
+        manifest.skills[skill_name] = SkillEntry(commit=commit)
+        results.append((skill_name, UpdateStatus.UPDATED))
 
     manifest.save(manifest_path)
+    _print_report(results)
+
+
+def _collect_skills(
+    *, install_dir: Path, selected_skill: str | None, manifest: Manifest
+) -> list[str]:
+    if selected_skill:
+        return [selected_skill]
+
+    on_disk = set()
+
+    if install_dir.exists():
+        on_disk = {
+            d.name
+            for d in install_dir.iterdir()
+            if d.is_dir() and not d.name.startswith(".")
+        }
+
+    return sorted(on_disk | set(manifest.skills.keys()))
+
+
+_STATUS_LABELS = {
+    UpdateStatus.UPDATED: "Updated",
+    UpdateStatus.UP_TO_DATE: "Up to date",
+    UpdateStatus.CONFLICT: "Skipped",
+    UpdateStatus.ERROR: "Skipped",
+}
+
+_STATUS_DETAIL = {
+    UpdateStatus.CONFLICT: "conflict: local changes",
+    UpdateStatus.ERROR: "error: commit content mismatch",
+}
+
+
+def _print_report(results: list[tuple[str, UpdateStatus]]) -> None:
+    for skill_name, status in results:
+        label = _STATUS_LABELS[status]
+        detail = _STATUS_DETAIL.get(status)
+        if detail:
+            typer.echo(f"  {label} '{skill_name}': {detail}")
+        else:
+            typer.echo(f"  {label} '{skill_name}'")
+
+    counts = {s: sum(1 for _, st in results if st == s) for s in UpdateStatus}
+
+    parts = []
+    if counts[UpdateStatus.UPDATED]:
+        parts.append(f"{counts[UpdateStatus.UPDATED]} updated")
+    if counts[UpdateStatus.UP_TO_DATE]:
+        parts.append(f"{counts[UpdateStatus.UP_TO_DATE]} up to date")
+    if counts[UpdateStatus.CONFLICT]:
+        parts.append(f"{counts[UpdateStatus.CONFLICT]} conflict")
+    if counts[UpdateStatus.ERROR]:
+        parts.append(f"{counts[UpdateStatus.ERROR]} error")
+
+    if parts:
+        typer.echo(", ".join(parts))
 
 
 def _has_conflict(src: Path, dst: Path) -> bool:
@@ -252,11 +317,11 @@ def _has_conflict(src: Path, dst: Path) -> bool:
 
 def _collect_files(root: Path) -> dict[str, bytes]:
     result: dict[str, bytes] = {}
-    for dirpath, _, filenames in os.walk(str(root)):
+    for dirpath, _, filenames in os.walk(root):
         for fname in filenames:
-            full = os.path.join(dirpath, fname)
-            rel = os.path.relpath(full, str(root))
-            with open(full, "rb") as f:
+            full = Path(dirpath) / fname
+            rel = str(full.relative_to(root))
+            with full.open("rb") as f:
                 result[rel] = f.read()
     return result
 
@@ -273,15 +338,14 @@ def merge() -> None:
 
 @app.command(name="list", help="List available and installed skills.")
 def list_(
-    repo_dir: Optional[Path] = Depends(resolve_repo_dir),
-    install_dir: Optional[Path] = Depends(resolve_install_dir),
+    repo_dir: Path = Depends(resolve_repo_dir),
+    install_dir: Path = Depends(resolve_install_dir),
 ) -> None:
-    repo = _require_repo_dir(repo_dir)
-    dest = _require_install_dir(install_dir)
-
-    repo_skills = {d.name for d in repo.iterdir() if d.is_dir()}
+    repo_skills = {d.name for d in repo_dir.iterdir() if d.is_dir()}
     installed = {
-        d.name for d in dest.iterdir() if d.is_dir() and not d.name.startswith(".")
+        d.name
+        for d in install_dir.iterdir()
+        if d.is_dir() and not d.name.startswith(".")
     }
 
     groups: list[tuple[str, str, list[str]]] = [
@@ -299,63 +363,70 @@ def list_(
     for header, style, names in groups:
         if not names:
             continue
+
         if not first:
             console.print()
         first = False
+
         console.print(f"[{style}]{header}[/{style}]")
         for name in names:
-            desc = _read_skill_description(name, dest if name in installed else repo)
+            desc = _read_skill_description(
+                name, install_dir if name in installed else repo_dir
+            )
             padded = f"{name:<{col_width}}"
-            if desc:
-                desc_width = max(console.width - prefix_len, 20)
-                lines = textwrap.wrap(desc, width=desc_width)
-                indent = " " * prefix_len
-                wrapped = f"\n{indent}".join(lines)
-                text = Text.from_markup(
-                    f"[dim cyan]*[/dim cyan] [bright_white]{padded}[/bright_white] "
-                    f"[dim]{wrapped}[/dim]"
-                )
-                console.print(text, soft_wrap=True)
-            else:
+            if not desc:
                 console.print(
                     f"[dim cyan]*[/dim cyan] [bright_white]{padded}[/bright_white]"
                 )
+                continue
+
+            desc_width = max(console.width - prefix_len, 20)
+            lines = textwrap.wrap(desc, width=desc_width)
+            indent = " " * prefix_len
+            wrapped = f"\n{indent}".join(lines)
+            text = Text.from_markup(
+                f"[dim cyan]*[/dim cyan] [bright_white]{padded}[/bright_white] "
+                f"[dim]{wrapped}[/dim]"
+            )
+            console.print(text, soft_wrap=True)
 
 
 def _read_skill_description(name: str, base_dir: Path) -> str:
     skill_md = base_dir / name / "SKILL.md"
-    if not os.path.exists(str(skill_md)):
+    if not skill_md.exists():
         return ""
-    with open(str(skill_md)) as f:
-        content = f.read()
+
+    content = skill_md.read_text()
+
     if not content.startswith("---"):
         return ""
+
     end = content.find("---", 3)
     if end == -1:
         return ""
+
     for line in content[3:end].splitlines():
         if line.startswith("description:"):
             return line[len("description:") :].strip()
+
     return ""
 
 
 @app.command(help="Uninstall a skill.")
 def uninstall(
     name: str,
-    inst_dir: Optional[Path] = Depends(resolve_install_dir),
-    mpath: Path = Depends(resolve_manifest_path),
+    install_dir: Path = Depends(resolve_install_dir),
+    manifest_path: Path = Depends(resolve_manifest_path),
 ) -> None:
-    dest = _require_install_dir(inst_dir)
-
-    dst = dest / name
+    dst = install_dir / name
     if not dst.exists():
         typer.echo(f"Skill '{name}' is not installed.", err=True)
         raise typer.Exit(1)
 
-    shutil.rmtree(str(dst))
+    shutil.rmtree(dst)
 
-    manifest = Manifest.load(mpath)
+    manifest = Manifest.load(manifest_path)
     manifest.skills.pop(name, None)
-    manifest.save(mpath)
+    manifest.save(manifest_path)
 
     typer.echo(f"Uninstalled '{name}'.")

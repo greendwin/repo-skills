@@ -1,7 +1,7 @@
 ---
 id: s01t0404
 slug: real-gitrepo-implementation
-status: pending
+status: done
 ---
 
 # Real `GitRepo` implementation

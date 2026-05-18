@@ -21,6 +21,6 @@ status: pending
 
 ## Subtasks
 
-- [ ] [s03t01](s03t01-rename-package-and-update-all.md): Rename package and update all imports
+- [x] [s03t01](s03t01-rename-package-and-update-all.md): Rename package and update all imports
 - [ ] [s03t02](s03t02-rename-manifest-file.md): Rename manifest file
 - [ ] [s03t03](s03t03-add-readmemd-and-ci-workflow.md): Add README.md and CI workflow

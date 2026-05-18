@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from skill_cli._git import GitRepo
+from repo_skills._git import GitRepo
 
 
 class RealGitRepo:

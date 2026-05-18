@@ -1,7 +1,7 @@
 ---
 id: s03t01
 slug: rename-package-and-update-all
-status: pending
+status: done
 ---
 
 # Rename package and update all imports

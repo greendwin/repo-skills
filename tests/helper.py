@@ -8,8 +8,8 @@ from click.testing import Result
 from pyfakefs.fake_filesystem import FakeFilesystem
 from typer.testing import CliRunner
 
-import skill_cli.main as main_mod
-from skill_cli.main import app
+import repo_skills.main as main_mod
+from repo_skills.main import app
 
 REPO_SKILLS_DIR = Path("/repo/skills")
 INSTALL_DIR = Path("/home/user/.claude/skills")

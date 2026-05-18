@@ -1,6 +1,6 @@
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from skill_cli.manifest import Manifest, SkillEntry
+from repo_skills.manifest import Manifest, SkillEntry
 from tests.helper import (
     INSTALL_DIR,
     MANIFEST_PATH,

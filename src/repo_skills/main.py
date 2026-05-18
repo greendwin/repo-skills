@@ -13,9 +13,9 @@ from rich.console import Console
 from rich.text import Text
 from typer_di import Depends, TyperDI
 
-from skill_cli._git import GitRepo
-from skill_cli.discovery import find_install_dir, find_repo_skills_dir
-from skill_cli.manifest import Manifest, SkillEntry, default_manifest_path
+from repo_skills._git import GitRepo
+from repo_skills.discovery import find_install_dir, find_repo_skills_dir
+from repo_skills.manifest import Manifest, SkillEntry, default_manifest_path
 
 app = TyperDI(
     help="Manage Claude Code skills.",
@@ -99,7 +99,7 @@ _git_repo_factory: Callable[[Path], GitRepo] | None = None
 def resolve_git_repo(repo_dir: Path) -> GitRepo:
     if _git_repo_factory is not None:
         return _git_repo_factory(repo_dir)
-    from skill_cli._git_real import RealGitRepo
+    from repo_skills._git_real import RealGitRepo
 
     return RealGitRepo(repo_dir)
 

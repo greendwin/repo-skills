@@ -2,7 +2,7 @@ from pathlib import Path
 
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from skill_cli.discovery import find_repo_skills_dir
+from repo_skills.discovery import find_repo_skills_dir
 
 
 def test_find_repo_skills_dir_from_git_root(

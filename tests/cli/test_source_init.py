@@ -6,7 +6,7 @@ import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills._config import SourceConfig, SourceRegistry
-from tests.helper import assert_invoke
+from tests.cli.helper import assert_invoke
 
 REPO_ROOT = Path("/repos/my-project")
 CONFIG_DIR = Path("/home/user/.config/repo-skills")

@@ -8,8 +8,8 @@ from click.testing import Result
 from pyfakefs.fake_filesystem import FakeFilesystem
 from typer.testing import CliRunner
 
-import repo_skills.main as main_mod
-from repo_skills.main import app
+import repo_skills.cli._deps as deps_mod
+from repo_skills.cli import app
 
 REPO_SKILLS_DIR = Path("/repo/skills")
 INSTALL_DIR = Path("/home/user/.claude/skills")
@@ -45,11 +45,11 @@ class FakeGitRepo:
 
 
 def install_fake_git(fake: FakeGitRepo) -> None:
-    main_mod._git_repo_factory = lambda _path: fake
+    deps_mod._git_repo_factory = lambda _path: fake
 
 
 def uninstall_fake_git() -> None:
-    main_mod._git_repo_factory = None
+    deps_mod._git_repo_factory = None
 
 
 def assert_invoke(

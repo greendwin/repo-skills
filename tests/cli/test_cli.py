@@ -1,6 +1,6 @@
 from pytest_subtests import SubTests
 
-from tests.helper import assert_invoke
+from tests.cli.helper import assert_invoke
 
 
 def test_help_lists_all_commands() -> None:

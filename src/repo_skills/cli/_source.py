@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
+from typer_di import TyperDI
 
 from repo_skills._config import (
     SourceConfig,
@@ -12,7 +13,16 @@ from repo_skills._config import (
 )
 from repo_skills._discovery import detect_skills_dir, find_git_root
 
+from ._app import app
 
+source_app = TyperDI(
+    help="Manage skill sources.",
+    no_args_is_help=True,
+)
+app.add_typer(source_app, name="source")
+
+
+@source_app.command(name="init", help="Initialize a skill source in the current repo.")
 def source_init(
     name: str | None = typer.Option(None, "--name", help="Source name override."),
 ) -> None:

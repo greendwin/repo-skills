@@ -2,15 +2,12 @@ from __future__ import annotations
 
 import os
 import shutil
-import textwrap
 from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
-from rich.console import Console
-from rich.text import Text
 from typer_di import Depends, TyperDI
 
 from repo_skills._git import GitRepo
@@ -324,92 +321,6 @@ def _collect_files(root: Path) -> dict[str, bytes]:
             with full.open("rb") as f:
                 result[rel] = f.read()
     return result
-
-
-@app.command(help="Show changes between repo and installed skills.")
-def peek() -> None:
-    pass
-
-
-@app.command(help="Resolve conflicts between repo and installed skills.")
-def merge() -> None:
-    pass
-
-
-@app.command(name="list", help="List available and installed skills.")
-def list_(
-    repo_dir: Path = Depends(resolve_repo_dir),
-    install_dir: Path = Depends(resolve_install_dir),
-) -> None:
-    repo_skills = {d.name for d in repo_dir.iterdir() if d.is_dir()}
-    installed = {
-        d.name
-        for d in install_dir.iterdir()
-        if d.is_dir() and not d.name.startswith(".")
-    }
-
-    groups: list[tuple[str, str, list[str]]] = [
-        ("Installed", "green", sorted(repo_skills & installed)),
-        ("Not in repo", "yellow", sorted(installed - repo_skills)),
-        ("Not installed", "dim", sorted(repo_skills - installed)),
-    ]
-
-    all_names = [n for _, _, names in groups for n in names]
-    col_width = max((len(n) for n in all_names), default=0)
-    prefix_len = 2 + col_width + 1
-
-    console = Console(highlight=False)
-    first = True
-    for header, style, names in groups:
-        if not names:
-            continue
-
-        if not first:
-            console.print()
-        first = False
-
-        console.print(f"[{style}]{header}[/{style}]")
-        for name in names:
-            desc = _read_skill_description(
-                name, install_dir if name in installed else repo_dir
-            )
-            padded = f"{name:<{col_width}}"
-            if not desc:
-                console.print(
-                    f"[dim cyan]*[/dim cyan] [bright_white]{padded}[/bright_white]"
-                )
-                continue
-
-            desc_width = max(console.width - prefix_len, 20)
-            lines = textwrap.wrap(desc, width=desc_width)
-            indent = " " * prefix_len
-            wrapped = f"\n{indent}".join(lines)
-            text = Text.from_markup(
-                f"[dim cyan]*[/dim cyan] [bright_white]{padded}[/bright_white] "
-                f"[dim]{wrapped}[/dim]"
-            )
-            console.print(text, soft_wrap=True)
-
-
-def _read_skill_description(name: str, base_dir: Path) -> str:
-    skill_md = base_dir / name / "SKILL.md"
-    if not skill_md.exists():
-        return ""
-
-    content = skill_md.read_text()
-
-    if not content.startswith("---"):
-        return ""
-
-    end = content.find("---", 3)
-    if end == -1:
-        return ""
-
-    for line in content[3:end].splitlines():
-        if line.startswith("description:"):
-            return line[len("description:") :].strip()
-
-    return ""
 
 
 @app.command(help="Uninstall a skill.")

@@ -5,11 +5,11 @@ from tests.helper import assert_invoke
 
 def test_help_lists_all_commands() -> None:
     result = assert_invoke("--help")
-    for cmd in ("install", "update", "peek", "merge", "list", "uninstall"):
+    for cmd in ("install", "update", "uninstall"):
         assert cmd in result.output
 
 
-COMMANDS = ("install", "update", "peek", "merge", "list", "uninstall")
+COMMANDS = ("install", "update", "uninstall")
 
 
 def test_each_subcommand_has_help(subtests: SubTests) -> None:

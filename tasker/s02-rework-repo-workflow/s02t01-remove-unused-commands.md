@@ -1,7 +1,7 @@
 ---
 id: s02t01
 slug: remove-unused-commands
-status: pending
+status: done
 ---
 
 # Remove unused commands

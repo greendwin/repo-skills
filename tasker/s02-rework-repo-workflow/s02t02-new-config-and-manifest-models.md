@@ -1,7 +1,7 @@
 ---
 id: s02t02
 slug: new-config-and-manifest-models
-status: pending
+status: done
 ---
 
 # New config and manifest models

@@ -1,0 +1,79 @@
+from __future__ import annotations
+
+import hashlib
+import os
+from pathlib import Path
+from typing import Self, TypeAlias
+
+from pydantic import BaseModel
+
+
+def default_config_dir() -> Path:
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        base = Path(xdg)
+    else:
+        base = Path.home() / ".config"
+    return base / "repo-skills"
+
+
+RelPathHashes: TypeAlias = dict[str, str]
+
+
+def compute_file_hashes(skill_dir: Path) -> RelPathHashes:
+    result: RelPathHashes = {}
+    for dirpath, _, filenames in os.walk(skill_dir):
+        for fname in sorted(filenames):
+            full = Path(dirpath) / fname
+            rel = str(full.relative_to(skill_dir))
+            sha = hashlib.sha256(full.read_bytes()).hexdigest()
+            result[rel] = f"sha256:{sha}"
+
+    return result
+
+
+class _Saveable(BaseModel):
+    @classmethod
+    def load(cls, path: Path) -> Self:
+        if not os.path.exists(path):
+            return cls()
+        with open(path) as f:
+            data = f.read()
+        return cls.model_validate_json(data)
+
+    def save(self, path: Path) -> None:
+        os.makedirs(str(path.parent), exist_ok=True)
+        with open(str(path), "w") as f:
+            f.write(self.model_dump_json(indent=2) + "\n")
+
+
+class SourceConfig(_Saveable):
+    name: str = ""
+    skills_dir: str = "skills"
+
+
+class ProviderConfig(BaseModel):
+    name: str = ""
+    install_dir: str = ""
+
+
+class ProviderRegistry(_Saveable):
+    providers: dict[str, ProviderConfig] = {}
+
+
+class SourceEntry(BaseModel):
+    path: str = ""
+
+
+class SourceRegistry(_Saveable):
+    sources: dict[str, SourceEntry] = {}
+
+
+class SkillEntry(BaseModel):
+    source: str = ""
+    commit: str | None = None
+    files: dict[str, str] = {}
+
+
+class SkillManifest(_Saveable):
+    skills: dict[str, SkillEntry] = {}

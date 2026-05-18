@@ -8,12 +8,12 @@ from click.testing import Result
 from pyfakefs.fake_filesystem import FakeFilesystem
 from typer.testing import CliRunner
 
-import skill_cli.main as main_mod
-from skill_cli.main import app
+import repo_skills.main as main_mod
+from repo_skills.main import app
 
 REPO_SKILLS_DIR = Path("/repo/skills")
 INSTALL_DIR = Path("/home/user/.claude/skills")
-MANIFEST_PATH = INSTALL_DIR / ".skill-install.json"
+MANIFEST_PATH = INSTALL_DIR / ".skills-manifest.json"
 
 
 @dataclass

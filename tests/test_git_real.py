@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from skill_cli._git_real import RealGitRepo
+from repo_skills._git_real import RealGitRepo
 
 
 def _git(repo: Path, *args: str) -> str:

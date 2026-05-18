@@ -1,11 +1,24 @@
 [project]
-name = "skill-cli"
+name = "repo-skills"
 version = "0.1.0"
+description = "CLI tool for managing Claude Code skills from a shared repository."
 requires-python = ">=3.10"
-dependencies = ["typer>=0.9.0", "typer-di>=0.1.5", "pydantic>=2.0", "rich>=13.0"]
+license = "MIT"
+authors = [{ name = "Evgeniy A. Cymbalyuk", email = "cimbaluk@gmail.com" }]
+readme = "README.md"
+dependencies = [
+    "typer>=0.9.0",
+    "typer-di>=0.1.5",
+    "pydantic>=2.0",
+    "rich>=13.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/greendwin/repo-skills"
+Repository = "https://github.com/greendwin/repo-skills"
 
 [project.scripts]
-skill = "skill_cli.main:app"
+skills = "repo_skills.main:app"
 
 [dependency-groups]
 dev = [
@@ -16,6 +29,8 @@ dev = [
     "pyfakefs>=6.2.0",
     "pytest",
     "pytest-subtests>=0.15.0",
+    "tox",
+    "tox-uv",
 ]
 
 [build-system]
@@ -23,14 +38,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/skill_cli"]
+packages = ["src/repo_skills"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.mypy]
 strict = true
-packages = ["skill_cli", "tests"]
+packages = ["repo_skills", "tests"]
 mypy_path = "src:."
 
 [tool.black]

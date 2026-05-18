@@ -11,7 +11,7 @@ def default_install_dir() -> Path:
 
 
 def default_manifest_path() -> Path:
-    return default_install_dir() / ".skill-install.json"
+    return default_install_dir() / ".skills-manifest.json"
 
 
 class SkillEntry(BaseModel):

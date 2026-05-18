@@ -1,7 +1,7 @@
 ---
 id: s03t02
 slug: rename-manifest-file
-status: pending
+status: done
 ---
 
 # Rename manifest file

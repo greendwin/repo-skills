@@ -125,7 +125,7 @@ def test_list_ignores_dotfiles_in_install_dir(
 ) -> None:
     create_repo_skill(fs, "tdd", description="TDD")
     fs.create_dir(INSTALL_DIR)
-    fs.create_file(INSTALL_DIR / ".skill-install.json", contents="{}")
+    fs.create_file(INSTALL_DIR / ".skills-manifest.json", contents="{}")
 
     result = assert_invoke(
         "list",
@@ -134,4 +134,4 @@ def test_list_ignores_dotfiles_in_install_dir(
         "--install-dir",
         str(INSTALL_DIR),
     )
-    assert ".skill-install" not in result.output
+    assert ".skills-manifest" not in result.output

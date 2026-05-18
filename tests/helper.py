@@ -13,7 +13,7 @@ from repo_skills.main import app
 
 REPO_SKILLS_DIR = Path("/repo/skills")
 INSTALL_DIR = Path("/home/user/.claude/skills")
-MANIFEST_PATH = INSTALL_DIR / ".skill-install.json"
+MANIFEST_PATH = INSTALL_DIR / ".skills-manifest.json"
 
 
 @dataclass

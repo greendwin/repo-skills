@@ -41,7 +41,7 @@ def test_find_repo_skills_dir_falls_back_to_manifest(
     fs.create_dir("/tmp/random")
     fs.create_dir("/elsewhere/agent-skills/skills/tdd")
 
-    manifest_path = Path("/home/user/.claude/skills/.skill-install.json")
+    manifest_path = Path("/home/user/.claude/skills/.skills-manifest.json")
     fs.create_file(
         manifest_path,
         contents='{"repo_path": "/elsewhere/agent-skills", "skills": {}}',

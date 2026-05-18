@@ -1,7 +1,7 @@
 ---
 id: s02t03
 slug: skills-source-init
-status: pending
+status: in-review
 ---
 
 # `skills source init`

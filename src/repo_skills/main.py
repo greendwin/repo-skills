@@ -11,6 +11,7 @@ import typer
 from typer_di import Depends, TyperDI
 
 from repo_skills._git import GitRepo
+from repo_skills._source_init import source_init
 from repo_skills.discovery import find_install_dir, find_repo_skills_dir
 from repo_skills.manifest import Manifest, SkillEntry, default_manifest_path
 
@@ -19,6 +20,15 @@ app = TyperDI(
     add_completion=False,
     no_args_is_help=True,
     pretty_exceptions_show_locals=False,
+)
+
+source_app = TyperDI(
+    help="Manage skill sources.",
+    no_args_is_help=True,
+)
+app.add_typer(source_app, name="source")
+source_app.command(name="init", help="Initialize a skill source in the current repo.")(
+    source_init
 )
 
 

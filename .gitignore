@@ -13,8 +13,5 @@ build/
 .mypy_cache/
 .pytest_cache/
 
-# uv
-uv.lock
-
 # tox
 .tox/

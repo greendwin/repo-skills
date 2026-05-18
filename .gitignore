@@ -1,6 +1,3 @@
-# symlinked agent-sandbox
-sandbox
-
 # Python
 __pycache__/
 *.py[cod]
@@ -15,3 +12,6 @@ build/
 
 # tox
 .tox/
+
+# local configs
+.env

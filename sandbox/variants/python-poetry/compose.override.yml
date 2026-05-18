@@ -1,0 +1,11 @@
+services:
+  claude-code:
+    volumes:
+      - venv:/work/.venv
+      - tox:/work/.tox
+      - poetry-cache:/home/${USER}/.cache/pypoetry
+
+volumes:
+  venv:
+  tox:
+  poetry-cache:

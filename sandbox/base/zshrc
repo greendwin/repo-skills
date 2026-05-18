@@ -1,0 +1,9 @@
+# PATH
+export PATH="$HOME/.local/bin:$PATH"
+
+# Pretty prompt: user@host:dir (branch)$
+autoload -Uz vcs_info
+precmd() { vcs_info }
+zstyle ':vcs_info:git:*' formats ' (%b)'
+setopt PROMPT_SUBST
+PROMPT='%F{green}%n@%m%f:%F{blue}%~%f%F{yellow}${vcs_info_msg_0_}%f%# '

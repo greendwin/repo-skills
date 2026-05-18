@@ -1,0 +1,14 @@
+services:
+  claude-code:
+    volumes:
+      # Shadow project-local paths so container writes stay out of the host bind mount.
+      - venv:/work/.venv
+      - tox:/work/.tox
+      - uv-cache:/home/${USER}/.cache/uv
+      - uv-data:/home/${USER}/.local/share/uv
+
+volumes:
+  venv:
+  tox:
+  uv-cache:
+  uv-data:

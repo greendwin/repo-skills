@@ -1,0 +1,28 @@
+services:
+  claude-code:
+    build:
+      context: variants/${VARIANT}
+      args:
+        - BASE_IMAGE=${COMPOSE_PROJECT_NAME}-base:latest
+        - USERNAME=${USER}
+        - UID=${HOST_UID:-1000}
+        - GID=${HOST_GID:-1000}
+        - PYTHON_VERSION=${PYTHON_VERSION:-3.10 3.11 3.12}
+        - PHP_VERSION=${PHP_VERSION:-8.3}
+    image: ${COMPOSE_PROJECT_NAME}-${VARIANT}:latest
+    stdin_open: true
+    tty: true
+    volumes:
+      - ..:/work
+      - ~/.local/share/tasker:/home/${USER}/.local/share/tasker
+      - npm-cache:/home/${USER}/.npm
+      - ./base/tmux.conf:/home/${USER}/.tmux.conf:ro
+      - ./base/zshrc:/home/${USER}/.zshrc:ro
+      - ~/.claude:/home/${USER}/.claude
+      - ~/.claude.json:/home/${USER}/.claude.json
+    working_dir: /work
+    environment:
+      - TERM=xterm-256color
+
+volumes:
+  npm-cache:

@@ -1,0 +1,9 @@
+services:
+  claude-code:
+    volumes:
+      - vendor:/work/vendor
+      - composer-cache:/home/${USER}/.composer
+
+volumes:
+  vendor:
+  composer-cache:

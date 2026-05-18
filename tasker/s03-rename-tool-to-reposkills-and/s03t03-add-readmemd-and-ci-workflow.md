@@ -1,7 +1,7 @@
 ---
 id: s03t03
 slug: add-readmemd-and-ci-workflow
-status: pending
+status: done
 ---
 
 # Add README.md and CI workflow

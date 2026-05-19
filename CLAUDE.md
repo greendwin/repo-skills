@@ -1,3 +1,7 @@
+## Domain
+
+See `CONTEXT.md` for project terminology (source, skill, provider, etc.).
+
 ## Development
 
 * On any development iteration, the final step is to run `uv run tox` (all environments).

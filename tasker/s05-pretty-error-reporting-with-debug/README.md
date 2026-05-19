@@ -1,0 +1,23 @@
+---
+id: s05
+slug: pretty-error-reporting-with-debug
+status: pending
+---
+
+# Pretty error reporting with `--debug` support
+
+## Decisions
+
+- **Global `--debug` flag via `app.callback()`** — cross-cutting concern, shouldn't pollute individual command signatures
+- **Single `AppError` class in `_errors.py`** — one class separates "known error" from "unhandled crash"; no hierarchy needed since there's no branching behavior on error type
+- **Exception handler as `main()` wrapper around `app()`** — avoids fighting Typer's own exception hooks, gives full control over formatting
+- **Module-level debug flag in `_app.py`** — `set_debug()`/`get_debug()` pair; simple for single-threaded CLI, accessible from outside Typer's call stack
+- **Unhandled exception chain: outermost first, then indented `caused by:` lines** — most actionable message on top, root cause below
+- **Disable Typer's pretty exceptions entirely** (`pretty_exceptions_enable=False`) — single source of truth for error formatting, no competing formatters
+- **`Console()` on stdout with auto-detection** — Rich handles `NO_COLOR` automatically; all error output goes to stdout (not stderr), simplifying tests
+- **Migration: `typer.echo(msg, err=True)` + `raise typer.Exit(1)` → `raise AppError(msg)`** — rich markup supported in error messages
+
+## Subtasks
+
+- [x] [s05t01](s05t01-apperror-main-wrapper.md): `AppError` + `main()` wrapper
+- [ ] [s05t02](s05t02-migrate-all-error-sites-to.md): Migrate all error sites to `AppError`

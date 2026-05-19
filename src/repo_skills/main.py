@@ -1,3 +1,11 @@
-from repo_skills.cli import app
+from __future__ import annotations
 
-__all__ = ["app"]
+from rich.console import Console
+
+from repo_skills.cli import app
+from repo_skills.errors import error_handler
+
+
+def main() -> None:
+    with error_handler(Console()):
+        app()

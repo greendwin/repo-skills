@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import typer
 from click.testing import Result
 from pyfakefs.fake_filesystem import FakeFilesystem
 from typer.testing import CliRunner
@@ -62,7 +61,7 @@ def assert_invoke(
     if (
         exit_code == 0
         and result.exception is not None
-        and not isinstance(result.exception, typer.Exit)
+        and not isinstance(result.exception, SystemExit)
     ):
         raise result.exception
 

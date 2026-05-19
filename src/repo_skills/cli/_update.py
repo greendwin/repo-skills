@@ -9,6 +9,7 @@ from typing import Annotated, Optional
 import typer
 from typer_di import Depends
 
+from repo_skills.errors import AppError
 from repo_skills.manifest import Manifest, SkillEntry
 
 from ._app import app
@@ -61,14 +62,12 @@ def update(
     for skill_name in names:
         dst = install_dir / skill_name
         if skill_name not in manifest.skills and not dst.exists():
-            typer.echo(f"Skill '{skill_name}' is not installed.", err=True)
-            raise typer.Exit(1)
+            raise AppError(f"Skill '{skill_name}' is not installed.")
 
         src = repo_dir / skill_name
 
         if not src.is_dir():
-            typer.echo(f"Skill '{skill_name}' not found in repo.", err=True)
-            raise typer.Exit(1)
+            raise AppError(f"Skill '{skill_name}' not found in repo.")
 
         commit = git.get_skill_commit(skill_name)
         if not git.verify_commit_content(commit, skill_name):

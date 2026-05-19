@@ -11,6 +11,5 @@ def _raise_app_error() -> None:
 
 
 def test_app_error_exit_code() -> None:
-    result = assert_invoke("__test-app-error", exit_code=1)
-    assert isinstance(result.exception, AppError)
+    result = assert_invoke("__test-app-error", expect_error=True)
     assert result.exception.message == "something went wrong"

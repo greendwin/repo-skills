@@ -89,9 +89,9 @@ def test_install_fails_if_skill_not_in_repo(
         "--manifest-path",
         str(MANIFEST_PATH),
         "--offline",
-        exit_code=1,
+        expect_error=True,
     )
-    assert "not found" in result.output
+    assert "not found" in result.exception.message
 
 
 def test_install_fails_if_already_installed(
@@ -110,9 +110,9 @@ def test_install_fails_if_already_installed(
         "--manifest-path",
         str(MANIFEST_PATH),
         "--offline",
-        exit_code=1,
+        expect_error=True,
     )
-    assert "already installed" in result.output
+    assert "already installed" in result.exception.message
 
 
 def test_install_fails_if_not_on_main_branch(
@@ -133,9 +133,9 @@ def test_install_fails_if_not_on_main_branch(
         "--manifest-path",
         str(MANIFEST_PATH),
         "--offline",
-        exit_code=1,
+        expect_error=True,
     )
-    assert "Not on main branch" in result.output
+    assert "Not on main branch" in result.exception.message
 
 
 def test_install_fails_if_repo_is_dirty(
@@ -156,9 +156,9 @@ def test_install_fails_if_repo_is_dirty(
         "--manifest-path",
         str(MANIFEST_PATH),
         "--offline",
-        exit_code=1,
+        expect_error=True,
     )
-    assert "uncommitted changes" in result.output
+    assert "uncommitted changes" in result.exception.message
 
 
 def test_install_fails_if_commit_content_mismatch(
@@ -179,9 +179,9 @@ def test_install_fails_if_commit_content_mismatch(
         "--manifest-path",
         str(MANIFEST_PATH),
         "--offline",
-        exit_code=1,
+        expect_error=True,
     )
-    assert "does not match commit" in result.output
+    assert "does not match commit" in result.exception.message
 
 
 def test_install_pulls_by_default(

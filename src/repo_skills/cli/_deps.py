@@ -9,6 +9,7 @@ from typer_di import Depends
 
 from repo_skills._git import GitRepo
 from repo_skills.discovery import find_install_dir, find_repo_skills_dir
+from repo_skills.errors import AppError
 from repo_skills.manifest import default_manifest_path
 
 
@@ -29,8 +30,7 @@ def resolve_repo_dir(
 
     repo_dir = find_repo_skills_dir()
     if repo_dir is None:
-        typer.echo("Cannot find skills repo. Run from within the repo.", err=True)
-        raise typer.Exit(1)
+        raise AppError("Cannot find skills repo. Run from within the repo.")
 
     return repo_dir
 
@@ -56,8 +56,7 @@ def resolve_install_dir(
     install_dir: Optional[Path] = Depends(resolve_install_dir_opt),
 ) -> Path:
     if install_dir is None:
-        typer.echo("Cannot find install directory.", err=True)
-        raise typer.Exit(1)
+        raise AppError("Cannot find install directory.")
 
     return install_dir
 

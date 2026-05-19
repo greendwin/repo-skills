@@ -8,6 +8,7 @@ import typer
 from typer_di import Depends
 
 from repo_skills._git import GitRepo
+from repo_skills.errors import AppError
 from repo_skills.manifest import Manifest, SkillEntry
 
 from ._app import app
@@ -41,8 +42,7 @@ def install(
 
     src = repo_dir / name
     if not src.is_dir():
-        typer.echo(f"Skill '{name}' not found in repo.", err=True)
-        raise typer.Exit(1)
+        raise AppError(f"Skill '{name}' not found in repo.")
 
     if install_dir is None:
         install_dir = manifest_path.parent
@@ -50,8 +50,7 @@ def install(
 
     dst = install_dir / name
     if dst.exists():
-        typer.echo(f"Skill '{name}' is already installed.", err=True)
-        raise typer.Exit(1)
+        raise AppError(f"Skill '{name}' is already installed.")
 
     commit = _resolve_commit(git, name)
 
@@ -73,8 +72,7 @@ def uninstall(
 ) -> None:
     dst = install_dir / name
     if not dst.exists():
-        typer.echo(f"Skill '{name}' is not installed.", err=True)
-        raise typer.Exit(1)
+        raise AppError(f"Skill '{name}' is not installed.")
 
     shutil.rmtree(dst)
 
@@ -89,15 +87,10 @@ def _validate_repo(git: GitRepo) -> None:
     main = git.get_main_branch()
     current = git.current_branch()
     if current != main:
-        typer.echo(
-            f"Not on main branch (on '{current}', expected '{main}').",
-            err=True,
-        )
-        raise typer.Exit(1)
+        raise AppError(f"Not on main branch (on '{current}', expected '{main}').")
 
     if not git.is_clean():
-        typer.echo("Repo has uncommitted changes.", err=True)
-        raise typer.Exit(1)
+        raise AppError("Repo has uncommitted changes.")
 
 
 def _resolve_commit(git: GitRepo, skill_name: str) -> str:
@@ -105,8 +98,4 @@ def _resolve_commit(git: GitRepo, skill_name: str) -> str:
     if git.verify_commit_content(commit, skill_name):
         return commit
 
-    typer.echo(
-        f"Skill '{skill_name}' content does not match commit {commit}.",
-        err=True,
-    )
-    raise typer.Exit(1)
+    raise AppError(f"Skill '{skill_name}' content does not match commit {commit}.")

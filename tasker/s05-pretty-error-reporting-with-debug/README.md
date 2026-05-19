@@ -1,7 +1,7 @@
 ---
 id: s05
 slug: pretty-error-reporting-with-debug
-status: pending
+status: done
 ---
 
 # Pretty error reporting with `--debug` support
@@ -20,4 +20,4 @@ status: pending
 ## Subtasks
 
 - [x] [s05t01](s05t01-apperror-main-wrapper.md): `AppError` + `main()` wrapper
-- [ ] [s05t02](s05t02-migrate-all-error-sites-to.md): Migrate all error sites to `AppError`
+- [x] [s05t02](s05t02-migrate-all-error-sites-to.md): Migrate all error sites to `AppError`

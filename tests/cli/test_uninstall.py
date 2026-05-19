@@ -72,6 +72,6 @@ def test_uninstall_fails_if_not_installed(
         str(INSTALL_DIR),
         "--manifest-path",
         str(MANIFEST_PATH),
-        exit_code=1,
+        expect_error=True,
     )
-    assert "not installed" in result.output
+    assert "not installed" in result.exception.message

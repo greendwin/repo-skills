@@ -12,6 +12,7 @@ from repo_skills._config import (
     default_config_dir,
 )
 from repo_skills._discovery import detect_skills_dir, find_git_root
+from repo_skills.errors import AppError
 
 from ._app import app
 
@@ -29,15 +30,13 @@ def source_init(
     cwd = Path.cwd()
     git_root = find_git_root(cwd)
     if git_root is None:
-        typer.echo("Not inside a git repository.", err=True)
-        raise typer.Exit(1)
+        raise AppError("Not inside a git repository.")
 
     repo_skills_dir = git_root / ".repo-skills"
     source_json = repo_skills_dir / "source.json"
 
     if source_json.exists():
-        typer.echo("Source already initialized.", err=True)
-        raise typer.Exit(1)
+        raise AppError("Source already initialized.")
 
     source_name = name or git_root.name
 

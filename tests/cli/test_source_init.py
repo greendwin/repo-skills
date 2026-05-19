@@ -90,8 +90,8 @@ class TestSourceInitErrors:
         )
         monkeypatch.chdir(REPO_ROOT)
 
-        result = assert_invoke("source", "init", exit_code=1)
-        assert "already initialized" in result.output.lower()
+        result = assert_invoke("source", "init", expect_error=True)
+        assert "already initialized" in result.exception.message.lower()
 
     def test_not_in_git_repo(
         self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
@@ -99,8 +99,8 @@ class TestSourceInitErrors:
         fs.create_dir("/not-a-repo")
         monkeypatch.chdir("/not-a-repo")
 
-        result = assert_invoke("source", "init", exit_code=1)
-        assert "git" in result.output.lower()
+        result = assert_invoke("source", "init", expect_error=True)
+        assert "git" in result.exception.message.lower()
 
 
 class TestSourceInitAutoDetect:

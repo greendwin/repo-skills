@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal, overload
 
 from click.testing import Result
 from pyfakefs.fake_filesystem import FakeFilesystem
@@ -9,6 +10,14 @@ from typer.testing import CliRunner
 
 import repo_skills.cli._deps as deps_mod
 from repo_skills.cli import app
+from repo_skills.errors import AppError
+
+
+@dataclass
+class ErrorResult:
+    exception: AppError
+    output: str
+
 
 REPO_SKILLS_DIR = Path("/repo/skills")
 INSTALL_DIR = Path("/home/user/.claude/skills")
@@ -51,22 +60,38 @@ def uninstall_fake_git() -> None:
     deps_mod._git_repo_factory = None
 
 
+@overload
 def assert_invoke(
     *args: str,
-    exit_code: int = 0,
-) -> Result:
+    expect_error: Literal[True],
+) -> ErrorResult: ...
+
+
+@overload
+def assert_invoke(
+    *args: str,
+    expect_error: Literal[False] = ...,
+) -> Result: ...
+
+
+def assert_invoke(
+    *args: str,
+    expect_error: bool = False,
+) -> Result | ErrorResult:
     runner = CliRunner(env={"NO_COLOR": "1"})
     result = runner.invoke(app, args)
 
-    if (
-        exit_code == 0
-        and result.exception is not None
-        and not isinstance(result.exception, SystemExit)
-    ):
+    if expect_error:
+        assert isinstance(result.exception, AppError), (
+            f"Expected AppError, got {result.exception!r}.\n" f"Output: {result.output}"
+        )
+        return ErrorResult(exception=result.exception, output=result.output)
+
+    if result.exception is not None and not isinstance(result.exception, SystemExit):
         raise result.exception
 
-    assert result.exit_code == exit_code, (
-        f"Expected exit code {exit_code}, got {result.exit_code}.\n"
+    assert result.exit_code == 0, (
+        f"Expected exit code 0, got {result.exit_code}.\n"
         f"Output: {result.output}\n"
         f"Exception: {result.exception}"
     )

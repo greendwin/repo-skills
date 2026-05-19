@@ -1,7 +1,7 @@
 ---
 id: s05t02
 slug: migrate-all-error-sites-to
-status: pending
+status: done
 ---
 
 # Migrate all error sites to `AppError`

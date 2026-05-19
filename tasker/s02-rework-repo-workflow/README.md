@@ -1,7 +1,7 @@
 ---
 id: s02
 slug: rework-repo-workflow
-status: in-progress
+status: pending
 ---
 
 # Rework repo workflow
@@ -32,7 +32,7 @@ Rework the repo-skills CLI to support multiple source repos, multiple agent prov
 
 - [x] [s02t01](s02t01-remove-unused-commands.md): Remove unused commands
 - [x] [s02t02](s02t02-new-config-and-manifest-models.md): New config and manifest models
-- [~] [s02t03](s02t03-skills-source-init.md): **review** `skills source init`
+- [x] [s02t03](s02t03-skills-source-init.md): `skills source init`
 - [ ] [s02t04](s02t04-skills-source-list-skills-source.md): `skills source list` + `skills source remove`
 - [ ] [s02t05](s02t05-skills-provider-addlistremove.md): `skills provider add/list/remove`
 - [ ] [s02t06](s02t06-skills-install-reworked.md): `skills install` (reworked)
@@ -40,3 +40,4 @@ Rework the repo-skills CLI to support multiple source repos, multiple agent prov
 - [ ] [s02t08](s02t08-skills-update-reworked.md): `skills update` (reworked)
 - [ ] [s02t09](s02t09-skills-uninstall-reworked.md): `skills uninstall` (reworked)
 - [ ] [s02t10](s02t10-skills-merge-continue-abort.md): `skills merge` + `--continue` / `--abort`
+- [ ] [s02t11](s02t11-rename-installed-skills-on-source.md): Rename installed skills on source rename

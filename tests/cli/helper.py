@@ -98,6 +98,14 @@ def assert_invoke(
     return result
 
 
+def assert_words_in_message(output: str, *words: str) -> None:
+    lower = output.lower()
+    for word in words:
+        assert (
+            word.lower() in lower
+        ), f"Expected {word!r} in output (case-insensitive).\nOutput: {output}"
+
+
 def _skill_md(name: str, description: str | None) -> str:
     if description:
         return f"---\nname: {name}\ndescription: {description}\n---\n"

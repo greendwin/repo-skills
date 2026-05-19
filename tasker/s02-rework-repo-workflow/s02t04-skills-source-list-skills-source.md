@@ -1,7 +1,7 @@
 ---
 id: s02t04
 slug: skills-source-list-skills-source
-status: pending
+status: done
 ---
 
 # `skills source list` + `skills source remove`

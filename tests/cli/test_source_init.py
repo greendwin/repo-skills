@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from repo_skills._config import SkillEntry as ManifestSkillEntry
-from repo_skills._config import SkillManifest, SourceConfig, SourceRegistry
+from repo_skills.config import SkillEntry as ManifestSkillEntry
+from repo_skills.config import SkillManifest, SourceConfig, SourceRegistry
 from tests.cli.helper import (
     SOURCE_CONFIG_DIR,
     SOURCE_REPO_ROOT,
@@ -34,7 +34,7 @@ class TestSourceInitFreshRepo:
 
         gitignore = git_repo / ".repo-skills" / ".gitignore"
         assert gitignore.exists()
-        assert "source.json" in gitignore.read_text()
+        assert "*" in gitignore.read_text()
 
 
 class TestSourceInitPopulatedRepo:
@@ -77,6 +77,21 @@ class TestSourceInitIdempotent:
         result = assert_invoke("source", "init", "--name", "custom")
 
         assert_words_in_message(result.output, "already initialized", "custom")
+
+    def test_reinit_re_registers_removed_source(self) -> None:
+        assert_invoke("source", "init")
+
+        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / "sources.json")
+        registry.sources.pop("my-project", None)
+        registry.save(SOURCE_CONFIG_DIR / "sources.json")
+
+        result = assert_invoke("source", "init")
+
+        assert_words_in_message(result.output, "registered", "my-project")
+
+        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / "sources.json")
+        assert "my-project" in registry.sources
+        assert registry.sources["my-project"].path == str(SOURCE_REPO_ROOT)
 
 
 @pytest.mark.usefixtures("git_repo")

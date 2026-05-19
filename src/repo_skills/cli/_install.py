@@ -7,8 +7,8 @@ from typing import Annotated, Optional
 import typer
 from typer_di import Depends
 
-from repo_skills._git import GitRepo
 from repo_skills.errors import AppError
+from repo_skills.git import GitRepo
 from repo_skills.manifest import Manifest, SkillEntry
 
 from ._app import app

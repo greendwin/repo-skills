@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from repo_skills._config import (
+from repo_skills.config import (
     ProviderConfig,
     ProviderRegistry,
     SkillEntry,

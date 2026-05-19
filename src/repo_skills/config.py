@@ -7,6 +7,11 @@ from typing import Self, TypeAlias
 
 from pydantic import BaseModel
 
+REPO_SKILLS_DIR = ".repo-skills"
+SOURCE_CONFIG_FILE = "source.json"
+SOURCES_REGISTRY_FILE = "sources.json"
+SKILL_MANIFEST_FILE = "skill-manifest.json"
+
 
 def default_config_dir() -> Path:
     xdg = os.environ.get("XDG_CONFIG_HOME")

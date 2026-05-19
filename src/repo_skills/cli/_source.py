@@ -5,14 +5,18 @@ from pathlib import Path
 import typer
 from typer_di import TyperDI
 
-from repo_skills._config import (
+from repo_skills.config import (
+    REPO_SKILLS_DIR,
+    SKILL_MANIFEST_FILE,
+    SOURCE_CONFIG_FILE,
+    SOURCES_REGISTRY_FILE,
     SkillManifest,
     SourceConfig,
     SourceEntry,
     SourceRegistry,
     default_config_dir,
 )
-from repo_skills._discovery import detect_skills_dir, find_git_root
+from repo_skills.discovery import detect_skills_dir, find_git_root
 from repo_skills.errors import AppError
 
 from ._app import app
@@ -26,7 +30,7 @@ app.add_typer(source_app, name="source")
 
 
 def _has_installed_skills(source_name: str) -> bool:
-    manifest_path = default_config_dir() / "skill-manifest.json"
+    manifest_path = default_config_dir() / SKILL_MANIFEST_FILE
     manifest = SkillManifest.load(manifest_path)
     return any(e.source == source_name for e in manifest.skills.values())
 
@@ -38,23 +42,32 @@ def _handle_reinit(
 ) -> None:
     old_name = cfg.name
 
-    if name is None or name == old_name:
-        echo(f"Source [green]{old_name}[/green] already initialized.")
-        return
+    effective_name = name if name is not None else old_name
+    is_rename = effective_name != old_name
 
-    if _has_installed_skills(old_name):
-        raise AppError("Renaming installed skills is not yet supported.")
+    if is_rename:
+        if _has_installed_skills(old_name):
+            raise AppError("Renaming installed skills is not yet supported.")
 
-    cfg.name = name
-    cfg.save(git_root / ".repo-skills" / "source.json")
+        cfg.name = effective_name
+        cfg.save(git_root / REPO_SKILLS_DIR / SOURCE_CONFIG_FILE)
 
-    registry_path = default_config_dir() / "sources.json"
+    registry_path = default_config_dir() / SOURCES_REGISTRY_FILE
     registry = SourceRegistry.load(registry_path)
-    registry.sources.pop(old_name, None)
-    registry.sources[name] = SourceEntry(path=str(git_root))
+    was_registered = effective_name in registry.sources
+    if is_rename:
+        registry.sources.pop(old_name, None)
+    registry.sources[effective_name] = SourceEntry(path=str(git_root))
     registry.save(registry_path)
 
-    echo(f"Renamed source [cyan]{old_name}[/cyan] to [green]{name}[/green].")
+    if is_rename:
+        old = f"[cyan]{old_name}[/cyan]"
+        new = f"[green]{effective_name}[/green]"
+        echo(f"Renamed source {old} to {new}.")
+    elif not was_registered:
+        echo(f"Registered source [green]{old_name}[/green].")
+    else:
+        echo(f"Source [green]{old_name}[/green] already initialized.")
 
 
 @source_app.command(name="init", help="Initialize a skill source in the current repo.")
@@ -66,8 +79,8 @@ def source_init(
     if git_root is None:
         raise AppError("Not inside a git repository.")
 
-    repo_skills_dir = git_root / ".repo-skills"
-    source_json = repo_skills_dir / "source.json"
+    repo_skills_dir = git_root / REPO_SKILLS_DIR
+    source_json = repo_skills_dir / SOURCE_CONFIG_FILE
 
     if source_json.exists():
         cfg = SourceConfig.load(source_json)
@@ -89,11 +102,48 @@ def source_init(
     cfg.save(source_json)
 
     gitignore = repo_skills_dir / ".gitignore"
-    gitignore.write_text("source.json\n")
+    gitignore.write_text("*\n")
 
-    registry_path = default_config_dir() / "sources.json"
+    registry_path = default_config_dir() / SOURCES_REGISTRY_FILE
     registry = SourceRegistry.load(registry_path)
     registry.sources[source_name] = SourceEntry(path=str(git_root))
     registry.save(registry_path)
 
     echo(f"Initialized source [green]{source_name}[/green].")
+
+
+@source_app.command(name="list", help="List all registered sources.")
+def source_list() -> None:
+    registry_path = default_config_dir() / SOURCES_REGISTRY_FILE
+    registry = SourceRegistry.load(registry_path)
+
+    if not registry.sources:
+        echo("[dim]No sources registered.[/dim]")
+        return
+
+    echo("[yellow]Skills sources:[/yellow]")
+    width = max(len(n) for n in registry.sources)
+    width = max(width, 16)
+    for name, entry in registry.sources.items():
+        echo(f"* [green]{name:<{width}}[/green]  [dim white]{entry.path}[/dim white]")
+
+
+@source_app.command(name="remove", help="Remove a source from registry.")
+def source_remove(
+    name: str = typer.Argument(help="Name of the source to remove."),
+) -> None:
+    registry_path = default_config_dir() / SOURCES_REGISTRY_FILE
+    registry = SourceRegistry.load(registry_path)
+
+    if name not in registry.sources:
+        raise AppError(f"Source [cyan]{name}[/cyan] not found.")
+
+    if _has_installed_skills(name):
+        raise AppError("Cannot remove a source with installed skills.")
+
+    source_path = registry.sources[name].path
+
+    del registry.sources[name]
+    registry.save(registry_path)
+
+    echo(f"Removed source [green]{name}[/green] at [cyan]{source_path}[/cyan].")

@@ -19,6 +19,8 @@ class ErrorResult:
     output: str
 
 
+SOURCE_REPO_ROOT = Path("/repos/my-project")
+SOURCE_CONFIG_DIR = Path("/home/user/.config/repo-skills")
 REPO_SKILLS_DIR = Path("/repo/skills")
 INSTALL_DIR = Path("/home/user/.claude/skills")
 MANIFEST_PATH = INSTALL_DIR / ".skills-manifest.json"
@@ -113,9 +115,12 @@ def _skill_md(name: str, description: str | None) -> str:
 
 
 def create_repo_skill(
-    fs: FakeFilesystem, name: str, description: str | None = None
+    fs: FakeFilesystem,
+    name: str,
+    description: str | None = None,
+    root: Path = REPO_SKILLS_DIR,
 ) -> Path:
-    skill_dir = REPO_SKILLS_DIR / name
+    skill_dir = root / name
     fs.create_file(skill_dir / "SKILL.md", contents=_skill_md(name, description))
     return skill_dir
 

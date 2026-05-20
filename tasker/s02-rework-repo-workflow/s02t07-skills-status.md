@@ -1,7 +1,7 @@
 ---
 id: s02t07
 slug: skills-status
-status: pending
+status: in-review
 ---
 
 # `skills status`

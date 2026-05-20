@@ -7,21 +7,14 @@ from typing import Annotated, Optional
 import typer
 from typer_di import Depends
 
-from repo_skills.config import (
-    PROVIDERS_REGISTRY_FILE,
-    REPO_SKILLS_DIR,
-    SKILL_MANIFEST_FILE,
-    SOURCE_CONFIG_FILE,
-    SOURCES_REGISTRY_FILE,
-    ProviderRegistry,
-)
 from repo_skills.config import SkillEntry as ManifestSkillEntry
 from repo_skills.config import (
-    SkillManifest,
-    SourceConfig,
-    SourceRegistry,
     compute_file_hashes,
-    default_config_dir,
+    load_provider_registry,
+    load_skill_manifest,
+    load_source_config,
+    load_source_registry,
+    save_skill_manifest,
 )
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
@@ -53,11 +46,9 @@ def install(
         typer.Option("--force", help="Overwrite existing skill."),
     ] = False,
 ) -> None:
-    config_dir = default_config_dir()
+    source_name, source_path = _resolve_source(source)
 
-    source_name, source_path = _resolve_source(config_dir, source)
-
-    source_cfg = SourceConfig.load(source_path / REPO_SKILLS_DIR / SOURCE_CONFIG_FILE)
+    source_cfg = load_source_config(source_path)
     skills_dir = source_path / source_cfg.skills_dir
 
     git = resolve_git_repo(source_path)
@@ -74,9 +65,7 @@ def install(
 
     commit = _resolve_commit(git, name)
 
-    providers = ProviderRegistry.load(
-        config_dir / PROVIDERS_REGISTRY_FILE
-    ).with_builtins()
+    providers = load_provider_registry()
 
     for pname, pcfg in providers.providers.items():
         install_dir = Path(pcfg.install_dir).expanduser()
@@ -86,7 +75,6 @@ def install(
 
     _record_manifest(
         name,
-        config_dir=config_dir,
         source_name=source_name,
         commit=commit,
         skill_src=src,
@@ -117,19 +105,17 @@ def uninstall(
 def _record_manifest(
     name: str,
     *,
-    config_dir: Path,
     source_name: str,
     commit: str,
     skill_src: Path,
 ) -> None:
-    manifest_path = config_dir / SKILL_MANIFEST_FILE
-    manifest = SkillManifest.load(manifest_path)
+    manifest = load_skill_manifest()
     manifest.skills[name] = ManifestSkillEntry(
         source=source_name,
         commit=commit,
         files=compute_file_hashes(skill_src),
     )
-    manifest.save(manifest_path)
+    save_skill_manifest(manifest)
 
 
 def _copy_skill(
@@ -155,8 +141,8 @@ def _copy_skill(
     shutil.copytree(src, dst)
 
 
-def _resolve_source(config_dir: Path, source_name: str | None) -> tuple[str, Path]:
-    registry = SourceRegistry.load(config_dir / SOURCES_REGISTRY_FILE)
+def _resolve_source(source_name: str | None) -> tuple[str, Path]:
+    registry = load_source_registry()
 
     if not registry.sources:
         raise AppError(

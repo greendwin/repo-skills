@@ -7,14 +7,12 @@ from typer_di import TyperDI
 
 from repo_skills.config import (
     REPO_SKILLS_DIR,
-    SKILL_MANIFEST_FILE,
     SOURCE_CONFIG_FILE,
-    SOURCES_REGISTRY_FILE,
-    SkillManifest,
     SourceConfig,
     SourceEntry,
-    SourceRegistry,
-    default_config_dir,
+    load_skill_manifest,
+    load_source_registry,
+    save_source_registry,
 )
 from repo_skills.discovery import detect_skills_dir, find_git_root
 from repo_skills.errors import AppError
@@ -30,8 +28,7 @@ app.add_typer(source_app, name="source")
 
 
 def _has_installed_skills(source_name: str) -> bool:
-    manifest_path = default_config_dir() / SKILL_MANIFEST_FILE
-    manifest = SkillManifest.load(manifest_path)
+    manifest = load_skill_manifest()
     return any(e.source == source_name for e in manifest.skills.values())
 
 
@@ -52,13 +49,12 @@ def _handle_reinit(
         cfg.name = effective_name
         cfg.save(git_root / REPO_SKILLS_DIR / SOURCE_CONFIG_FILE)
 
-    registry_path = default_config_dir() / SOURCES_REGISTRY_FILE
-    registry = SourceRegistry.load(registry_path)
+    registry = load_source_registry()
     was_registered = effective_name in registry.sources
     if is_rename:
         registry.sources.pop(old_name, None)
     registry.sources[effective_name] = SourceEntry(path=str(git_root))
-    registry.save(registry_path)
+    save_source_registry(registry)
 
     if is_rename:
         old = f"[cyan]{old_name}[/cyan]"
@@ -104,18 +100,16 @@ def source_init(
     gitignore = repo_skills_dir / ".gitignore"
     gitignore.write_text("*\n")
 
-    registry_path = default_config_dir() / SOURCES_REGISTRY_FILE
-    registry = SourceRegistry.load(registry_path)
+    registry = load_source_registry()
     registry.sources[source_name] = SourceEntry(path=str(git_root))
-    registry.save(registry_path)
+    save_source_registry(registry)
 
     echo(f"Initialized source [green]{source_name}[/green].")
 
 
 @source_app.command(name="list", help="List all registered sources.")
 def source_list() -> None:
-    registry_path = default_config_dir() / SOURCES_REGISTRY_FILE
-    registry = SourceRegistry.load(registry_path)
+    registry = load_source_registry()
 
     if not registry.sources:
         echo("[dim]No sources registered.[/dim]")
@@ -132,8 +126,7 @@ def source_list() -> None:
 def source_remove(
     name: str = typer.Argument(help="Name of the source to remove."),
 ) -> None:
-    registry_path = default_config_dir() / SOURCES_REGISTRY_FILE
-    registry = SourceRegistry.load(registry_path)
+    registry = load_source_registry()
 
     if name not in registry.sources:
         raise AppError(f"Source [cyan]{name}[/cyan] not found.")
@@ -144,6 +137,6 @@ def source_remove(
     source_path = registry.sources[name].path
 
     del registry.sources[name]
-    registry.save(registry_path)
+    save_source_registry(registry)
 
     echo(f"Removed source [green]{name}[/green] at [cyan]{source_path}[/cyan].")

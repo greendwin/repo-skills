@@ -98,3 +98,34 @@ class SkillEntry(BaseModel):
 
 class SkillManifest(_Saveable):
     skills: dict[str, SkillEntry] = {}
+
+
+def load_source_config(repo_root: Path) -> SourceConfig:
+    return SourceConfig.load(repo_root / REPO_SKILLS_DIR / SOURCE_CONFIG_FILE)
+
+
+def load_source_registry() -> SourceRegistry:
+    return SourceRegistry.load(default_config_dir() / SOURCES_REGISTRY_FILE)
+
+
+def save_source_registry(registry: SourceRegistry) -> None:
+    registry.save(default_config_dir() / SOURCES_REGISTRY_FILE)
+
+
+def load_provider_registry(*, with_builtins: bool = True) -> ProviderRegistry:
+    registry = ProviderRegistry.load(default_config_dir() / PROVIDERS_REGISTRY_FILE)
+    if with_builtins:
+        return registry.with_builtins()
+    return registry
+
+
+def save_provider_registry(registry: ProviderRegistry) -> None:
+    registry.save(default_config_dir() / PROVIDERS_REGISTRY_FILE)
+
+
+def load_skill_manifest() -> SkillManifest:
+    return SkillManifest.load(default_config_dir() / SKILL_MANIFEST_FILE)
+
+
+def save_skill_manifest(manifest: SkillManifest) -> None:
+    manifest.save(default_config_dir() / SKILL_MANIFEST_FILE)

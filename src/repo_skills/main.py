@@ -7,5 +7,5 @@ from repo_skills.errors import error_handler
 
 
 def main() -> None:
-    with error_handler(Console()):
+    with error_handler(Console(highlight=False)):
         app()

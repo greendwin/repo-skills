@@ -3,7 +3,18 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from rich.markup import escape
+
+from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
+
+
+def _git_error(args: tuple[str, ...], output: str) -> AppError:
+    cmd = " ".join(["git", *args])
+    msg = f"git command failed: [cyan]{cmd}[/cyan]"
+    if output:
+        msg += f"\n[dim]{escape(output)}[/dim]"
+    return AppError(msg)
 
 
 class RealGitRepo:
@@ -11,14 +22,31 @@ class RealGitRepo:
         self._path = repo_path
 
     def _run(self, *args: str) -> str:
-        result = subprocess.run(
-            ["git", *args],
-            cwd=self._path,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        try:
+            result = subprocess.run(
+                ["git", *args],
+                cwd=self._path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            output = (exc.stderr or exc.stdout or "").strip()
+            raise _git_error(args, output) from exc
         return result.stdout.strip()
+
+    def _run_bytes(self, *args: str) -> bytes:
+        try:
+            result = subprocess.run(
+                ["git", *args],
+                cwd=self._path,
+                capture_output=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            stderr = exc.stderr.decode(errors="replace").strip() if exc.stderr else ""
+            raise _git_error(args, stderr) from exc
+        return result.stdout
 
     def pull(self) -> None:
         self._run("pull")
@@ -27,7 +55,7 @@ class RealGitRepo:
         try:
             ref = self._run("symbolic-ref", "refs/remotes/origin/HEAD")
             return ref.removeprefix("refs/remotes/origin/")
-        except subprocess.CalledProcessError:
+        except AppError:
             return "main"
 
     def current_branch(self) -> str:
@@ -53,12 +81,7 @@ class RealGitRepo:
             if not local_file.exists():
                 return False
 
-            committed_content = subprocess.run(
-                ["git", "show", f"{commit}:{rel_path}"],
-                cwd=self._path,
-                capture_output=True,
-                check=True,
-            ).stdout
+            committed_content = self._run_bytes("show", f"{commit}:{rel_path}")
             if local_file.read_bytes() != committed_content:
                 return False
 

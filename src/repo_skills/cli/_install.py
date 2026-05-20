@@ -7,61 +7,92 @@ from typing import Annotated, Optional
 import typer
 from typer_di import Depends
 
+from repo_skills.config import (
+    PROVIDERS_REGISTRY_FILE,
+    REPO_SKILLS_DIR,
+    SKILL_MANIFEST_FILE,
+    SOURCE_CONFIG_FILE,
+    SOURCES_REGISTRY_FILE,
+    ProviderRegistry,
+)
+from repo_skills.config import SkillEntry as ManifestSkillEntry
+from repo_skills.config import (
+    SkillManifest,
+    SourceConfig,
+    SourceRegistry,
+    compute_file_hashes,
+    default_config_dir,
+)
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
-from repo_skills.manifest import Manifest, SkillEntry
+from repo_skills.manifest import Manifest
 
 from ._app import app
 from ._deps import (
     resolve_git_repo,
     resolve_install_dir,
-    resolve_install_dir_opt,
     resolve_manifest_path,
-    resolve_repo_dir,
 )
+from ._utils import echo
 
 
-@app.command(help="Install a skill from the repo.")
+@app.command(help="Install a skill from a source.")
 def install(
     *,
     name: str,
+    source: Annotated[
+        Optional[str],
+        typer.Option("--source", help="Source name (required when multiple)."),
+    ] = None,
     offline: Annotated[
         bool,
         typer.Option("--offline", help="Skip git pull."),
     ] = False,
-    repo_dir: Path = Depends(resolve_repo_dir),
-    install_dir: Optional[Path] = Depends(resolve_install_dir_opt),
-    manifest_path: Path = Depends(resolve_manifest_path),
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Overwrite existing skill."),
+    ] = False,
 ) -> None:
-    git = resolve_git_repo(repo_dir.parent)
+    config_dir = default_config_dir()
 
+    source_name, source_path = _resolve_source(config_dir, source)
+
+    source_cfg = SourceConfig.load(source_path / REPO_SKILLS_DIR / SOURCE_CONFIG_FILE)
+    skills_dir = source_path / source_cfg.skills_dir
+
+    git = resolve_git_repo(source_path)
     if not offline:
         git.pull()
-
     _validate_repo(git)
 
-    src = repo_dir / name
+    src = skills_dir / name
     if not src.is_dir():
-        raise AppError(f"Skill '{name}' not found in repo.")
-
-    if install_dir is None:
-        install_dir = manifest_path.parent
-    install_dir.mkdir(parents=True, exist_ok=True)
-
-    dst = install_dir / name
-    if dst.exists():
-        raise AppError(f"Skill '{name}' is already installed.")
+        raise AppError(
+            f"Skill [cyan]{name}[/cyan] not found in source "
+            f"[cyan]{source_name}[/cyan]."
+        )
 
     commit = _resolve_commit(git, name)
 
-    shutil.copytree(src, dst)
+    providers = ProviderRegistry.load(
+        config_dir / PROVIDERS_REGISTRY_FILE
+    ).with_builtins()
 
-    manifest = Manifest.load(manifest_path)
-    manifest.repo_path = str(repo_dir.parent)
-    manifest.skills[name] = SkillEntry(commit=commit)
-    manifest.save(manifest_path)
+    for pname, pcfg in providers.providers.items():
+        install_dir = Path(pcfg.install_dir).expanduser()
+        _copy_skill(
+            src, name, install_dir=install_dir, provider_name=pname, force=force
+        )
 
-    typer.echo(f"Installed '{name}'.")
+    _record_manifest(
+        name,
+        config_dir=config_dir,
+        source_name=source_name,
+        commit=commit,
+        skill_src=src,
+    )
+
+    echo(f"Installed [green]{name}[/green] from [cyan]{source_name}[/cyan].")
 
 
 @app.command(help="Uninstall a skill.")
@@ -81,6 +112,71 @@ def uninstall(
     manifest.save(manifest_path)
 
     typer.echo(f"Uninstalled '{name}'.")
+
+
+def _record_manifest(
+    name: str,
+    *,
+    config_dir: Path,
+    source_name: str,
+    commit: str,
+    skill_src: Path,
+) -> None:
+    manifest_path = config_dir / SKILL_MANIFEST_FILE
+    manifest = SkillManifest.load(manifest_path)
+    manifest.skills[name] = ManifestSkillEntry(
+        source=source_name,
+        commit=commit,
+        files=compute_file_hashes(skill_src),
+    )
+    manifest.save(manifest_path)
+
+
+def _copy_skill(
+    src: Path,
+    name: str,
+    *,
+    install_dir: Path,
+    provider_name: str,
+    force: bool,
+) -> None:
+    dst = install_dir / name
+
+    if dst.exists() and not force:
+        raise AppError(
+            f"Skill [cyan]{name}[/cyan] already exists at provider "
+            f"[cyan]{provider_name}[/cyan]. Use [bold]--force[/bold] to overwrite."
+        )
+
+    if dst.exists():
+        shutil.rmtree(dst)
+
+    install_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dst)
+
+
+def _resolve_source(config_dir: Path, source_name: str | None) -> tuple[str, Path]:
+    registry = SourceRegistry.load(config_dir / SOURCES_REGISTRY_FILE)
+
+    if not registry.sources:
+        raise AppError(
+            "No sources registered. Run [bold]skills source init[/bold] first."
+        )
+
+    if source_name is not None:
+        if source_name not in registry.sources:
+            raise AppError(f"Source [cyan]{source_name}[/cyan] not found.")
+        return source_name, Path(registry.sources[source_name].path)
+
+    if len(registry.sources) == 1:
+        name = next(iter(registry.sources))
+        return name, Path(registry.sources[name].path)
+
+    names = ", ".join(sorted(registry.sources.keys()))
+    raise AppError(
+        f"Multiple sources registered ({names}). "
+        f"Use [bold]--source[/bold] to specify."
+    )
 
 
 def _validate_repo(git: GitRepo) -> None:

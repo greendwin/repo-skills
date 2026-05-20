@@ -10,6 +10,7 @@ from tests.cli.helper import SOURCE_REPO_ROOT
 
 @pytest.fixture()
 def git_repo(fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("HOME", "/home/user")
     monkeypatch.setenv("XDG_CONFIG_HOME", "/home/user/.config")
     fs.create_dir(SOURCE_REPO_ROOT / ".git")
     monkeypatch.chdir(SOURCE_REPO_ROOT)

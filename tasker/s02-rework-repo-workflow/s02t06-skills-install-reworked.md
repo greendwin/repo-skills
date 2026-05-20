@@ -1,7 +1,7 @@
 ---
 id: s02t06
 slug: skills-install-reworked
-status: pending
+status: done
 ---
 
 # `skills install` (reworked)

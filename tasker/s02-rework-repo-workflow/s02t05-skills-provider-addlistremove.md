@@ -1,7 +1,7 @@
 ---
 id: s02t05
 slug: skills-provider-addlistremove
-status: pending
+status: done
 ---
 
 # `skills provider add/list/remove`

@@ -11,6 +11,10 @@ REPO_SKILLS_DIR = ".repo-skills"
 SOURCE_CONFIG_FILE = "source.json"
 SOURCES_REGISTRY_FILE = "sources.json"
 SKILL_MANIFEST_FILE = "skill-manifest.json"
+PROVIDERS_REGISTRY_FILE = "providers.json"
+
+BUILTIN_PROVIDER_NAME = "claude"
+BUILTIN_PROVIDER_INSTALL_DIR = "~/.claude/skills"
 
 
 def default_config_dir() -> Path:
@@ -64,6 +68,18 @@ class ProviderConfig(BaseModel):
 
 class ProviderRegistry(_Saveable):
     providers: dict[str, ProviderConfig] = {}
+
+    def with_builtins(self) -> ProviderRegistry:
+        if BUILTIN_PROVIDER_NAME not in self.providers:
+            merged = {
+                BUILTIN_PROVIDER_NAME: ProviderConfig(
+                    name=BUILTIN_PROVIDER_NAME,
+                    install_dir=BUILTIN_PROVIDER_INSTALL_DIR,
+                ),
+                **self.providers,
+            }
+            return ProviderRegistry(providers=merged)
+        return self
 
 
 class SourceEntry(BaseModel):

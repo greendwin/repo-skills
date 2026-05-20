@@ -184,12 +184,14 @@ def _validate_repo(git: GitRepo, *, any_branch: bool = False) -> None:
     current = git.current_branch()
     if current != main and not any_branch:
         raise AppError(
-            f"Not on main branch (on '{current}', expected '{main}').\n"
-            f"Use [bold]--any-branch[/bold] to override."
+            f"Not on main branch (on '{current}', expected '{main}'), use [bold]--any-branch[/bold] to override.\n"
+            f"  repo: [cyan]{git.path}[/cyan]\n"
         )
 
     if not git.is_clean():
-        raise AppError("Repo has uncommitted changes.")
+        raise AppError(
+            f"Repo has uncommitted changes.\n  repo: [cyan]{git.path}[/cyan]"
+        )
 
 
 def _resolve_commit(git: GitRepo, skill_name: str) -> str:

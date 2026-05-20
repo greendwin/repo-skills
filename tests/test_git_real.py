@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from repo_skills.errors import AppError
 from repo_skills.git_real import RealGitRepo
 
 
@@ -93,6 +94,37 @@ def test_pull_fetches_new_commits(tmp_path: Path) -> None:
     git.pull()
 
     assert (clone / "f.txt").read_text() == "updated"
+
+
+def test_pull_falls_back_when_no_tracking(tmp_path: Path) -> None:
+    origin = tmp_path / "origin"
+    clone = tmp_path / "clone"
+
+    _git(tmp_path, "init", str(origin))
+    _git(origin, "config", "user.email", "test@test.com")
+    _git(origin, "config", "user.name", "Test")
+    _git(origin, "checkout", "-b", "main")
+    (origin / "f.txt").write_text("x")
+    _git(origin, "add", ".")
+    _git(origin, "commit", "-m", "first")
+
+    _git(tmp_path, "clone", str(origin), str(clone))
+    _git(clone, "branch", "--unset-upstream")
+
+    (origin / "f.txt").write_text("updated")
+    _git(origin, "add", ".")
+    _git(origin, "commit", "-m", "second")
+
+    git = RealGitRepo(clone)
+    git.pull()
+
+    assert (clone / "f.txt").read_text() == "updated"
+
+
+def test_git_error_includes_repo_path(repo: Path) -> None:
+    git = RealGitRepo(repo)
+    with pytest.raises(AppError, match=str(repo)):
+        git._run("log", "--bad-flag")
 
 
 def test_get_skill_commit(repo: Path) -> None:

@@ -28,6 +28,7 @@ MANIFEST_PATH = INSTALL_DIR / ".skills-manifest.json"
 
 @dataclass
 class FakeGitRepo:
+    path: Path = Path("/repos/my-project")
     main_branch: str = "main"
     branch: str = "main"
     clean: bool = True

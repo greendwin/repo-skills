@@ -9,9 +9,23 @@ from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
 
 
-def _git_error(args: tuple[str, ...], output: str) -> AppError:
+def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> AppError:
     cmd = " ".join(["git", *args])
     msg = f"git command failed: [cyan]{cmd}[/cyan]"
+    msg += f"\n  repo: [cyan]{repo_path}[/cyan]"
+    try:
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        if branch:
+            msg += f"\n  branch: [cyan]{branch}[/cyan]"
+    except subprocess.CalledProcessError:
+        pass
+
     if output:
         msg += f"\n[dim]{escape(output)}[/dim]"
     return AppError(msg)
@@ -20,6 +34,10 @@ def _git_error(args: tuple[str, ...], output: str) -> AppError:
 class RealGitRepo:
     def __init__(self, repo_path: Path) -> None:
         self._path = repo_path
+
+    @property
+    def path(self) -> Path:
+        return self._path
 
     def _run(self, *args: str) -> str:
         try:
@@ -32,7 +50,8 @@ class RealGitRepo:
             )
         except subprocess.CalledProcessError as exc:
             output = (exc.stderr or exc.stdout or "").strip()
-            raise _git_error(args, output) from exc
+            raise _git_error(args, output, self._path) from exc
+
         return result.stdout.strip()
 
     def _run_bytes(self, *args: str) -> bytes:
@@ -45,11 +64,18 @@ class RealGitRepo:
             )
         except subprocess.CalledProcessError as exc:
             stderr = exc.stderr.decode(errors="replace").strip() if exc.stderr else ""
-            raise _git_error(args, stderr) from exc
+            raise _git_error(args, stderr, self._path) from exc
+
         return result.stdout
 
     def pull(self) -> None:
-        self._run("pull")
+        try:
+            self._run("pull")
+        except AppError as exc:
+            if "no tracking information" not in exc.message:
+                raise
+            branch = self.current_branch()
+            self._run("pull", "origin", branch)
 
     def get_main_branch(self) -> str:
         try:

@@ -1,7 +1,7 @@
 ---
 id: s02t08
 slug: skills-update-reworked
-status: in-review
+status: done
 ---
 
 # `skills update` (reworked)

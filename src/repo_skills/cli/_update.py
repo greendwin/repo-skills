@@ -1,35 +1,29 @@
 from __future__ import annotations
 
-import os
 import shutil
-from enum import Enum
 from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
-from typer_di import Depends
 
+from repo_skills.config import (
+    SkillEntry,
+    compute_file_hashes,
+    load_provider_registry,
+    load_skill_manifest,
+    load_source_config,
+    load_source_registry,
+    save_skill_manifest,
+)
 from repo_skills.errors import AppError
-from repo_skills.manifest import Manifest, SkillEntry
 
 from ._app import app
-from ._deps import (
-    resolve_git_repo,
-    resolve_install_dir,
-    resolve_manifest_path,
-    resolve_repo_dir,
-)
+from ._deps import resolve_git_repo
 from ._install import _validate_repo
+from ._utils import echo
 
 
-class UpdateStatus(Enum):
-    UPDATED = "updated"
-    UP_TO_DATE = "up-to-date"
-    CONFLICT = "conflict"
-    ERROR = "error"
-
-
-@app.command(help="Update installed skills from the repo.")
+@app.command(help="Update installed skills from sources.")
 def update(
     *,
     name: Annotated[
@@ -40,139 +34,94 @@ def update(
         bool,
         typer.Option("--offline", help="Skip git pull."),
     ] = False,
-    repo_dir: Path = Depends(resolve_repo_dir),
-    install_dir: Path = Depends(resolve_install_dir),
-    manifest_path: Path = Depends(resolve_manifest_path),
 ) -> None:
-    git = resolve_git_repo(repo_dir.parent)
+    sources = load_source_registry()
+    providers = load_provider_registry()
+    manifest = load_skill_manifest()
 
-    if not offline:
-        git.pull()
+    if not manifest.skills:
+        echo("[dim]No skills installed.[/dim]")
+        return
 
-    _validate_repo(git)
+    if name and name not in manifest.skills:
+        raise AppError(f"Skill [cyan]{name}[/cyan] is not installed.")
 
-    manifest = Manifest.load(manifest_path)
+    for sentry in sources.sources.values():
+        source_path = Path(sentry.path)
+        git = resolve_git_repo(source_path)
+        if not offline:
+            git.pull()
+        _validate_repo(git)
 
-    names = _collect_skills(
-        selected_skill=name, manifest=manifest, install_dir=install_dir
-    )
+    skills_to_update = {name: manifest.skills[name]} if name else dict(manifest.skills)
 
-    results: list[tuple[str, UpdateStatus]] = []
+    results: list[tuple[str, str]] = []
 
-    for skill_name in names:
-        dst = install_dir / skill_name
-        if skill_name not in manifest.skills and not dst.exists():
-            raise AppError(f"Skill '{skill_name}' is not installed.")
+    for skill_name, entry in skills_to_update.items():
+        source_entry = sources.sources.get(entry.source)
+        if source_entry is None:
+            results.append((skill_name, "error"))
+            continue
 
-        src = repo_dir / skill_name
+        source_path = Path(source_entry.path)
+        source_cfg = load_source_config(source_path)
+        src = source_path / source_cfg.skills_dir / skill_name
 
         if not src.is_dir():
-            raise AppError(f"Skill '{skill_name}' not found in repo.")
-
-        commit = git.get_skill_commit(skill_name)
-        if not git.verify_commit_content(commit, skill_name):
-            results.append((skill_name, UpdateStatus.ERROR))
+            results.append((skill_name, "error"))
             continue
 
-        entry = manifest.skills.get(skill_name, SkillEntry())
-        if entry.commit == commit:
-            results.append((skill_name, UpdateStatus.UP_TO_DATE))
-            continue
+        source_hashes = compute_file_hashes(src)
+        updated_any = False
+        skipped_any = False
 
-        if dst.exists() and not _has_conflict(src, dst):
-            manifest.skills[skill_name] = SkillEntry(commit=commit)
-            results.append((skill_name, UpdateStatus.UP_TO_DATE))
-            continue
+        for _pname, pcfg in providers.providers.items():
+            install_dir = Path(pcfg.install_dir).expanduser()
+            dst = install_dir / skill_name
 
-        if dst.exists() and _has_conflict(src, dst):
-            results.append((skill_name, UpdateStatus.CONFLICT))
-            continue
+            if not dst.exists():
+                install_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(src, dst)
+                updated_any = True
+                continue
 
-        shutil.copytree(src, dst)
+            current_hashes = compute_file_hashes(dst)
 
-        manifest.skills[skill_name] = SkillEntry(commit=commit)
-        results.append((skill_name, UpdateStatus.UPDATED))
+            if current_hashes == source_hashes:
+                continue
 
-    manifest.save(manifest_path)
+            if current_hashes != entry.files:
+                skipped_any = True
+                continue
+
+            shutil.rmtree(dst)
+            shutil.copytree(src, dst)
+            updated_any = True
+
+        if skipped_any and not updated_any:
+            results.append((skill_name, "skipped"))
+        elif updated_any:
+            results.append((skill_name, "updated"))
+        else:
+            results.append((skill_name, "up-to-date"))
+
+        manifest.skills[skill_name] = SkillEntry(
+            source=entry.source,
+            commit=entry.commit,
+            files=source_hashes,
+        )
+
+    save_skill_manifest(manifest)
     _print_report(results)
 
 
-def _collect_skills(
-    *, install_dir: Path, selected_skill: str | None, manifest: Manifest
-) -> list[str]:
-    if selected_skill:
-        return [selected_skill]
-
-    on_disk = set()
-
-    if install_dir.exists():
-        on_disk = {
-            d.name
-            for d in install_dir.iterdir()
-            if d.is_dir() and not d.name.startswith(".")
-        }
-
-    return sorted(on_disk | set(manifest.skills.keys()))
-
-
-_STATUS_LABELS = {
-    UpdateStatus.UPDATED: "Updated",
-    UpdateStatus.UP_TO_DATE: "Up to date",
-    UpdateStatus.CONFLICT: "Skipped",
-    UpdateStatus.ERROR: "Skipped",
-}
-
-_STATUS_DETAIL = {
-    UpdateStatus.CONFLICT: "conflict: local changes",
-    UpdateStatus.ERROR: "error: commit content mismatch",
-}
-
-
-def _print_report(results: list[tuple[str, UpdateStatus]]) -> None:
+def _print_report(results: list[tuple[str, str]]) -> None:
     for skill_name, status in results:
-        label = _STATUS_LABELS[status]
-        detail = _STATUS_DETAIL.get(status)
-        if detail:
-            typer.echo(f"  {label} '{skill_name}': {detail}")
+        if status == "updated":
+            echo(f"  [green]{skill_name}[/green]  updated")
+        elif status == "skipped":
+            echo(f"  [yellow]{skill_name}[/yellow]  skipped (modified)")
+        elif status == "error":
+            echo(f"  [red]{skill_name}[/red]  error")
         else:
-            typer.echo(f"  {label} '{skill_name}'")
-
-    counts = {s: sum(1 for _, st in results if st == s) for s in UpdateStatus}
-
-    parts = []
-    if counts[UpdateStatus.UPDATED]:
-        parts.append(f"{counts[UpdateStatus.UPDATED]} updated")
-    if counts[UpdateStatus.UP_TO_DATE]:
-        parts.append(f"{counts[UpdateStatus.UP_TO_DATE]} up to date")
-    if counts[UpdateStatus.CONFLICT]:
-        parts.append(f"{counts[UpdateStatus.CONFLICT]} conflict")
-    if counts[UpdateStatus.ERROR]:
-        parts.append(f"{counts[UpdateStatus.ERROR]} error")
-
-    if parts:
-        typer.echo(", ".join(parts))
-
-
-def _has_conflict(src: Path, dst: Path) -> bool:
-    src_files = _collect_files(src)
-    dst_files = _collect_files(dst)
-
-    if set(src_files.keys()) != set(dst_files.keys()):
-        return True
-
-    for rel_path, src_content in src_files.items():
-        if dst_files[rel_path] != src_content:
-            return True
-
-    return False
-
-
-def _collect_files(root: Path) -> dict[str, bytes]:
-    result: dict[str, bytes] = {}
-    for dirpath, _, filenames in os.walk(root):
-        for fname in filenames:
-            full = Path(dirpath) / fname
-            rel = str(full.relative_to(root))
-            with full.open("rb") as f:
-                result[rel] = f.read()
-    return result
+            echo(f"  [dim]{skill_name}[/dim]  up to date")

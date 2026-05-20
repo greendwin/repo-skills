@@ -10,6 +10,7 @@ from typer_di import Depends
 from repo_skills.config import SkillEntry as ManifestSkillEntry
 from repo_skills.config import (
     compute_file_hashes,
+    list_source_skills,
     load_provider_registry,
     load_skill_manifest,
     load_source_config,
@@ -46,7 +47,7 @@ def install(
         typer.Option("--force", help="Overwrite existing skill."),
     ] = False,
 ) -> None:
-    source_name, source_path = _resolve_source(source)
+    source_name, source_path = _resolve_source(source, skill_name=name)
 
     source_cfg = load_source_config(source_path)
     skills_dir = source_path / source_cfg.skills_dir
@@ -141,7 +142,7 @@ def _copy_skill(
     shutil.copytree(src, dst)
 
 
-def _resolve_source(source_name: str | None) -> tuple[str, Path]:
+def _resolve_source(source_name: str | None, *, skill_name: str) -> tuple[str, Path]:
     registry = load_source_registry()
 
     if not registry.sources:
@@ -157,6 +158,15 @@ def _resolve_source(source_name: str | None) -> tuple[str, Path]:
     if len(registry.sources) == 1:
         name = next(iter(registry.sources))
         return name, Path(registry.sources[name].path)
+
+    matches = [
+        sn
+        for sn, se in registry.sources.items()
+        if skill_name in list_source_skills(Path(se.path))
+    ]
+
+    if len(matches) == 1:
+        return matches[0], Path(registry.sources[matches[0]].path)
 
     names = ", ".join(sorted(registry.sources.keys()))
     raise AppError(

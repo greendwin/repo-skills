@@ -115,11 +115,11 @@ def source_list() -> None:
         echo("[dim]No sources registered.[/dim]")
         return
 
-    echo("[yellow]Skills sources:[/yellow]")
+    echo("[yellow]Skill sources[/yellow]")
     width = max(len(n) for n in registry.sources)
     width = max(width, 16)
     for name, entry in registry.sources.items():
-        echo(f"* [green]{name:<{width}}[/green]  [dim white]{entry.path}[/dim white]")
+        echo(f"  [white]{name:<{width}}[/white]  [cyan]{entry.path}[/cyan]")
 
 
 @source_app.command(name="remove", help="Remove a source from registry.")

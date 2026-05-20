@@ -9,3 +9,6 @@
 | **Provider** | An agent platform (e.g. Claude) with a known skills install directory. Providers are registered globally in `~/.config/repo-skills/providers.json`. Claude is the built-in default. |
 | **Installed copy** | A skill directory inside a provider's install path. Editable by the user — edits are merged back to the source via `skills merge`. |
 | **Baseline hashes** | Per-file content hashes stored in the manifest at install/update time. Used to detect whether an installed copy has been modified without needing access to the source repo. |
+| **Available skill** | A skill present in a registered source but not yet installed (not in the manifest). Shown by `skills status` so the user knows what can be installed. |
+| **Orphan skill** | A directory inside a provider's install path that is not tracked in the manifest and does not match any skill in a registered source. Likely placed there manually. |
+| **Mergeable skill** | A directory inside a provider's install path that is not tracked in the manifest but matches a skill name in a registered source. Can be brought under management via `skills install --force`. |

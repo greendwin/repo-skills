@@ -1,7 +1,7 @@
 ---
 id: s02t07
 slug: skills-status
-status: in-review
+status: done
 ---
 
 # `skills status`

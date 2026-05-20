@@ -8,12 +8,17 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
     PROVIDERS_REGISTRY_FILE,
+)
+from repo_skills.config import REPO_SKILLS_DIR as REPO_SKILLS_DIR_NAME
+from repo_skills.config import (
     SKILL_MANIFEST_FILE,
+    SOURCE_CONFIG_FILE,
     SOURCES_REGISTRY_FILE,
     ProviderConfig,
     ProviderRegistry,
     SkillEntry,
     SkillManifest,
+    SourceConfig,
     SourceEntry,
     SourceRegistry,
     compute_file_hashes,
@@ -21,6 +26,7 @@ from repo_skills.config import (
 from tests.cli.helper import (
     INSTALL_DIR,
     SOURCE_CONFIG_DIR,
+    SOURCE_REPO_ROOT,
     FakeGitRepo,
     assert_invoke,
     assert_words_in_message,
@@ -167,11 +173,98 @@ class TestStatusMultiProvider:
         assert_words_in_message(result.output, "cursor", "synced")
 
 
+def _create_source_skill(
+    fs: FakeFilesystem, name: str, git_root: Path = SOURCE_REPO_ROOT
+) -> None:
+    source_cfg = SourceConfig.load(git_root / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE)
+    skill_dir = git_root / source_cfg.skills_dir / name
+    fs.create_file(skill_dir / "SKILL.md", contents=f"# {name}")
+
+
+def _init_source_config(
+    fs: FakeFilesystem, git_root: Path = SOURCE_REPO_ROOT, skills_dir: str = "skills"
+) -> None:
+    cfg = SourceConfig(name=git_root.name, skills_dir=skills_dir)
+    cfg.save(git_root / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE)
+
+
+class TestStatusAvailable:
+    def test_shows_available_skill(self, fs: FakeFilesystem, git_repo: Path) -> None:
+        _register_source(fs, git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "review", git_repo)
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "my-project", "review", "available")
+
+
+class TestStatusAvailableExcludesInstalled:
+    def test_installed_skill_not_shown_as_available(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        _register_source(fs, git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "tdd", git_repo)
+        hashes = _install_skill(fs, "tdd")
+        _save_manifest(
+            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+        )
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "tdd", "synced")
+        assert "available" not in result.output.lower()
+
+
 class TestStatusEmpty:
     def test_shows_no_skills_message(self, fs: FakeFilesystem, git_repo: Path) -> None:
         result = assert_invoke("status")
 
-        assert_words_in_message(result.output, "no skills installed")
+        assert_words_in_message(result.output, "no skills found")
+
+
+class TestStatusSourceNotFound:
+    def test_shows_warning_for_missing_source_repo(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        registry = SourceRegistry(
+            sources={"gone-project": SourceEntry(path="/repos/gone-project")}
+        )
+        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "gone-project", "source not found")
+
+
+class TestStatusOrphan:
+    def test_shows_orphan_for_untracked_skill(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        _register_source(fs, git_repo)
+        _init_source_config(fs, git_repo)
+        fs.create_file(INSTALL_DIR / "mystery" / "SKILL.md", contents="# mystery")
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "untracked", "mystery", "orphan")
+
+
+class TestStatusMergeable:
+    def test_shows_mergeable_when_source_match(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        _register_source(fs, git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "review", git_repo)
+        fs.create_file(INSTALL_DIR / "review" / "SKILL.md", contents="# review local")
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(
+            result.output, "untracked", "review", "mergeable", "my-project"
+        )
 
 
 class TestStatusSync:

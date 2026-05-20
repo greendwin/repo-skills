@@ -100,6 +100,18 @@ class SkillManifest(_Saveable):
     skills: dict[str, SkillEntry] = {}
 
 
+def list_source_skills(source_path: Path) -> list[str]:
+    cfg = SourceConfig.load(source_path / REPO_SKILLS_DIR / SOURCE_CONFIG_FILE)
+    skills_dir = source_path / cfg.skills_dir
+    if not skills_dir.is_dir():
+        return []
+    result: list[str] = []
+    for dirpath, _, filenames in os.walk(skills_dir):
+        if "SKILL.md" in filenames:
+            result.append(Path(dirpath).name)
+    return sorted(result)
+
+
 def load_source_config(repo_root: Path) -> SourceConfig:
     return SourceConfig.load(repo_root / REPO_SKILLS_DIR / SOURCE_CONFIG_FILE)
 

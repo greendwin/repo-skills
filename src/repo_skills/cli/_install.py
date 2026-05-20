@@ -46,6 +46,10 @@ def install(
         bool,
         typer.Option("--force", help="Overwrite existing skill."),
     ] = False,
+    any_branch: Annotated[
+        bool,
+        typer.Option("--any-branch", help="Allow install from any branch."),
+    ] = False,
 ) -> None:
     source_name, source_path = _resolve_source(source, skill_name=name)
 
@@ -55,7 +59,7 @@ def install(
     git = resolve_git_repo(source_path)
     if not offline:
         git.pull()
-    _validate_repo(git)
+    _validate_repo(git, any_branch=any_branch)
 
     src = skills_dir / name
     if not src.is_dir():
@@ -92,7 +96,7 @@ def uninstall(
 ) -> None:
     dst = install_dir / name
     if not dst.exists():
-        raise AppError(f"Skill '{name}' is not installed.")
+        raise AppError(f"Skill [cyan]{name}[/cyan] is not installed.")
 
     shutil.rmtree(dst)
 
@@ -132,7 +136,7 @@ def _copy_skill(
     if dst.exists() and not force:
         raise AppError(
             f"Skill [cyan]{name}[/cyan] already exists at provider "
-            f"[cyan]{provider_name}[/cyan]. Use [bold]--force[/bold] to overwrite."
+            f"[cyan]{provider_name}[/cyan].\nUse [bold]--force[/bold] to overwrite."
         )
 
     if dst.exists():
@@ -147,7 +151,7 @@ def _resolve_source(source_name: str | None, *, skill_name: str) -> tuple[str, P
 
     if not registry.sources:
         raise AppError(
-            "No sources registered. Run [bold]skills source init[/bold] first."
+            "No sources registered.\nRun [bold]skills source init[/bold] first."
         )
 
     if source_name is not None:
@@ -170,16 +174,19 @@ def _resolve_source(source_name: str | None, *, skill_name: str) -> tuple[str, P
 
     names = ", ".join(sorted(registry.sources.keys()))
     raise AppError(
-        f"Multiple sources registered ({names}). "
+        f"Multiple sources registered ({names}).\n"
         f"Use [bold]--source[/bold] to specify."
     )
 
 
-def _validate_repo(git: GitRepo) -> None:
+def _validate_repo(git: GitRepo, *, any_branch: bool = False) -> None:
     main = git.get_main_branch()
     current = git.current_branch()
-    if current != main:
-        raise AppError(f"Not on main branch (on '{current}', expected '{main}').")
+    if current != main and not any_branch:
+        raise AppError(
+            f"Not on main branch (on '{current}', expected '{main}').\n"
+            f"Use [bold]--any-branch[/bold] to override."
+        )
 
     if not git.is_clean():
         raise AppError("Repo has uncommitted changes.")

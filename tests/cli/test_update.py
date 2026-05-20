@@ -202,6 +202,22 @@ class TestUpdateValidation:
         result = assert_invoke("update", "--offline", expect_error=True)
 
         assert_words_in_message(result.exception.message, "not on main branch")
+        assert_words_in_message(result.exception.message, "--any-branch")
+
+    def test_allows_non_main_branch_with_any_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _fake_git.branch = "feature/xyz"
+        _register_source(fs, git_repo)
+        _create_source_skill(fs, "tdd")
+        hashes = _install_skill(fs, "tdd")
+        _save_manifest(
+            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+        )
+
+        result = assert_invoke("update", "--offline", "--any-branch")
+
+        assert result.exit_code == 0
 
     def test_errors_when_repo_is_dirty(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

@@ -34,6 +34,10 @@ def update(
         bool,
         typer.Option("--offline", help="Skip git pull."),
     ] = False,
+    any_branch: Annotated[
+        bool,
+        typer.Option("--any-branch", help="Allow update from any branch."),
+    ] = False,
 ) -> None:
     sources = load_source_registry()
     providers = load_provider_registry()
@@ -51,7 +55,7 @@ def update(
         git = resolve_git_repo(source_path)
         if not offline:
             git.pull()
-        _validate_repo(git)
+        _validate_repo(git, any_branch=any_branch)
 
     skills_to_update = {name: manifest.skills[name]} if name else dict(manifest.skills)
 

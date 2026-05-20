@@ -212,6 +212,18 @@ class TestInstallGitValidation:
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
 
         assert_words_in_message(result.exception.message, "not on main branch")
+        assert_words_in_message(result.exception.message, "--any-branch")
+
+    def test_allows_non_main_branch_with_any_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _fake_git.branch = "feature/xyz"
+        _register_source(git_repo)
+        create_repo_skill(fs, "tdd", root=SKILLS_DIR)
+
+        result = assert_invoke("install", "tdd", "--offline", "--any-branch")
+
+        assert_words_in_message(result.output, "installed", "tdd")
 
     def test_errors_when_repo_is_dirty(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

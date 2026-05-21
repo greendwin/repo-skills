@@ -191,9 +191,12 @@ def _print_untracked_section(
     if not untracked:
         return False
 
+    mergeable = sorted((e for e in untracked if e[2]), key=lambda e: e[0])
+    orphans = sorted((e for e in untracked if not e[2]), key=lambda e: e[0])
+
     echo("")
     echo("[yellow]Untracked[/yellow]")
-    for name, pname, source_match in untracked:
+    for name, pname, source_match in mergeable + orphans:
         if source_match:
             echo(
                 f"  {name:<{name_width}}"

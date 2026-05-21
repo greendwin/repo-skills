@@ -232,6 +232,34 @@ class TestStatusMergeable:
         )
 
 
+class TestStatusUntrackedOrdering:
+    def test_mergeable_shown_before_orphan(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "zeta-skill", git_repo)
+
+        fs.create_file(INSTALL_DIR / "alpha-orphan" / "SKILL.md", contents="# alpha")
+        fs.create_file(INSTALL_DIR / "zeta-skill" / "SKILL.md", contents="# zeta local")
+
+        result = assert_invoke("status")
+
+        lines = result.output.strip().split("\n")
+        untracked_lines = []
+        in_untracked = False
+        for line in lines:
+            if "untracked" in line.lower():
+                in_untracked = True
+                continue
+            if in_untracked and line.strip():
+                untracked_lines.append(line.strip())
+
+        assert len(untracked_lines) == 2
+        assert "zeta-skill" in untracked_lines[0]
+        assert "alpha-orphan" in untracked_lines[1]
+
+
 class TestStatusSync:
     def test_sync_pulls_source_repos(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

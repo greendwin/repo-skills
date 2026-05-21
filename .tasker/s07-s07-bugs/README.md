@@ -9,3 +9,4 @@ status: pending
 ## Subtasks
 
 - [ ] [s07t01](s07t01-show-exact-errors-on-skills.md): Show exact errors on skills update
+- [ ] [s07t02](s07t02-synced-skills-can-be-still.md): Synced skills can be still broken

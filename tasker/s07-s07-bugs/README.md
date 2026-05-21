@@ -4,7 +4,7 @@ slug: s07-bugs
 status: pending
 ---
 
-# S07 Bugs
+# Bugs
 
 ## Subtasks
 

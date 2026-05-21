@@ -1,7 +1,7 @@
 ---
 id: s02t1204
 slug: merge-targets-pinned-branch
-status: pending
+status: done
 ---
 
 # Merge targets pinned branch

@@ -16,6 +16,7 @@ from repo_skills.config import (
     load_skill_manifest,
     load_source_config,
     load_source_registry,
+    resolve_branch,
     save_skill_manifest,
 )
 from repo_skills.errors import AppError, NoopError
@@ -111,9 +112,10 @@ def _merge_start(
     if not git.is_clean():
         raise AppError(f"Repo has uncommitted changes.\n  repo: [dim]{git.path}[/dim]")
 
-    main_branch = git.get_main_branch()
-    if git.current_branch() != main_branch:
-        git.checkout(main_branch)
+    source_cfg = load_source_config(source_path)
+    target_branch = resolve_branch(source_cfg, git)
+    if git.current_branch() != target_branch:
+        git.checkout(target_branch)
 
     if not offline:
         git.pull()
@@ -126,7 +128,6 @@ def _merge_start(
     ).expanduser()
     installed_path = provider_install_dir / name
 
-    source_cfg = load_source_config(source_path)
     skill_src = source_path / source_cfg.skills_dir / name
 
     base_commit = entry.commit
@@ -145,9 +146,9 @@ def _merge_start(
     git.commit_all(f"chore: merge `{name}` from `{provider_name}`")
 
     if base_commit is not None:
-        clean = git.rebase(main_branch)
+        clean = git.rebase(target_branch)
     else:
-        clean = git.rebase_root(main_branch)
+        clean = git.rebase_root(target_branch)
 
     if clean:
         _finalize(git, provider_name, name)
@@ -183,8 +184,8 @@ def _finalize(git: GitRepo, provider_name: str, skill_name: str) -> None:
     source_cfg = load_source_config(source_path)
     skill_src = source_path / source_cfg.skills_dir / skill_name
 
-    main_branch = git.get_main_branch()
-    git.checkout(main_branch)
+    target_branch = resolve_branch(source_cfg, git)
+    git.checkout(target_branch)
     git.fast_forward(branch)
 
     providers = load_provider_registry()
@@ -221,9 +222,15 @@ def _merge_abort() -> None:
     if git.is_rebasing():
         git.rebase_abort()
 
-    main_branch = git.get_main_branch()
-    if git.current_branch() != main_branch:
-        git.checkout(main_branch)
+    manifest = load_skill_manifest()
+    entry = manifest.skills[skill_name]
+    registry = load_source_registry()
+    source_path = Path(registry.sources[entry.source].path)
+    source_cfg = load_source_config(source_path)
+    target_branch = resolve_branch(source_cfg, git)
+
+    if git.current_branch() != target_branch:
+        git.checkout(target_branch)
 
     git.delete_branch(branch)
 

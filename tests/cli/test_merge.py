@@ -40,8 +40,10 @@ def _fake_git() -> Generator[FakeGitRepo]:
     uninstall_fake_git()
 
 
-def _setup_diverged_skill(fs: FakeFilesystem, git_repo: Path) -> None:
-    register_source(git_repo)
+def _setup_diverged_skill(
+    fs: FakeFilesystem, git_repo: Path, *, branch: str = ""
+) -> None:
+    register_source(git_repo, branch=branch)
     create_source_skill(fs, "tdd", content="# original")
     hashes = install_skill(fs, "tdd", content="# original")
     save_manifest({"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)})
@@ -312,6 +314,16 @@ class TestMergeValidation:
 
         assert _fake_git.pulled is False
 
+    def test_auto_checkouts_pinned_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _fake_git.branch = "feature/xyz"
+        _setup_diverged_skill(fs, git_repo, branch="develop")
+
+        assert_invoke("merge", "tdd", "--offline")
+
+        assert _fake_git.rebased_onto == "develop"
+
     def test_auto_checkouts_main_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
@@ -352,8 +364,9 @@ def _setup_merge_branch(
     *,
     branch: str = "skill-merge/claude/tdd",
     content: str = "# merged",
+    source_branch: str = "",
 ) -> None:
-    register_source(git_repo)
+    register_source(git_repo, branch=source_branch)
     hashes = install_skill(fs, "tdd", content="# original")
     save_manifest({"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)})
     create_source_skill(fs, "tdd", content=content)
@@ -472,6 +485,15 @@ class TestMergeContinue:
         assert _fake_git.ff_targets == ["skill-merge/claude/tdd"]
         assert_words_in_message(result.output, "merge", "complete")
 
+    def test_finalize_targets_pinned_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git, source_branch="develop")
+
+        assert_invoke("merge", "--continue")
+
+        assert _fake_git.branch == "develop"
+
 
 class TestMergeAbort:
     def test_aborts_rebase_and_cleans_up(
@@ -506,6 +528,15 @@ class TestMergeAbort:
         assert _fake_git.branch == "main"
         assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
         assert_words_in_message(result.output, "aborted")
+
+    def test_abort_targets_pinned_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git, source_branch="develop")
+
+        assert_invoke("merge", "--abort")
+
+        assert _fake_git.branch == "develop"
 
     def test_errors_when_no_merge_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

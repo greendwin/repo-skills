@@ -1,7 +1,7 @@
 ---
 id: s02t12
 slug: pinned-branch-in-source-init
-status: pending
+status: done
 ---
 
 # Pinned branch in `source init` + remove `--any-branch`
@@ -27,4 +27,4 @@ status: pending
 - [x] [s02t1201](s02t1201-resolvebranch-function-sourceconfigbranch-field.md): `resolve_branch` function + `SourceConfig.branch` field
 - [x] [s02t1202](s02t1202-source-init-writes-current-branch.md): `source init` writes current branch + `--branch` flag
 - [x] [s02t1203](s02t1203-remove-anybranch-wire-validaterepo-to.md): Remove `--any-branch`, wire `_validate_repo` to pinned branch
-- [ ] [s02t1204](s02t1204-merge-targets-pinned-branch.md): Merge targets pinned branch
+- [x] [s02t1204](s02t1204-merge-targets-pinned-branch.md): Merge targets pinned branch

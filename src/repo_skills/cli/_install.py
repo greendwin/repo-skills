@@ -176,8 +176,11 @@ def validate_repo(git: GitRepo, *, branch: str) -> None:
     current = git.current_branch()
     if current != branch:
         raise AppError(
-            f"Not on the pinned branch (on [cyan]{current}[/cyan], expected [cyan]{branch}[/cyan]).\n"
-            f"  Use [blue]source init --branch {current}[/blue] to change the pin."
+            f"Not on the pinned branch"
+            f" (on [cyan]{current}[/cyan],"
+            f" expected [cyan]{branch}[/cyan]).\n\n"
+            f"Use [blue]source init --branch {current}[/blue]"
+            " to change the pin."
         )
 
     if not git.is_clean():

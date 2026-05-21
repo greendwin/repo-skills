@@ -135,7 +135,7 @@ class TestMergeProviderResolution:
         assert _fake_git.created_branches["skill-merge/cursor/tdd"] == COMMIT
         assert_words_in_message(result.output, "--continue")
 
-    def test_errors_when_no_provider_diverged(
+    def test_reports_synced_when_no_provider_diverged(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
@@ -145,9 +145,9 @@ class TestMergeProviderResolution:
             {"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)}
         )
 
-        result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
+        result = assert_invoke("merge", "tdd", "--offline")
 
-        assert_words_in_message(result.exception.message, "nothing to merge")
+        assert_words_in_message(result.output, "synced", "nothing to merge")
 
 
 class TestMergeValidation:

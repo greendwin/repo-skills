@@ -15,7 +15,7 @@ from repo_skills.config import (
     load_source_registry,
     save_skill_manifest,
 )
-from repo_skills.errors import AppError
+from repo_skills.errors import AppError, NoopError
 
 from ._app import app
 from ._deps import resolve_git_repo
@@ -44,8 +44,7 @@ def update(
     manifest = load_skill_manifest()
 
     if not manifest.skills:
-        echo("[dim]No skills installed.[/dim]")
-        return
+        raise NoopError("[dim]No skills installed.[/dim]")
 
     if name and name not in manifest.skills:
         raise AppError(f"Skill [green]{name}[/green] is not installed.")

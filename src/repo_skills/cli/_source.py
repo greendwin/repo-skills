@@ -15,7 +15,7 @@ from repo_skills.config import (
     save_source_registry,
 )
 from repo_skills.discovery import detect_skills_dir, find_git_root
-from repo_skills.errors import AppError
+from repo_skills.errors import AppError, NoopError
 
 from ._app import app
 from ._utils import echo
@@ -112,8 +112,7 @@ def source_list() -> None:
     registry = load_source_registry()
 
     if not registry.sources:
-        echo("[dim]No sources registered.[/dim]")
-        return
+        raise NoopError("[dim]No sources registered.[/dim]")
 
     echo("[yellow]Skill sources[/yellow]")
     width = max(len(n) for n in registry.sources)

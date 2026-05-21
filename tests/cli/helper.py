@@ -22,7 +22,13 @@ from repo_skills.config import (
     SourceRegistry,
     compute_file_hashes,
 )
-from repo_skills.errors import AppError
+from repo_skills.errors import AppError, NoopError
+
+
+@dataclass
+class NoopResult:
+    output: str
+    exit_code: int = 0
 
 
 @dataclass
@@ -130,13 +136,13 @@ def assert_invoke(
 def assert_invoke(
     *args: str,
     expect_error: Literal[False] = ...,
-) -> Result: ...
+) -> Result | NoopResult: ...
 
 
 def assert_invoke(
     *args: str,
     expect_error: bool = False,
-) -> Result | ErrorResult:
+) -> Result | ErrorResult | NoopResult:
     runner = CliRunner(env={"NO_COLOR": "1"})
     result = runner.invoke(app, args)
 
@@ -145,6 +151,9 @@ def assert_invoke(
             f"Expected AppError, got {result.exception!r}.\n" f"Output: {result.output}"
         )
         return ErrorResult(exception=result.exception, output=result.output)
+
+    if isinstance(result.exception, NoopError):
+        return NoopResult(output=result.exception.message)
 
     if result.exception is not None and not isinstance(result.exception, SystemExit):
         raise result.exception

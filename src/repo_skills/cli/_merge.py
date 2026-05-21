@@ -16,7 +16,7 @@ from repo_skills.config import (
     load_source_registry,
     save_skill_manifest,
 )
-from repo_skills.errors import AppError
+from repo_skills.errors import AppError, NoopError
 from repo_skills.git import GitRepo
 
 from ._app import app
@@ -276,8 +276,8 @@ def _resolve_provider(
             diverged.append(pname)
 
     if not diverged:
-        raise AppError(
-            f"No provider has modified [green]{skill_name}[/green]. Nothing to merge."
+        raise NoopError(
+            f"[green]{skill_name}[/green] is already synced. Nothing to merge."
         )
 
     if len(diverged) > 1:

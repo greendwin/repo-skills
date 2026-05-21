@@ -96,6 +96,9 @@ class FakeGitRepo:
     def rebase_continue(self) -> None:
         self.rebasing = False
 
+    def rebase_abort(self) -> None:
+        self.rebasing = False
+
     def fast_forward(self, branch: str) -> None:
         if self.ff_fails:
             raise AppError("Fast-forward failed.")

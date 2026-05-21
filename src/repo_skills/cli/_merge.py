@@ -47,7 +47,20 @@ def merge(
         bool,
         typer.Option("--continue", help="Finalize a merge in progress."),
     ] = False,
+    abort: Annotated[
+        bool,
+        typer.Option("--abort", help="Abort a merge in progress."),
+    ] = False,
 ) -> None:
+    if abort and continue_merge:
+        raise AppError(
+            "Cannot use [blue]--abort[/blue] and [blue]--continue[/blue] together."
+        )
+
+    if abort:
+        _merge_abort()
+        return
+
     if continue_merge:
         _merge_continue()
         return
@@ -184,6 +197,23 @@ def _merge_continue() -> None:
         return
 
     echo(f"Merge complete for [green]{skill_name}[/green].")
+
+
+def _merge_abort() -> None:
+    git = _detect_merge_repo()
+    branch = _detect_merge_branch(git)
+    _, skill_name = _parse_merge_branch(branch)
+
+    if git.is_rebasing():
+        git.rebase_abort()
+
+    main_branch = git.get_main_branch()
+    if git.current_branch() != main_branch:
+        git.checkout(main_branch)
+
+    git.delete_branch(branch)
+
+    echo(f"Merge aborted for [green]{skill_name}[/green].")
 
 
 def _detect_merge_repo() -> "GitRepo":

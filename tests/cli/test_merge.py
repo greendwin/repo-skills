@@ -370,3 +370,59 @@ class TestMergeContinue:
 
         assert _fake_git.ff_targets == ["skill-merge/claude/tdd"]
         assert_words_in_message(result.output, "merge", "complete")
+
+
+class TestMergeAbort:
+    def test_aborts_rebase_and_cleans_up(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git)
+        _fake_git.rebasing = True
+
+        result = assert_invoke("merge", "--abort")
+
+        assert _fake_git.rebasing is False
+        assert _fake_git.branch == "main"
+        assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
+        assert_words_in_message(result.output, "aborted")
+
+    def test_errors_when_abort_and_continue(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git)
+
+        result = assert_invoke("merge", "--abort", "--continue", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "--abort", "--continue")
+
+    def test_works_when_no_rebase_in_progress(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git)
+
+        result = assert_invoke("merge", "--abort")
+
+        assert _fake_git.branch == "main"
+        assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
+        assert_words_in_message(result.output, "aborted")
+
+    def test_errors_when_no_merge_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git, branch="main")
+
+        result = assert_invoke("merge", "--abort", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "no merge branch")
+
+    def test_works_when_repo_dirty(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git)
+        _fake_git.clean = False
+
+        result = assert_invoke("merge", "--abort")
+
+        assert _fake_git.branch == "main"
+        assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
+        assert_words_in_message(result.output, "aborted")

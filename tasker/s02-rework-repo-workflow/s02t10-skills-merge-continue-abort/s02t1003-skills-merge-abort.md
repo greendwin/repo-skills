@@ -1,7 +1,7 @@
 ---
 id: s02t1003
 slug: skills-merge-abort
-status: pending
+status: done
 ---
 
 # `skills merge --abort`

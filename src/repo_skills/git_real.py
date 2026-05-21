@@ -118,6 +118,9 @@ class RealGitRepo:
     def rebase_continue(self) -> None:
         self._run("rebase", "--continue")
 
+    def rebase_abort(self) -> None:
+        self._run("rebase", "--abort")
+
     def fast_forward(self, branch: str) -> None:
         self._run("merge", "--ff-only", branch)
 

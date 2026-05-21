@@ -120,12 +120,19 @@ def update(
 
 
 def _print_report(results: list[tuple[str, str]]) -> None:
+    if not results:
+        return
+
+    _STATUS_LABELS = {
+        "updated": "[green]updated[/green]",
+        "skipped": "[yellow]skipped (modified)[/yellow]",
+        "error": "[red]error[/red]",
+        "up-to-date": "[dim]up to date[/dim]",
+    }
+
+    name_width = max(len(name) for name, _ in results)
+
+    echo("[yellow]Update[/yellow]")
     for skill_name, status in results:
-        if status == "updated":
-            echo(f"  [green]{skill_name}[/green]  updated")
-        elif status == "skipped":
-            echo(f"  [yellow]{skill_name}[/yellow]  skipped (modified)")
-        elif status == "error":
-            echo(f"  [red]{skill_name}[/red]  error")
-        else:
-            echo(f"  [dim]{skill_name}[/dim]  up to date")
+        label = _STATUS_LABELS.get(status, status)
+        echo(f"  {skill_name:<{name_width}}  {label}")

@@ -34,7 +34,7 @@ def install(
     ],
     source: Annotated[
         Optional[str],
-        typer.Option("--source", help="Source name (required when multiple)."),
+        typer.Option("--source", "-s", help="Source name (required when multiple)."),
     ] = None,
     offline: Annotated[
         bool,
@@ -42,7 +42,7 @@ def install(
     ] = False,
     force: Annotated[
         bool,
-        typer.Option("--force", help="Overwrite existing skill."),
+        typer.Option("--force", "-f", help="Overwrite existing skill."),
     ] = False,
 ) -> None:
     pulled_sources: set[str] = set()

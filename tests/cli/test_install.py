@@ -185,6 +185,20 @@ class TestInstallSourceResolution:
 
         assert_words_in_message(result.output, "installed", "tdd")
 
+    def test_selects_source_with_short_flag(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        registry.sources["other"] = SourceEntry(path="/repos/other")
+        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+
+        create_repo_skill(fs, "tdd", root=SKILLS_DIR)
+
+        result = assert_invoke("install", "tdd", "-s", "my-project", "--offline")
+
+        assert_words_in_message(result.output, "installed", "tdd")
+
     def test_errors_when_source_not_found(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:

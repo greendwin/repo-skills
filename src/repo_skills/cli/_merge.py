@@ -12,6 +12,7 @@ from repo_skills.config import (
     ProviderRegistry,
     SkillEntry,
     compute_file_hashes,
+    list_source_skills,
     load_provider_registry,
     load_skill_manifest,
     load_source_config,
@@ -27,6 +28,55 @@ from ._deps import resolve_git_repo
 from ._utils import echo
 
 MERGE_BRANCH_PREFIX = "skill-merge/"
+
+
+def _find_in_provider(
+    name: str,
+    providers: ProviderRegistry,
+    from_provider: str | None,
+) -> Path | None:
+    if from_provider is not None:
+        pcfg = providers.require(from_provider)
+        path = pcfg.resolve_path(name)
+        return path if path.is_dir() else None
+
+    for pcfg in providers.providers.values():
+        path = pcfg.resolve_path(name)
+        if path.is_dir():
+            return path
+
+    return None
+
+
+def _resolve_untracked(name: str, from_provider: str | None) -> SkillEntry:
+    providers = load_provider_registry()
+
+    installed_path = _find_in_provider(name, providers, from_provider)
+    if installed_path is None:
+        raise AppError(f"Skill [green]{name}[/green] is not installed.")
+
+    sources = load_source_registry()
+    source_name: str | None = None
+    source_skill_path: Path | None = None
+    for sn, sentry in sources.sources.items():
+        source_path = Path(sentry.path)
+        if source_path.exists() and name in list_source_skills(source_path):
+            source_name = sn
+            source_cfg = load_source_config(source_path)
+            source_skill_path = source_path / source_cfg.skills_dir / name
+            break
+
+    if source_name is None or source_skill_path is None:
+        raise AppError(
+            f"Skill [green]{name}[/green] is untracked"
+            " and does not match any source."
+        )
+
+    return SkillEntry(
+        source=source_name,
+        commit=None,
+        files=compute_file_hashes(source_skill_path),
+    )
 
 
 @app.command(help="Merge provider edits back into a source repo.")
@@ -85,9 +135,11 @@ def _merge_start(
 ) -> None:
     manifest = load_skill_manifest()
     if name not in manifest.skills:
-        raise AppError(f"Skill [green]{name}[/green] is not installed.")
-
-    entry = manifest.skills[name]
+        entry = _resolve_untracked(name, from_provider)
+        manifest.skills[name] = entry
+        save_skill_manifest(manifest)
+    else:
+        entry = manifest.skills[name]
 
     source_name = entry.source
     registry = load_source_registry()
@@ -123,10 +175,8 @@ def _merge_start(
     providers = load_provider_registry()
     provider_name = _resolve_provider(name, entry, providers, from_provider)
 
-    provider_install_dir = Path(
-        providers.providers[provider_name].install_dir
-    ).expanduser()
-    installed_path = provider_install_dir / name
+    pcfg = providers.require(provider_name)
+    installed_path = pcfg.resolve_path(name)
 
     skill_src = source_path / source_cfg.skills_dir / name
 
@@ -189,10 +239,8 @@ def _finalize(git: GitRepo, provider_name: str, skill_name: str) -> None:
     git.fast_forward(branch)
 
     providers = load_provider_registry()
-    provider_install_dir = Path(
-        providers.providers[provider_name].install_dir
-    ).expanduser()
-    installed_path = provider_install_dir / skill_name
+    pcfg = providers.require(provider_name)
+    installed_path = pcfg.resolve_path(skill_name)
 
     _copy_provider_to_source(skill_src, installed_path)
 
@@ -281,14 +329,12 @@ def _resolve_provider(
     from_provider: str | None,
 ) -> str:
     if from_provider is not None:
-        if from_provider not in providers.providers:
-            raise AppError(f"Provider [green]{from_provider}[/green] not found.")
+        providers.require(from_provider)
         return from_provider
 
     diverged: list[str] = []
     for pname, pcfg in providers.providers.items():
-        install_dir = Path(pcfg.install_dir).expanduser()
-        installed_path = install_dir / skill_name
+        installed_path = pcfg.resolve_path(skill_name)
         if not installed_path.exists():
             continue
 

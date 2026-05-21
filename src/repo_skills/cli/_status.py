@@ -117,11 +117,11 @@ def _collect_untracked(
 
     result: list[UntrackedEntry] = []
     for pname, pcfg in providers.providers.items():
-        install_dir = Path(pcfg.install_dir).expanduser()
-        if not install_dir.is_dir():
+        provider_dir = pcfg.resolve_path()
+        if not provider_dir.is_dir():
             continue
 
-        for child in sorted(install_dir.iterdir()):
+        for child in sorted(provider_dir.iterdir()):
             if not child.is_dir():
                 continue
 
@@ -169,8 +169,7 @@ def _print_source_sections(
         for skill_name in sorted(installed_by_source.get(source_name, [])):
             entry = manifest.skills[skill_name]
             for pname, pcfg in providers.providers.items():
-                install_dir = Path(pcfg.install_dir).expanduser()
-                installed_path = install_dir / skill_name
+                installed_path = pcfg.resolve_path(skill_name)
                 divergence = _check_divergence(installed_path, entry.files)
                 echo(
                     f"  {skill_name:<{name_width}}"

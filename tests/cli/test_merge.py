@@ -264,8 +264,33 @@ class TestBaseCommitSearch:
         assert_words_in_message(result.output, "merge", "complete")
 
 
-class TestMergeValidation:
-    def test_errors_when_skill_not_installed(
+class TestMergeUntracked:
+    def test_merges_untracked_mergeable_skill(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        install_skill(fs, "tdd", content="# original")
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        assert_words_in_message(result.output, "merge", "complete")
+        manifest = load_manifest()
+        assert "tdd" in manifest.skills
+        assert manifest.skills["tdd"].source == "my-project"
+
+    def test_errors_when_untracked_orphan(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        install_skill(fs, "unknown-skill", content="# something")
+
+        result = assert_invoke("merge", "unknown-skill", "--offline", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "untracked", "does not match")
+
+    def test_errors_when_not_in_any_provider(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
@@ -273,6 +298,9 @@ class TestMergeValidation:
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
         assert_words_in_message(result.exception.message, "not installed")
+
+
+class TestMergeValidation:
 
     def test_errors_when_merge_already_in_progress(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

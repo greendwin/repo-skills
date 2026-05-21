@@ -64,7 +64,7 @@ def install(
     providers = load_provider_registry()
 
     for pname, pcfg in providers.providers.items():
-        install_dir = Path(pcfg.install_dir).expanduser()
+        install_dir = pcfg.resolve_path()
         _copy_skill(
             src, name, install_dir=install_dir, provider_name=pname, force=force
         )
@@ -89,8 +89,8 @@ def uninstall(
         raise AppError(f"Skill [green]{name}[/green] is not installed.")
 
     providers = load_provider_registry()
-    for _pname, pcfg in providers.providers.items():
-        dst = Path(pcfg.install_dir).expanduser() / name
+    for pcfg in providers.providers.values():
+        dst = pcfg.resolve_path(name)
         if dst.exists():
             shutil.rmtree(dst)
 

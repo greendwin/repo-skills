@@ -7,6 +7,7 @@ from typing import Self, TypeAlias
 
 from pydantic import BaseModel
 
+from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
 
 REPO_SKILLS_DIR = ".repo-skills"
@@ -72,9 +73,17 @@ class ProviderConfig(BaseModel):
     name: str = ""
     install_dir: str = ""
 
+    def resolve_path(self, *parts: str) -> Path:
+        return Path(self.install_dir).expanduser().joinpath(*parts)
+
 
 class ProviderRegistry(_Saveable):
     providers: dict[str, ProviderConfig] = {}
+
+    def require(self, name: str) -> ProviderConfig:
+        if name not in self.providers:
+            raise AppError(f"Provider [green]{name}[/green] not found.")
+        return self.providers[name]
 
     def with_builtins(self) -> ProviderRegistry:
         if BUILTIN_PROVIDER_NAME in self.providers:

@@ -64,9 +64,7 @@ def provider_remove(
 
     registry = load_provider_registry(with_builtins=False)
 
-    if name not in registry.providers:
-        raise AppError(f"Provider [green]{name}[/green] not found.")
-
+    registry.require(name)
     del registry.providers[name]
     save_provider_registry(registry)
 

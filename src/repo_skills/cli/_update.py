@@ -76,8 +76,8 @@ def update(
         updated_any = False
         skipped_any = False
 
-        for _pname, pcfg in providers.providers.items():
-            install_dir = Path(pcfg.install_dir).expanduser()
+        for pcfg in providers.providers.values():
+            install_dir = pcfg.resolve_path()
             dst = install_dir / skill_name
 
             if not dst.exists():

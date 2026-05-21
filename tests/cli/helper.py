@@ -63,6 +63,11 @@ class FakeGitRepo:
     deleted_branches: list[str] = field(default_factory=list)
     ff_targets: list[str] = field(default_factory=list)
     ff_fails: bool = False
+    commit_logs: dict[str, list[str]] = field(default_factory=dict)
+    files_at_commit: dict[tuple[str, str], bytes] = field(default_factory=dict)
+    orphan_branches: list[str] = field(default_factory=list)
+    rebase_root_clean: bool = True
+    rebase_root_onto: str | None = None
 
     def pull(self) -> None:
         self.pulled = True
@@ -82,8 +87,18 @@ class FakeGitRepo:
     def verify_commit_content(self, commit: str, skill_name: str) -> bool:
         return self.verified.get(skill_name, True)
 
+    def log_commits(self, path: str, max_count: int) -> list[str]:
+        return self.commit_logs.get(path, [])[:max_count]
+
+    def get_file_at_commit(self, commit: str, path: str) -> bytes:
+        return self.files_at_commit[(commit, path)]
+
     def create_branch(self, name: str, from_commit: str) -> None:
         self.created_branches[name] = from_commit
+        self.branch = name
+
+    def create_orphan_branch(self, name: str) -> None:
+        self.orphan_branches.append(name)
         self.branch = name
 
     def checkout(self, branch: str) -> None:
@@ -95,6 +110,10 @@ class FakeGitRepo:
     def rebase(self, onto: str) -> bool:
         self.rebased_onto = onto
         return self.rebase_clean
+
+    def rebase_root(self, onto: str) -> bool:
+        self.rebase_root_onto = onto
+        return self.rebase_root_clean
 
     def is_rebasing(self) -> bool:
         return self.rebasing

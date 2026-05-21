@@ -176,21 +176,93 @@ class TestMergeProviderResolution:
         assert_words_in_message(result.output, "synced", "nothing to merge")
 
 
-class TestMergeValidation:
-    def test_errors_when_commit_is_none(
-        self, fs: FakeFilesystem, git_repo: Path
+class TestBaseCommitSearch:
+    def test_exact_hash_match(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# edited")
+        hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
             {"tdd": SkillEntry(source="my-project", commit=None, files=hashes)}
         )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
-        result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
+        _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
+        _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = b"# wrong"
+        _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = b"# original"
 
-        assert_words_in_message(result.exception.message, "no base commit")
+        result = assert_invoke("merge", "tdd", "--offline")
 
+        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "bbb222"
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_closest_match_when_no_exact(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": SkillEntry(source="my-project", commit=None, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
+        _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = (
+            b"# totally different\nline2\nline3"
+        )
+        _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = b"# original-ish"
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "bbb222"
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_closest_match_with_missing_file(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        fs.create_file(INSTALL_DIR / "tdd" / "extra.md", contents="line1\nline2\nline3")
+        hashes = compute_file_hashes(INSTALL_DIR / "tdd")
+        save_manifest(
+            {"tdd": SkillEntry(source="my-project", commit=None, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
+        _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = b"# original"
+        _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = b"# original"
+        _fake_git.files_at_commit[("bbb222", "skills/tdd/extra.md")] = (
+            b"line1\nline2\nline3"
+        )
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "bbb222"
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_orphan_branch_when_no_commits(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": SkillEntry(source="my-project", commit=None, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        assert "skill-merge/claude/tdd" in _fake_git.orphan_branches
+        assert _fake_git.rebase_root_onto == "main"
+        assert_words_in_message(result.output, "merge", "complete")
+
+
+class TestMergeValidation:
     def test_errors_when_skill_not_installed(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
@@ -257,7 +329,10 @@ class TestMergeValidation:
 
         assert_invoke("merge", "tdd", "--offline")
 
-        assert _fake_git.committed_messages == ["chore: merge tdd from claude"]
+        assert len(_fake_git.committed_messages) == 1
+        assert_words_in_message(
+            _fake_git.committed_messages[0], "chore:", "merge", "tdd", "claude"
+        )
 
     def test_copies_provider_files_to_source(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

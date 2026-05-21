@@ -93,8 +93,24 @@ class RealGitRepo:
     def get_skill_commit(self, skill_name: str) -> str:
         return self._run("log", "-1", "--format=%H", "--", f"skills/{skill_name}")
 
+    def log_commits(self, path: str, max_count: int) -> list[str]:
+        output = self._run("log", f"--max-count={max_count}", "--format=%H", "--", path)
+        if not output:
+            return []
+        return output.splitlines()
+
+    def get_file_at_commit(self, commit: str, path: str) -> bytes:
+        return self._run_bytes("show", f"{commit}:{path}")
+
     def create_branch(self, name: str, from_commit: str) -> None:
         self._run("checkout", "-b", name, from_commit)
+
+    def create_orphan_branch(self, name: str) -> None:
+        self._run("checkout", "--orphan", name)
+        try:
+            self._run("rm", "-rf", ".")
+        except AppError:
+            pass
 
     def checkout(self, branch: str) -> None:
         self._run("checkout", branch)
@@ -106,6 +122,15 @@ class RealGitRepo:
     def rebase(self, onto: str) -> bool:
         try:
             self._run("rebase", onto)
+        except AppError:
+            if self._in_rebase():
+                return False
+            raise
+        return True
+
+    def rebase_root(self, onto: str) -> bool:
+        try:
+            self._run("rebase", "--root", "--onto", onto)
         except AppError:
             if self._in_rebase():
                 return False

@@ -1,7 +1,7 @@
 ---
 id: s02t1005
 slug: base-commit-search-closestmatch-fallback
-status: pending
+status: done
 ---
 
 # Base commit search (closest-match fallback)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import difflib
+import hashlib
 import shutil
 from pathlib import Path
 from typing import Annotated, Optional
@@ -85,11 +87,6 @@ def _merge_start(
         raise AppError(f"Skill [green]{name}[/green] is not installed.")
 
     entry = manifest.skills[name]
-    if entry.commit is None:
-        raise AppError(
-            f"Skill [green]{name}[/green] has no base commit.\n\n"
-            f"Run [blue]skills update[/blue] first."
-        )
 
     source_name = entry.source
     registry = load_source_registry()
@@ -132,14 +129,26 @@ def _merge_start(
     source_cfg = load_source_config(source_path)
     skill_src = source_path / source_cfg.skills_dir / name
 
+    base_commit = entry.commit
+    if base_commit is None:
+        skill_rel = f"{source_cfg.skills_dir}/{name}"
+        base_commit = _find_base_commit(git, skill_rel, entry, installed_path)
+
     branch_name = f"skill-merge/{provider_name}/{name}"
-    git.create_branch(branch_name, entry.commit)
+    if base_commit is not None:
+        git.create_branch(branch_name, base_commit)
+    else:
+        git.create_orphan_branch(branch_name)
 
     _copy_provider_to_source(installed_path, skill_src)
 
-    git.commit_all(f"chore: merge {name} from {provider_name}")
+    git.commit_all(f"chore: merge `{name}` from `{provider_name}`")
 
-    clean = git.rebase(main_branch)
+    if base_commit is not None:
+        clean = git.rebase(main_branch)
+    else:
+        clean = git.rebase_root(main_branch)
+
     if clean:
         _finalize(git, provider_name, name)
         return
@@ -162,7 +171,7 @@ def _merge_continue() -> None:
     _finalize(git, provider_name, skill_name)
 
 
-def _finalize(git: "GitRepo", provider_name: str, skill_name: str) -> None:
+def _finalize(git: GitRepo, provider_name: str, skill_name: str) -> None:
     branch = f"{MERGE_BRANCH_PREFIX}{provider_name}/{skill_name}"
 
     manifest = load_skill_manifest()
@@ -221,7 +230,7 @@ def _merge_abort() -> None:
     echo(f"Merge aborted for [green]{skill_name}[/green].")
 
 
-def _detect_merge_repo() -> "GitRepo":
+def _detect_merge_repo() -> GitRepo:
     manifest = load_skill_manifest()
     for entry in manifest.skills.values():
         source_name = entry.source
@@ -232,7 +241,7 @@ def _detect_merge_repo() -> "GitRepo":
     raise AppError("No source repo found.")
 
 
-def _detect_merge_branch(git: "GitRepo") -> str:
+def _detect_merge_branch(git: GitRepo) -> str:
     current = git.current_branch()
     if current.startswith(MERGE_BRANCH_PREFIX):
         return current
@@ -294,6 +303,87 @@ def _resolve_provider(
         )
 
     return diverged[0]
+
+
+_MAX_SEARCH_COMMITS = 50
+
+
+def _find_base_commit(
+    git: GitRepo,
+    skill_rel: str,
+    entry: SkillEntry,
+    installed_path: Path,
+) -> str | None:
+    commits = git.log_commits(skill_rel, _MAX_SEARCH_COMMITS)
+    if not commits:
+        return None
+
+    best_commit: str | None = None
+    best_distance = float("inf")
+
+    for commit in commits:
+        commit_hashes: dict[str, str] = {}
+        for rel_path in entry.files:
+            try:
+                data = git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
+            except (KeyError, Exception):
+                continue
+            sha = hashlib.sha256(data).hexdigest()
+            commit_hashes[rel_path] = f"sha256:{sha}"
+
+        if commit_hashes == entry.files:
+            return commit
+
+        distance = _compute_distance(git, commit, skill_rel, entry, installed_path)
+        if distance < best_distance:
+            best_distance = distance
+            best_commit = commit
+
+    return best_commit
+
+
+def _compute_distance(
+    git: GitRepo,
+    commit: str,
+    skill_rel: str,
+    entry: SkillEntry,
+    installed_path: Path,
+) -> int:
+    total = 0
+    all_paths = set(entry.files.keys())
+
+    for rel_path in all_paths:
+        try:
+            commit_data = git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
+            commit_lines = commit_data.decode(errors="replace").splitlines(True)
+        except (KeyError, Exception):
+            commit_lines = []
+
+        local_file = installed_path / rel_path
+        if local_file.exists():
+            installed_lines = local_file.read_text().splitlines(True)
+        else:
+            installed_lines = []
+
+        if not commit_lines and not installed_lines:
+            continue
+
+        if not commit_lines:
+            total += len(installed_lines)
+            continue
+
+        if not installed_lines:
+            total += len(commit_lines)
+            continue
+
+        diff = difflib.unified_diff(commit_lines, installed_lines)
+        for line in diff:
+            if line.startswith("+") and not line.startswith("+++"):
+                total += 1
+            elif line.startswith("-") and not line.startswith("---"):
+                total += 1
+
+    return total
 
 
 def _copy_provider_to_source(installed_path: Path, skill_src: Path) -> None:

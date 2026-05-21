@@ -58,8 +58,8 @@ def install(
     src = skills_dir / name
     if not src.is_dir():
         raise AppError(
-            f"Skill [cyan]{name}[/cyan] not found in source "
-            f"[cyan]{source_name}[/cyan]."
+            f"Skill [green]{name}[/green] not found in source "
+            f"[green]{source_name}[/green]."
         )
 
     commit = _resolve_commit(git, name)
@@ -79,7 +79,7 @@ def install(
         skill_src=src,
     )
 
-    echo(f"Installed [green]{name}[/green] from [cyan]{source_name}[/cyan].")
+    echo(f"Installed [green]{name}[/green] from [green]{source_name}[/green].")
 
 
 @app.command(help="Uninstall a skill.")
@@ -89,7 +89,7 @@ def uninstall(
 ) -> None:
     manifest = load_skill_manifest()
     if name not in manifest.skills:
-        raise AppError(f"Skill [cyan]{name}[/cyan] is not installed.")
+        raise AppError(f"Skill [green]{name}[/green] is not installed.")
 
     providers = load_provider_registry()
     for _pname, pcfg in providers.providers.items():
@@ -131,8 +131,8 @@ def _copy_skill(
 
     if dst.exists() and not force:
         raise AppError(
-            f"Skill [cyan]{name}[/cyan] already exists at provider "
-            f"[cyan]{provider_name}[/cyan].\nUse [bold]--force[/bold] to overwrite."
+            f"Skill [green]{name}[/green] already exists at provider "
+            f"[green]{provider_name}[/green].\n\nUse [blue]--force[/blue] to overwrite."
         )
 
     if dst.exists():
@@ -147,12 +147,12 @@ def _resolve_source(source_name: str | None, *, skill_name: str) -> tuple[str, P
 
     if not registry.sources:
         raise AppError(
-            "No sources registered.\nRun [bold]skills source init[/bold] first."
+            "No sources registered.\n\nRun [blue]skills source init[/blue] first."
         )
 
     if source_name is not None:
         if source_name not in registry.sources:
-            raise AppError(f"Source [cyan]{source_name}[/cyan] not found.")
+            raise AppError(f"Source [green]{source_name}[/green] not found.")
         return source_name, Path(registry.sources[source_name].path)
 
     if len(registry.sources) == 1:
@@ -170,8 +170,8 @@ def _resolve_source(source_name: str | None, *, skill_name: str) -> tuple[str, P
 
     names = ", ".join(sorted(registry.sources.keys()))
     raise AppError(
-        f"Multiple sources registered ({names}).\n"
-        f"Use [bold]--source[/bold] to specify."
+        f"Multiple sources registered ({names}).\n\n"
+        f"Use [blue]--source[/blue] to specify."
     )
 
 
@@ -180,15 +180,13 @@ def _validate_repo(git: GitRepo, *, any_branch: bool = False) -> None:
     current = git.current_branch()
     if current != main and not any_branch:
         raise AppError(
-            f"Not on main branch (on '{current}', expected '{main}'),"
-            f" use [bold]--any-branch[/bold] to override.\n"
-            f"  repo: [cyan]{git.path}[/cyan]\n"
+            f"Not on main branch (on '{current}', expected '{main}').\n"
+            f"  repo: [dim]{git.path}[/dim]\n\n"
+            f"Use [blue]--any-branch[/blue] to override."
         )
 
     if not git.is_clean():
-        raise AppError(
-            f"Repo has uncommitted changes.\n  repo: [cyan]{git.path}[/cyan]"
-        )
+        raise AppError(f"Repo has uncommitted changes.\n  repo: [dim]{git.path}[/dim]")
 
 
 def _resolve_commit(git: GitRepo, skill_name: str) -> str:
@@ -196,4 +194,6 @@ def _resolve_commit(git: GitRepo, skill_name: str) -> str:
     if git.verify_commit_content(commit, skill_name):
         return commit
 
-    raise AppError(f"Skill '{skill_name}' content does not match commit {commit}.")
+    raise AppError(
+        f"Skill [green]{skill_name}[/green] content does not match commit {commit}."
+    )

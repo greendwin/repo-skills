@@ -48,7 +48,7 @@ def update(
         return
 
     if name and name not in manifest.skills:
-        raise AppError(f"Skill [cyan]{name}[/cyan] is not installed.")
+        raise AppError(f"Skill [green]{name}[/green] is not installed.")
 
     for sentry in sources.sources.values():
         source_path = Path(sentry.path)

@@ -57,7 +57,7 @@ def _handle_reinit(
     save_source_registry(registry)
 
     if is_rename:
-        old = f"[cyan]{old_name}[/cyan]"
+        old = f"[green]{old_name}[/green]"
         new = f"[green]{effective_name}[/green]"
         echo(f"Renamed source {old} to {new}.")
     elif not was_registered:
@@ -129,7 +129,7 @@ def source_remove(
     registry = load_source_registry()
 
     if name not in registry.sources:
-        raise AppError(f"Source [cyan]{name}[/cyan] not found.")
+        raise AppError(f"Source [green]{name}[/green] not found.")
 
     if _has_installed_skills(name):
         raise AppError("Cannot remove a source with installed skills.")
@@ -139,4 +139,4 @@ def source_remove(
     del registry.sources[name]
     save_source_registry(registry)
 
-    echo(f"Removed source [green]{name}[/green] at [cyan]{source_path}[/cyan].")
+    echo(f"Removed source [green]{name}[/green] at [dim]{source_path}[/dim].")

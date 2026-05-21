@@ -11,8 +11,8 @@ from repo_skills.git import GitRepo
 
 def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> AppError:
     cmd = " ".join(["git", *args])
-    msg = f"git command failed: [cyan]{cmd}[/cyan]"
-    msg += f"\n  repo: [cyan]{repo_path}[/cyan]"
+    msg = f"git command failed: [blue]{cmd}[/blue]"
+    msg += f"\n  repo: [dim]{repo_path}[/dim]"
     try:
         branch = subprocess.run(
             ["git", "branch", "--show-current"],
@@ -22,7 +22,7 @@ def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> AppError:
             check=True,
         ).stdout.strip()
         if branch:
-            msg += f"\n  branch: [cyan]{branch}[/cyan]"
+            msg += f"\n  branch: [green]{branch}[/green]"
     except subprocess.CalledProcessError:
         pass
 

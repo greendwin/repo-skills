@@ -53,7 +53,10 @@ def merge(
         return
 
     if name is None:
-        raise AppError("Skill name is required (or use [blue]--continue[/blue]).")
+        raise AppError(
+            "Skill name is required.\n\n"
+            "Use [blue]--continue[/blue] to finalize a merge in progress."
+        )
 
     _merge_start(name, from_provider=from_provider, offline=offline)
 
@@ -66,19 +69,19 @@ def _merge_start(
 ) -> None:
     manifest = load_skill_manifest()
     if name not in manifest.skills:
-        raise AppError(f"Skill [cyan]{name}[/cyan] is not installed.")
+        raise AppError(f"Skill [green]{name}[/green] is not installed.")
 
     entry = manifest.skills[name]
     if entry.commit is None:
         raise AppError(
-            f"Skill [cyan]{name}[/cyan] has no base commit.\n"
+            f"Skill [green]{name}[/green] has no base commit.\n\n"
             f"Run [blue]skills update[/blue] first."
         )
 
     source_name = entry.source
     registry = load_source_registry()
     if source_name not in registry.sources:
-        raise AppError(f"Source [cyan]{source_name}[/cyan] not found.")
+        raise AppError(f"Source [green]{source_name}[/green] not found.")
 
     source_path = Path(registry.sources[source_name].path)
     git = resolve_git_repo(source_path)
@@ -96,9 +99,7 @@ def _merge_start(
         )
 
     if not git.is_clean():
-        raise AppError(
-            f"Repo has uncommitted changes.\n  repo: [cyan]{git.path}[/cyan]"
-        )
+        raise AppError(f"Repo has uncommitted changes.\n  repo: [dim]{git.path}[/dim]")
 
     main_branch = git.get_main_branch()
     if git.current_branch() != main_branch:
@@ -127,11 +128,11 @@ def _merge_start(
 
     clean = git.rebase(main_branch)
     if clean:
-        echo("[green]✨ Rebase clean![/green]\n")
+        echo("Rebase clean.\n")
         echo("Run [blue]skills merge --continue[/blue] to finalize.")
         return
 
-    echo("[yellow]⚠️ Rebase has conflicts.[/yellow]\n")
+    echo("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
     echo("Resolve them, then run [blue]skills merge --continue[/blue].")
 
 
@@ -144,9 +145,7 @@ def _merge_continue() -> None:
     if rebasing:
         git.rebase_continue()
     elif not git.is_clean():
-        raise AppError(
-            f"Repo has uncommitted changes.\n  repo: [cyan]{git.path}[/cyan]"
-        )
+        raise AppError(f"Repo has uncommitted changes.\n  repo: [dim]{git.path}[/dim]")
 
     manifest = load_skill_manifest()
     entry = manifest.skills[skill_name]
@@ -180,12 +179,11 @@ def _merge_continue() -> None:
 
     if empty:
         echo(
-            f"👌 Nothing to merge for [cyan]{skill_name}[/cyan] "
-            "— [bold]already up to date[/bold]."
+            f"Nothing to merge for [green]{skill_name}[/green] " "— already up to date."
         )
         return
 
-    echo(f"[green]👍 Merge complete for [cyan]{skill_name}[/cyan].[/green]")
+    echo(f"Merge complete for [green]{skill_name}[/green].")
 
 
 def _detect_merge_repo() -> "GitRepo":
@@ -215,13 +213,13 @@ def _detect_merge_branch(git: "GitRepo") -> str:
             f"Checkout the one to continue."
         )
 
-    raise AppError("No merge branch found. Run [blue]skills merge[/blue] first.")
+    raise AppError("No merge branch found.\n\n" "Run [blue]skills merge[/blue] first.")
 
 
 def _parse_merge_branch(branch: str) -> tuple[str, str]:
     parts = branch.removeprefix(MERGE_BRANCH_PREFIX).split("/", 1)
     if len(parts) != 2:
-        raise AppError(f"Invalid merge branch: [cyan]{branch}[/cyan]")
+        raise AppError(f"Invalid merge branch: [green]{branch}[/green]")
     return parts[0], parts[1]
 
 
@@ -233,7 +231,7 @@ def _resolve_provider(
 ) -> str:
     if from_provider is not None:
         if from_provider not in providers.providers:
-            raise AppError(f"Provider [cyan]{from_provider}[/cyan] not found.")
+            raise AppError(f"Provider [green]{from_provider}[/green] not found.")
         return from_provider
 
     diverged: list[str] = []
@@ -249,13 +247,14 @@ def _resolve_provider(
 
     if not diverged:
         raise AppError(
-            f"No provider has modified [cyan]{skill_name}[/cyan]. Nothing to merge."
+            f"No provider has modified [green]{skill_name}[/green]. Nothing to merge."
         )
 
     if len(diverged) > 1:
         names = ", ".join(sorted(diverged))
         raise AppError(
-            f"Multiple providers have modified [cyan]{skill_name}[/cyan] ({names}).\n"
+            "Multiple providers have modified"
+            f" [green]{skill_name}[/green] ({names}).\n\n"
             f"Use [blue]--from[/blue] to specify."
         )
 

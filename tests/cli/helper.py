@@ -52,6 +52,11 @@ class FakeGitRepo:
     committed_messages: list[str] = field(default_factory=list)
     rebased_onto: str | None = None
     rebase_clean: bool = True
+    rebasing: bool = False
+    branches: list[str] = field(default_factory=list)
+    deleted_branches: list[str] = field(default_factory=list)
+    ff_targets: list[str] = field(default_factory=list)
+    ff_fails: bool = False
 
     def pull(self) -> None:
         self.pulled = True
@@ -84,6 +89,23 @@ class FakeGitRepo:
     def rebase(self, onto: str) -> bool:
         self.rebased_onto = onto
         return self.rebase_clean
+
+    def is_rebasing(self) -> bool:
+        return self.rebasing
+
+    def rebase_continue(self) -> None:
+        self.rebasing = False
+
+    def fast_forward(self, branch: str) -> None:
+        if self.ff_fails:
+            raise AppError("Fast-forward failed.")
+        self.ff_targets.append(branch)
+
+    def delete_branch(self, name: str) -> None:
+        self.deleted_branches.append(name)
+
+    def list_branches(self, pattern: str) -> list[str]:
+        return [b for b in self.branches if pattern.rstrip("*") in b]
 
 
 def install_fake_git(fake: FakeGitRepo) -> None:

@@ -1,7 +1,7 @@
 ---
 id: s02t1002
 slug: skills-merge-continue
-status: pending
+status: done
 ---
 
 # `skills merge --continue`

@@ -11,6 +11,7 @@ from repo_skills.config import (
     ProviderConfig,
     ProviderRegistry,
     SkillEntry,
+    compute_file_hashes,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
@@ -21,6 +22,7 @@ from tests.cli.helper import (
     create_source_skill,
     install_fake_git,
     install_skill,
+    load_manifest,
     register_source,
     save_manifest,
     uninstall_fake_git,
@@ -172,6 +174,18 @@ class TestMergeValidation:
 
         assert_words_in_message(result.exception.message, "not installed")
 
+    def test_errors_when_merge_already_in_progress(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_diverged_skill(fs, git_repo)
+        _fake_git.branches = ["skill-merge/claude/tdd"]
+
+        result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
+
+        assert_words_in_message(
+            result.exception.message, "merge already in progress", "--continue"
+        )
+
     def test_errors_when_repo_dirty(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
@@ -228,3 +242,131 @@ class TestMergeValidation:
 
         source_skill = git_repo / "skills" / "tdd" / "SKILL.md"
         assert source_skill.read_text() == "# edited by user"
+
+
+def _setup_merge_branch(
+    fs: FakeFilesystem,
+    git_repo: Path,
+    fake_git: FakeGitRepo,
+    *,
+    branch: str = "skill-merge/claude/tdd",
+    content: str = "# merged",
+) -> None:
+    register_source(git_repo)
+    hashes = install_skill(fs, "tdd", content="# original")
+    save_manifest({"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)})
+    create_source_skill(fs, "tdd", content=content)
+    fake_git.branch = branch
+
+
+class TestMergeContinue:
+    def test_happy_path(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git)
+
+        result = assert_invoke("merge", "--continue")
+
+        assert _fake_git.ff_targets == ["skill-merge/claude/tdd"]
+        assert _fake_git.branch == "main"
+        assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
+        installed = (INSTALL_DIR / "tdd" / "SKILL.md").read_text()
+        assert installed == "# merged"
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].files == compute_file_hashes(INSTALL_DIR / "tdd")
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_continues_rebase_when_in_progress(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git)
+        _fake_git.rebasing = True
+
+        assert_invoke("merge", "--continue")
+
+        assert _fake_git.rebasing is False
+
+    def test_errors_when_multiple_merge_branches(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git, branch="main")
+        _fake_git.branches = [
+            "skill-merge/claude/tdd",
+            "skill-merge/cursor/tdd",
+        ]
+
+        result = assert_invoke("merge", "--continue", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "multiple merge branches")
+
+    def test_errors_when_no_merge_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git, branch="main")
+
+        result = assert_invoke("merge", "--continue", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "no merge branch")
+
+    def test_errors_when_repo_dirty(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git)
+        _fake_git.clean = False
+
+        result = assert_invoke("merge", "--continue", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "uncommitted changes")
+
+    def test_errors_when_ff_fails(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git)
+        _fake_git.ff_fails = True
+
+        result = assert_invoke("merge", "--continue", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "fast-forward failed")
+
+    def test_updates_manifest_commit(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git)
+        _fake_git.commits["tdd"] = "newcommit789"
+
+        assert_invoke("merge", "--continue")
+
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].commit == "newcommit789"
+
+    def test_dirty_allowed_during_rebase(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git)
+        _fake_git.rebasing = True
+        _fake_git.clean = False
+
+        result = assert_invoke("merge", "--continue")
+
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_empty_merge_already_up_to_date(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git, content="# original")
+
+        result = assert_invoke("merge", "--continue")
+
+        assert_words_in_message(result.output, "already up to date")
+        assert _fake_git.deleted_branches == ["skill-merge/claude/tdd"]
+
+    def test_auto_detects_merge_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git, branch="main")
+        _fake_git.branches = ["skill-merge/claude/tdd"]
+
+        result = assert_invoke("merge", "--continue")
+
+        assert _fake_git.ff_targets == ["skill-merge/claude/tdd"]
+        assert_words_in_message(result.output, "merge", "complete")

@@ -112,6 +112,27 @@ class RealGitRepo:
             raise
         return True
 
+    def is_rebasing(self) -> bool:
+        return self._in_rebase()
+
+    def rebase_continue(self) -> None:
+        self._run("rebase", "--continue")
+
+    def fast_forward(self, branch: str) -> None:
+        self._run("merge", "--ff-only", branch)
+
+    def delete_branch(self, name: str) -> None:
+        self._run("branch", "-d", name)
+
+    def list_branches(self, pattern: str) -> list[str]:
+        try:
+            output = self._run("branch", "--list", pattern)
+        except AppError:
+            return []
+        return [
+            line.strip().lstrip("* ") for line in output.splitlines() if line.strip()
+        ]
+
     def _in_rebase(self) -> bool:
         try:
             self._run("rev-parse", "--verify", "REBASE_HEAD")

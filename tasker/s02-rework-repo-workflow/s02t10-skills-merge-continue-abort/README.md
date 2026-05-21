@@ -38,7 +38,7 @@ status: pending
 ## Subtasks
 
 - [x] [s02t1001](s02t1001-skills-merge-name-basic-start.md): `skills merge <name>` — basic start flow
-- [ ] [s02t1002](s02t1002-skills-merge-continue.md): `skills merge --continue`
+- [x] [s02t1002](s02t1002-skills-merge-continue.md): `skills merge --continue`
 - [ ] [s02t1003](s02t1003-skills-merge-abort.md): `skills merge --abort`
 - [ ] [s02t1004](s02t1004-autofinalize-on-clean-rebase.md): Auto-finalize on clean rebase
 - [ ] [s02t1005](s02t1005-base-commit-search-closestmatch-fallback.md): Base commit search (closest-match fallback)

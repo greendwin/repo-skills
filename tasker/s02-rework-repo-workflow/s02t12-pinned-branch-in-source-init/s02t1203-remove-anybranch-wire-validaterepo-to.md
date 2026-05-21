@@ -1,7 +1,7 @@
 ---
 id: s02t1203
 slug: remove-anybranch-wire-validaterepo-to
-status: pending
+status: done
 ---
 
 # Remove `--any-branch`, wire `_validate_repo` to pinned branch

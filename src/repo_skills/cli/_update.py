@@ -13,13 +13,14 @@ from repo_skills.config import (
     load_skill_manifest,
     load_source_config,
     load_source_registry,
+    resolve_branch,
     save_skill_manifest,
 )
 from repo_skills.errors import AppError, NoopError
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._install import _validate_repo
+from ._install import validate_repo
 from ._utils import echo
 
 
@@ -34,10 +35,6 @@ def update(
         bool,
         typer.Option("--offline", help="Skip git pull."),
     ] = False,
-    any_branch: Annotated[
-        bool,
-        typer.Option("--any-branch", help="Allow update from any branch."),
-    ] = False,
 ) -> None:
     sources = load_source_registry()
     providers = load_provider_registry()
@@ -51,10 +48,11 @@ def update(
 
     for sentry in sources.sources.values():
         source_path = Path(sentry.path)
+        source_cfg = load_source_config(source_path)
         git = resolve_git_repo(source_path)
         if not offline:
             git.pull()
-        _validate_repo(git, any_branch=any_branch)
+        validate_repo(git, branch=resolve_branch(source_cfg, git))
 
     skills_to_update = {name: manifest.skills[name]} if name else dict(manifest.skills)
 

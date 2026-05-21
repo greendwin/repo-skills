@@ -223,11 +223,12 @@ def register_source(
     *,
     name: str = "my-project",
     skills_dir: str = "skills",
+    branch: str = "",
 ) -> None:
     registry = SourceRegistry(sources={name: SourceEntry(path=str(git_repo))})
     registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
 
-    cfg = SourceConfig(name=name, skills_dir=skills_dir)
+    cfg = SourceConfig(name=name, skills_dir=skills_dir, branch=branch)
     cfg.save(git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE)
 
 

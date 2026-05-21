@@ -14,6 +14,7 @@ from repo_skills.config import (
     load_skill_manifest,
     load_source_config,
     load_source_registry,
+    resolve_branch,
     save_skill_manifest,
 )
 from repo_skills.errors import AppError
@@ -40,10 +41,6 @@ def install(
         bool,
         typer.Option("--force", help="Overwrite existing skill."),
     ] = False,
-    any_branch: Annotated[
-        bool,
-        typer.Option("--any-branch", help="Allow install from any branch."),
-    ] = False,
 ) -> None:
     source_name, source_path = _resolve_source(source, skill_name=name)
 
@@ -53,7 +50,7 @@ def install(
     git = resolve_git_repo(source_path)
     if not offline:
         git.pull()
-    _validate_repo(git, any_branch=any_branch)
+    validate_repo(git, branch=resolve_branch(source_cfg, git))
 
     src = skills_dir / name
     if not src.is_dir():
@@ -175,14 +172,12 @@ def _resolve_source(source_name: str | None, *, skill_name: str) -> tuple[str, P
     )
 
 
-def _validate_repo(git: GitRepo, *, any_branch: bool = False) -> None:
-    main = git.get_main_branch()
+def validate_repo(git: GitRepo, *, branch: str) -> None:
     current = git.current_branch()
-    if current != main and not any_branch:
+    if current != branch:
         raise AppError(
-            f"Not on main branch (on '{current}', expected '{main}').\n"
-            f"  repo: [dim]{git.path}[/dim]\n\n"
-            f"Use [blue]--any-branch[/blue] to override."
+            f"Not on the pinned branch (on [cyan]{current}[/cyan], expected [cyan]{branch}[/cyan]).\n"
+            f"  Use [blue]source init --branch {current}[/blue] to change the pin."
         )
 
     if not git.is_clean():

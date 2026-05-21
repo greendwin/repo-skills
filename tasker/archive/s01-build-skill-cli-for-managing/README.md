@@ -1,7 +1,7 @@
 ---
 id: s01
 slug: build-skill-cli-for-managing
-status: pending
+status: done
 ---
 
 # Build `skill` CLI for managing Claude Code skills
@@ -28,10 +28,10 @@ status: pending
 - [x] [s01t01](s01t01-slice-1-project-scaffold.md): Slice 1 — Project scaffold
 - [x] [s01t02](s01t02-slice-2-repo-discovery-skill.md): Slice 2 — Repo discovery + `skill list`
 - [x] [s01t03](s01t03-slice-3-skill-install-name.md): Slice 3 — `skill install <name>` + `skill uninstall <name>`
-- [ ] [s01t04](s01t04-slice-4-skill-update-name/): Slice 4 — `skill update [name]`
-- [ ] [s01t05](s01t05-slice-5-skill-peek-diff.md): Slice 5 — `skill peek [--diff] [name]`
-- [ ] [s01t06](s01t06-slice-6-interactive-skill-install.md): Slice 6 — Interactive `skill install` (no args)
-- [ ] [s01t07](s01t07-slice-7-skill-merge-name.md): Slice 7 — `skill merge <name>` + `--continue` / `--abort`
+- [x] ~~[s01t04](s01t04-slice-4-skill-update-name/): Slice 4 — `skill update [name]`~~
+- [x] ~~[s01t05](s01t05-slice-5-skill-peek-diff.md): Slice 5 — `skill peek [--diff] [name]`~~
+- [x] ~~[s01t06](s01t06-slice-6-interactive-skill-install.md): Slice 6 — Interactive `skill install` (no args)~~
+- [x] ~~[s01t07](s01t07-slice-7-skill-merge-name.md): Slice 7 — `skill merge <name>` + `--continue` / `--abort`~~
 - [x] [s01t08](s01t08-rework-cli-from-click-to.md): Rework CLI from click to typer + typer_di
 - [x] [s01t09](s01t09-list-command-should-be-pretty.md): List command should be pretty
-- [ ] [s01t10](s01t10-history-search-to-find-matching.md): History search to find matching commit for unknown installs
+- [x] ~~[s01t10](s01t10-history-search-to-find-matching.md): History search to find matching commit for unknown installs~~

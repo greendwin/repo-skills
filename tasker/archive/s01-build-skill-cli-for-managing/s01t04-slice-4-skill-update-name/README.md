@@ -1,7 +1,7 @@
 ---
 id: s01t04
 slug: slice-4-skill-update-name
-status: pending
+status: cancelled
 ---
 
 # Slice 4 — `skill update [name]`
@@ -30,4 +30,4 @@ status: pending
 - [x] [s01t0402](s01t0402-wire-git-validation-into-install.md): Wire git validation into `install`
 - [x] [s01t0403](s01t0403-wire-git-validation-into-update.md): Wire git validation into `update`
 - [x] [s01t0404](s01t0404-real-gitrepo-implementation.md): Real `GitRepo` implementation
-- [ ] s01t0405: Make real tests
+- [x] ~~s01t0405: Make real tests~~

@@ -1,5 +1,5 @@
 ---
-id: s05t02
+id: s06t0302
 slug: migrate-all-error-sites-to
 status: done
 ---

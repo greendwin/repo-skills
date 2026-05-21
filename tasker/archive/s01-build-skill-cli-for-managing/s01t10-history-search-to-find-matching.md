@@ -1,7 +1,7 @@
 ---
 id: s01t10
 slug: history-search-to-find-matching
-status: pending
+status: cancelled
 ---
 
 # History search to find matching commit for unknown installs

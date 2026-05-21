@@ -1,7 +1,7 @@
 ---
 id: s01t05
 slug: slice-5-skill-peek-diff
-status: pending
+status: cancelled
 ---
 
 # Slice 5 — `skill peek [--diff] [name]`

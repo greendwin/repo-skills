@@ -15,6 +15,7 @@ from repo_skills.config import (
     load_skill_manifest,
     load_source_registry,
 )
+from repo_skills.errors import NoopError
 
 from ._app import app
 from ._deps import resolve_git_repo
@@ -70,7 +71,7 @@ def status(
     has_output |= _print_untracked_section(untracked, name_width, provider_width)
 
     if not has_output:
-        echo("[dim]No skills found.[/dim]")
+        raise NoopError("[dim]No skills found.[/dim]")
 
 
 def _group_installed_by_source(manifest: SkillManifest) -> SkillsBySource:
@@ -204,7 +205,7 @@ def _print_untracked_section(
             echo(
                 f"  {name:<{name_width}}"
                 f"  [dim]{pname:<{provider_width}}[/dim]"
-                f"  [red]orphan[/red]"
+                f"  [dim magenta]orphan[/dim magenta]"
             )
 
     return True

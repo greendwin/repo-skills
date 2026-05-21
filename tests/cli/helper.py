@@ -22,7 +22,13 @@ from repo_skills.config import (
     SourceRegistry,
     compute_file_hashes,
 )
-from repo_skills.errors import AppError
+from repo_skills.errors import AppError, NoopError
+
+
+@dataclass
+class NoopResult:
+    output: str
+    exit_code: int = 0
 
 
 @dataclass
@@ -48,6 +54,20 @@ class FakeGitRepo:
     commits: dict[str, str] = field(default_factory=dict)
     verified: dict[str, bool] = field(default_factory=dict)
     pulled: bool = False
+    created_branches: dict[str, str] = field(default_factory=dict)
+    committed_messages: list[str] = field(default_factory=list)
+    rebased_onto: str | None = None
+    rebase_clean: bool = True
+    rebasing: bool = False
+    branches: list[str] = field(default_factory=list)
+    deleted_branches: list[str] = field(default_factory=list)
+    ff_targets: list[str] = field(default_factory=list)
+    ff_fails: bool = False
+    commit_logs: dict[str, list[str]] = field(default_factory=dict)
+    files_at_commit: dict[tuple[str, str], bytes] = field(default_factory=dict)
+    orphan_branches: list[str] = field(default_factory=list)
+    rebase_root_clean: bool = True
+    rebase_root_onto: str | None = None
 
     def pull(self) -> None:
         self.pulled = True
@@ -66,6 +86,54 @@ class FakeGitRepo:
 
     def verify_commit_content(self, commit: str, skill_name: str) -> bool:
         return self.verified.get(skill_name, True)
+
+    def log_commits(self, path: str, max_count: int) -> list[str]:
+        return self.commit_logs.get(path, [])[:max_count]
+
+    def get_file_at_commit(self, commit: str, path: str) -> bytes:
+        return self.files_at_commit[(commit, path)]
+
+    def create_branch(self, name: str, from_commit: str) -> None:
+        self.created_branches[name] = from_commit
+        self.branch = name
+
+    def create_orphan_branch(self, name: str) -> None:
+        self.orphan_branches.append(name)
+        self.branch = name
+
+    def checkout(self, branch: str) -> None:
+        self.branch = branch
+
+    def commit_all(self, message: str) -> None:
+        self.committed_messages.append(message)
+
+    def rebase(self, onto: str) -> bool:
+        self.rebased_onto = onto
+        return self.rebase_clean
+
+    def rebase_root(self, onto: str) -> bool:
+        self.rebase_root_onto = onto
+        return self.rebase_root_clean
+
+    def is_rebasing(self) -> bool:
+        return self.rebasing
+
+    def rebase_continue(self) -> None:
+        self.rebasing = False
+
+    def rebase_abort(self) -> None:
+        self.rebasing = False
+
+    def fast_forward(self, branch: str) -> None:
+        if self.ff_fails:
+            raise AppError("Fast-forward failed.")
+        self.ff_targets.append(branch)
+
+    def delete_branch(self, name: str) -> None:
+        self.deleted_branches.append(name)
+
+    def list_branches(self, pattern: str) -> list[str]:
+        return [b for b in self.branches if pattern.rstrip("*") in b]
 
 
 def install_fake_git(fake: FakeGitRepo) -> None:
@@ -87,13 +155,13 @@ def assert_invoke(
 def assert_invoke(
     *args: str,
     expect_error: Literal[False] = ...,
-) -> Result: ...
+) -> Result | NoopResult: ...
 
 
 def assert_invoke(
     *args: str,
     expect_error: bool = False,
-) -> Result | ErrorResult:
+) -> Result | ErrorResult | NoopResult:
     runner = CliRunner(env={"NO_COLOR": "1"})
     result = runner.invoke(app, args)
 
@@ -102,6 +170,9 @@ def assert_invoke(
             f"Expected AppError, got {result.exception!r}.\n" f"Output: {result.output}"
         )
         return ErrorResult(exception=result.exception, output=result.output)
+
+    if isinstance(result.exception, NoopError):
+        return NoopResult(output=result.exception.message)
 
     if result.exception is not None and not isinstance(result.exception, SystemExit):
         raise result.exception
@@ -152,11 +223,12 @@ def register_source(
     *,
     name: str = "my-project",
     skills_dir: str = "skills",
+    branch: str = "",
 ) -> None:
     registry = SourceRegistry(sources={name: SourceEntry(path=str(git_repo))})
     registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
 
-    cfg = SourceConfig(name=name, skills_dir=skills_dir)
+    cfg = SourceConfig(name=name, skills_dir=skills_dir, branch=branch)
     cfg.save(git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE)
 
 

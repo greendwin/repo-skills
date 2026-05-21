@@ -13,13 +13,14 @@ from repo_skills.config import (
     load_skill_manifest,
     load_source_config,
     load_source_registry,
+    resolve_branch,
     save_skill_manifest,
 )
-from repo_skills.errors import AppError
+from repo_skills.errors import AppError, NoopError
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._install import _validate_repo
+from ._install import validate_repo
 from ._utils import echo
 
 
@@ -34,28 +35,24 @@ def update(
         bool,
         typer.Option("--offline", help="Skip git pull."),
     ] = False,
-    any_branch: Annotated[
-        bool,
-        typer.Option("--any-branch", help="Allow update from any branch."),
-    ] = False,
 ) -> None:
     sources = load_source_registry()
     providers = load_provider_registry()
     manifest = load_skill_manifest()
 
     if not manifest.skills:
-        echo("[dim]No skills installed.[/dim]")
-        return
+        raise NoopError("[dim]No skills installed.[/dim]")
 
     if name and name not in manifest.skills:
-        raise AppError(f"Skill [cyan]{name}[/cyan] is not installed.")
+        raise AppError(f"Skill [green]{name}[/green] is not installed.")
 
     for sentry in sources.sources.values():
         source_path = Path(sentry.path)
+        source_cfg = load_source_config(source_path)
         git = resolve_git_repo(source_path)
         if not offline:
             git.pull()
-        _validate_repo(git, any_branch=any_branch)
+        validate_repo(git, branch=resolve_branch(source_cfg, git))
 
     skills_to_update = {name: manifest.skills[name]} if name else dict(manifest.skills)
 
@@ -120,12 +117,19 @@ def update(
 
 
 def _print_report(results: list[tuple[str, str]]) -> None:
+    if not results:
+        return
+
+    _STATUS_LABELS = {
+        "updated": "[green]updated[/green]",
+        "skipped": "[yellow]skipped (modified)[/yellow]",
+        "error": "[red]error[/red]",
+        "up-to-date": "[dim]up to date[/dim]",
+    }
+
+    name_width = max(len(name) for name, _ in results)
+
+    echo("[yellow]Update[/yellow]")
     for skill_name, status in results:
-        if status == "updated":
-            echo(f"  [green]{skill_name}[/green]  updated")
-        elif status == "skipped":
-            echo(f"  [yellow]{skill_name}[/yellow]  skipped (modified)")
-        elif status == "error":
-            echo(f"  [red]{skill_name}[/red]  error")
-        else:
-            echo(f"  [dim]{skill_name}[/dim]  up to date")
+        label = _STATUS_LABELS.get(status, status)
+        echo(f"  {skill_name:<{name_width}}  {label}")

@@ -12,3 +12,4 @@
 | **Available skill** | A skill present in a registered source but not yet installed (not in the manifest). Shown by `skills status` so the user knows what can be installed. |
 | **Orphan skill** | A directory inside a provider's install path that is not tracked in the manifest and does not match any skill in a registered source. Likely placed there manually. |
 | **Mergeable skill** | A directory inside a provider's install path that is not tracked in the manifest but matches a skill name in a registered source. Can be brought under management via `skills install --force`. |
+| **Pinned branch** | The branch captured at `source init` time that merge and other write operations target. Defaults to the current branch when `source init` runs. Replaces the need for `--any-branch`. |

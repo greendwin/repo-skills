@@ -1,7 +1,7 @@
 ---
 id: s01t07
 slug: slice-7-skill-merge-name
-status: pending
+status: cancelled
 ---
 
 # Slice 7 — `skill merge <name>` + `--continue` / `--abort`

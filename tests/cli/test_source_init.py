@@ -20,6 +20,7 @@ from repo_skills.config import (
 from tests.cli.helper import (
     SOURCE_CONFIG_DIR,
     SOURCE_REPO_ROOT,
+    FakeGitRepo,
     assert_invoke,
     assert_words_in_message,
     create_repo_skill,
@@ -35,6 +36,7 @@ class TestSourceInitFreshRepo:
         )
         assert source_cfg.name == "my-project"
         assert source_cfg.skills_dir == "skills"
+        assert source_cfg.branch == "main"
 
         assert (git_repo / "skills" / ".gitkeep").exists()
 
@@ -62,6 +64,55 @@ class TestSourceInitPopulatedRepo:
         )
         assert source_cfg.skills_dir == "skills"
         assert not (git_repo / "skills" / ".gitkeep").exists()
+
+
+class TestSourceInitBranch:
+    def test_init_with_branch_flag(
+        self, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _fake_git.branches = ["develop"]
+        assert_invoke("source", "init", "--branch", "develop")
+
+        source_cfg = SourceConfig.load(
+            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
+        )
+        assert source_cfg.branch == "develop"
+
+    def test_branch_flag_errors_when_branch_missing(
+        self, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _fake_git.branches = []
+        result = assert_invoke(
+            "source", "init", "--branch", "no-such", expect_error=True
+        )
+        assert_words_in_message(result.exception.message, "no-such", "not found")
+
+    def test_reinit_preserves_existing_branch(
+        self, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _fake_git.branches = ["develop"]
+        assert_invoke("source", "init", "--branch", "develop")
+
+        _fake_git.branch = "feature/xyz"
+        assert_invoke("source", "init")
+
+        source_cfg = SourceConfig.load(
+            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
+        )
+        assert source_cfg.branch == "develop"
+
+    def test_reinit_with_branch_updates_pin(
+        self, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        assert_invoke("source", "init")
+
+        _fake_git.branches = ["release"]
+        assert_invoke("source", "init", "--branch", "release")
+
+        source_cfg = SourceConfig.load(
+            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
+        )
+        assert source_cfg.branch == "release"
 
 
 class TestSourceInitNameOverride:

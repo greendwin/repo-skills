@@ -199,7 +199,7 @@ class TestInstallCollision:
 
 
 class TestInstallGitValidation:
-    def test_errors_when_not_on_main_branch(
+    def test_errors_when_not_on_pinned_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _fake_git.branch = "feature/xyz"
@@ -208,17 +208,17 @@ class TestInstallGitValidation:
 
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "not on main branch")
-        assert_words_in_message(result.exception.message, "--any-branch")
+        assert_words_in_message(result.exception.message, "not on the pinned branch")
+        assert_words_in_message(result.exception.message, "source init --branch")
 
-    def test_allows_non_main_branch_with_any_branch(
+    def test_succeeds_on_pinned_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        _fake_git.branch = "feature/xyz"
-        register_source(git_repo)
+        _fake_git.branch = "develop"
+        register_source(git_repo, branch="develop")
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
-        result = assert_invoke("install", "tdd", "--offline", "--any-branch")
+        result = assert_invoke("install", "tdd", "--offline")
 
         assert_words_in_message(result.output, "installed", "tdd")
 

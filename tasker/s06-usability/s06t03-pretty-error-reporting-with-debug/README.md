@@ -1,5 +1,5 @@
 ---
-id: s05
+id: s06t03
 slug: pretty-error-reporting-with-debug
 status: done
 ---
@@ -19,5 +19,5 @@ status: done
 
 ## Subtasks
 
-- [x] [s05t01](s05t01-apperror-main-wrapper.md): `AppError` + `main()` wrapper
-- [x] [s05t02](s05t02-migrate-all-error-sites-to.md): Migrate all error sites to `AppError`
+- [x] [s06t0301](s06t0301-apperror-main-wrapper.md): `AppError` + `main()` wrapper
+- [x] [s06t0302](s06t0302-migrate-all-error-sites-to.md): Migrate all error sites to `AppError`

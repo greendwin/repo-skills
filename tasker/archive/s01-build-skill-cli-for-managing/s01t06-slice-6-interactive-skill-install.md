@@ -1,7 +1,7 @@
 ---
 id: s01t06
 slug: slice-6-interactive-skill-install
-status: pending
+status: cancelled
 ---
 
 # Slice 6 — Interactive `skill install` (no args)

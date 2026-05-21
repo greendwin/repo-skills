@@ -11,8 +11,8 @@ from repo_skills.git import GitRepo
 
 def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> AppError:
     cmd = " ".join(["git", *args])
-    msg = f"git command failed: [cyan]{cmd}[/cyan]"
-    msg += f"\n  repo: [cyan]{repo_path}[/cyan]"
+    msg = f"git command failed: [blue]{cmd}[/blue]"
+    msg += f"\n  repo: [dim]{repo_path}[/dim]"
     try:
         branch = subprocess.run(
             ["git", "branch", "--show-current"],
@@ -22,7 +22,7 @@ def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> AppError:
             check=True,
         ).stdout.strip()
         if branch:
-            msg += f"\n  branch: [cyan]{branch}[/cyan]"
+            msg += f"\n  branch: [green]{branch}[/green]"
     except subprocess.CalledProcessError:
         pass
 
@@ -92,6 +92,81 @@ class RealGitRepo:
 
     def get_skill_commit(self, skill_name: str) -> str:
         return self._run("log", "-1", "--format=%H", "--", f"skills/{skill_name}")
+
+    def log_commits(self, path: str, max_count: int) -> list[str]:
+        output = self._run("log", f"--max-count={max_count}", "--format=%H", "--", path)
+        if not output:
+            return []
+        return output.splitlines()
+
+    def get_file_at_commit(self, commit: str, path: str) -> bytes:
+        return self._run_bytes("show", f"{commit}:{path}")
+
+    def create_branch(self, name: str, from_commit: str) -> None:
+        self._run("checkout", "-b", name, from_commit)
+
+    def create_orphan_branch(self, name: str) -> None:
+        self._run("checkout", "--orphan", name)
+        try:
+            self._run("rm", "-rf", ".")
+        except AppError:
+            pass
+
+    def checkout(self, branch: str) -> None:
+        self._run("checkout", branch)
+
+    def commit_all(self, message: str) -> None:
+        self._run("add", "-A")
+        self._run("commit", "-m", message)
+
+    def rebase(self, onto: str) -> bool:
+        try:
+            self._run("rebase", onto)
+        except AppError:
+            if self._in_rebase():
+                return False
+            raise
+        return True
+
+    def rebase_root(self, onto: str) -> bool:
+        try:
+            self._run("rebase", "--root", "--onto", onto)
+        except AppError:
+            if self._in_rebase():
+                return False
+            raise
+        return True
+
+    def is_rebasing(self) -> bool:
+        return self._in_rebase()
+
+    def rebase_continue(self) -> None:
+        self._run("rebase", "--continue")
+
+    def rebase_abort(self) -> None:
+        self._run("rebase", "--abort")
+
+    def fast_forward(self, branch: str) -> None:
+        self._run("merge", "--ff-only", branch)
+
+    def delete_branch(self, name: str) -> None:
+        self._run("branch", "-d", name)
+
+    def list_branches(self, pattern: str) -> list[str]:
+        try:
+            output = self._run("branch", "--list", pattern)
+        except AppError:
+            return []
+        return [
+            line.strip().lstrip("* ") for line in output.splitlines() if line.strip()
+        ]
+
+    def _in_rebase(self) -> bool:
+        try:
+            self._run("rev-parse", "--verify", "REBASE_HEAD")
+            return True
+        except AppError:
+            return False
 
     def verify_commit_content(self, commit: str, skill_name: str) -> bool:
         skill_path = f"skills/{skill_name}"

@@ -20,10 +20,19 @@ class AppError(Exception):
         super().__init__(message)
 
 
+class NoopError(Exception):
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(message)
+
+
 @contextmanager
 def error_handler(console: Console) -> Generator[None]:
     try:
         yield
+    except NoopError as ex:
+        console.print(ex.message)
+        raise SystemExit(0)
     except AppError as ex:
         if _print_callstack:
             console.print_exception()

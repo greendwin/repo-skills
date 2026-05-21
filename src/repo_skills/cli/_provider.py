@@ -31,7 +31,7 @@ def provider_add(
     registry = load_provider_registry(with_builtins=False)
 
     if name in load_provider_registry().providers:
-        raise AppError(f"Provider [cyan]{name}[/cyan] already exists.")
+        raise AppError(f"Provider [green]{name}[/green] already exists.")
 
     registry.providers[name] = ProviderConfig(name=name, install_dir=install_dir)
     save_provider_registry(registry)
@@ -48,7 +48,7 @@ def provider_list() -> None:
     width = max(width, 16)
     for name, cfg in registry.providers.items():
         label = f"[green]{name:<{width}}[/green]"
-        path = f"[dim white]{cfg.install_dir}[/dim white]"
+        path = f"[cyan]{cfg.install_dir}[/cyan]"
         if name == BUILTIN_PROVIDER_NAME:
             echo(f"* {label}  {path}  [dim](built-in)[/dim]")
         else:
@@ -65,7 +65,7 @@ def provider_remove(
     registry = load_provider_registry(with_builtins=False)
 
     if name not in registry.providers:
-        raise AppError(f"Provider [cyan]{name}[/cyan] not found.")
+        raise AppError(f"Provider [green]{name}[/green] not found.")
 
     del registry.providers[name]
     save_provider_registry(registry)

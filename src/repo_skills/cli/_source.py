@@ -15,9 +15,10 @@ from repo_skills.config import (
     save_source_registry,
 )
 from repo_skills.discovery import detect_skills_dir, find_git_root
-from repo_skills.errors import AppError
+from repo_skills.errors import AppError, NoopError
 
 from ._app import app
+from ._deps import resolve_git_repo
 from ._utils import echo
 
 source_app = TyperDI(
@@ -33,20 +34,29 @@ def _has_installed_skills(source_name: str) -> bool:
 
 
 def _handle_reinit(
+    git_root: Path,
     cfg: SourceConfig,
     name: str | None,
-    git_root: Path,
+    *,
+    branch: str | None,
 ) -> None:
     old_name = cfg.name
 
     effective_name = name if name is not None else old_name
     is_rename = effective_name != old_name
+    cfg_changed = False
 
     if is_rename:
         if _has_installed_skills(old_name):
             raise AppError("Renaming installed skills is not yet supported.")
-
         cfg.name = effective_name
+        cfg_changed = True
+
+    if branch is not None and branch != cfg.branch:
+        cfg.branch = branch
+        cfg_changed = True
+
+    if cfg_changed:
         cfg.save(git_root / REPO_SKILLS_DIR / SOURCE_CONFIG_FILE)
 
     registry = load_source_registry()
@@ -57,7 +67,7 @@ def _handle_reinit(
     save_source_registry(registry)
 
     if is_rename:
-        old = f"[cyan]{old_name}[/cyan]"
+        old = f"[green]{old_name}[/green]"
         new = f"[green]{effective_name}[/green]"
         echo(f"Renamed source {old} to {new}.")
     elif not was_registered:
@@ -69,6 +79,7 @@ def _handle_reinit(
 @source_app.command(name="init", help="Initialize a skill source in the current repo.")
 def source_init(
     name: str | None = typer.Option(None, "--name", help="Source name override."),
+    branch: str | None = typer.Option(None, "--branch", help="Pin to this branch."),
 ) -> None:
     cwd = Path.cwd()
     git_root = find_git_root(cwd)
@@ -78,12 +89,18 @@ def source_init(
     repo_skills_dir = git_root / REPO_SKILLS_DIR
     source_json = repo_skills_dir / SOURCE_CONFIG_FILE
 
+    git = resolve_git_repo(git_root)
+
+    if branch is not None and not git.list_branches(branch):
+        raise AppError(f"Branch [blue]{branch}[/blue] not found.")
+
     if source_json.exists():
         cfg = SourceConfig.load(source_json)
-        _handle_reinit(cfg, name, git_root)
+        _handle_reinit(git_root, cfg, name, branch=branch)
         return
 
     source_name = name or git_root.name
+    effective_branch = branch or git.current_branch()
 
     skills_dir = detect_skills_dir(git_root)
     if skills_dir is not None:
@@ -94,7 +111,11 @@ def source_init(
         gitkeep.parent.mkdir(parents=True, exist_ok=True)
         gitkeep.write_text("")
 
-    cfg = SourceConfig(name=source_name, skills_dir=rel_skills)
+    cfg = SourceConfig(
+        name=source_name,
+        skills_dir=rel_skills,
+        branch=effective_branch,
+    )
     cfg.save(source_json)
 
     gitignore = repo_skills_dir / ".gitignore"
@@ -112,8 +133,7 @@ def source_list() -> None:
     registry = load_source_registry()
 
     if not registry.sources:
-        echo("[dim]No sources registered.[/dim]")
-        return
+        raise NoopError("[dim]No sources registered.[/dim]")
 
     echo("[yellow]Skill sources[/yellow]")
     width = max(len(n) for n in registry.sources)
@@ -129,7 +149,7 @@ def source_remove(
     registry = load_source_registry()
 
     if name not in registry.sources:
-        raise AppError(f"Source [cyan]{name}[/cyan] not found.")
+        raise AppError(f"Source [green]{name}[/green] not found.")
 
     if _has_installed_skills(name):
         raise AppError("Cannot remove a source with installed skills.")
@@ -139,4 +159,4 @@ def source_remove(
     del registry.sources[name]
     save_source_registry(registry)
 
-    echo(f"Removed source [green]{name}[/green] at [cyan]{source_path}[/cyan].")
+    echo(f"Removed source [green]{name}[/green] at [dim]{source_path}[/dim].")

@@ -1,7 +1,7 @@
 ---
 id: s04t01
 slug: create-skill-type-that-handles
-status: pending
+status: cancelled
 ---
 
 # Create Skill type that handles both in-repo an installed states

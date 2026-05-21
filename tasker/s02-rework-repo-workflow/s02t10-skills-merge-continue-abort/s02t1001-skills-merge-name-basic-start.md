@@ -1,7 +1,7 @@
 ---
 id: s02t1001
 slug: skills-merge-name-basic-start
-status: pending
+status: done
 ---
 
 # `skills merge <name>` — basic start flow

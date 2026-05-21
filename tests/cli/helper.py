@@ -48,6 +48,10 @@ class FakeGitRepo:
     commits: dict[str, str] = field(default_factory=dict)
     verified: dict[str, bool] = field(default_factory=dict)
     pulled: bool = False
+    created_branches: dict[str, str] = field(default_factory=dict)
+    committed_messages: list[str] = field(default_factory=list)
+    rebased_onto: str | None = None
+    rebase_clean: bool = True
 
     def pull(self) -> None:
         self.pulled = True
@@ -66,6 +70,20 @@ class FakeGitRepo:
 
     def verify_commit_content(self, commit: str, skill_name: str) -> bool:
         return self.verified.get(skill_name, True)
+
+    def create_branch(self, name: str, from_commit: str) -> None:
+        self.created_branches[name] = from_commit
+        self.branch = name
+
+    def checkout(self, branch: str) -> None:
+        self.branch = branch
+
+    def commit_all(self, message: str) -> None:
+        self.committed_messages.append(message)
+
+    def rebase(self, onto: str) -> bool:
+        self.rebased_onto = onto
+        return self.rebase_clean
 
 
 def install_fake_git(fake: FakeGitRepo) -> None:

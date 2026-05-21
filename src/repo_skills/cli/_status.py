@@ -204,7 +204,7 @@ def _print_untracked_section(
             echo(
                 f"  {name:<{name_width}}"
                 f"  [dim]{pname:<{provider_width}}[/dim]"
-                f"  [red]orphan[/red]"
+                f"  [dim magenta]orphan[/dim magenta]"
             )
 
     return True

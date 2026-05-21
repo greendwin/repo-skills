@@ -93,6 +93,32 @@ class RealGitRepo:
     def get_skill_commit(self, skill_name: str) -> str:
         return self._run("log", "-1", "--format=%H", "--", f"skills/{skill_name}")
 
+    def create_branch(self, name: str, from_commit: str) -> None:
+        self._run("checkout", "-b", name, from_commit)
+
+    def checkout(self, branch: str) -> None:
+        self._run("checkout", branch)
+
+    def commit_all(self, message: str) -> None:
+        self._run("add", "-A")
+        self._run("commit", "-m", message)
+
+    def rebase(self, onto: str) -> bool:
+        try:
+            self._run("rebase", onto)
+        except AppError:
+            if self._in_rebase():
+                return False
+            raise
+        return True
+
+    def _in_rebase(self) -> bool:
+        try:
+            self._run("rev-parse", "--verify", "REBASE_HEAD")
+            return True
+        except AppError:
+            return False
+
     def verify_commit_content(self, commit: str, skill_name: str) -> bool:
         skill_path = f"skills/{skill_name}"
         listing = self._run("ls-tree", "-r", "--name-only", commit, skill_path)

@@ -95,6 +95,53 @@ class TestInstall:
         assert_words_in_message(result.output, "installed", "tdd", "my-project")
 
 
+class TestInstallMultipleSkills:
+    @pytest.fixture(autouse=True)
+    def _fake_git(self) -> Generator[FakeGitRepo]:
+        fake = FakeGitRepo(commits={"tdd": "abc1234", "review": "def5678"})
+        install_fake_git(fake)
+        yield fake
+        uninstall_fake_git()
+
+    def test_installs_multiple_skills(self, fs: FakeFilesystem, git_repo: Path) -> None:
+        register_source(git_repo)
+        create_repo_skill(fs, "tdd", root=SKILLS_DIR)
+        create_repo_skill(fs, "review", root=SKILLS_DIR)
+
+        result = assert_invoke("install", "tdd", "review", "--offline")
+
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").exists()
+        assert (INSTALL_DIR / "review" / "SKILL.md").exists()
+        manifest = SkillManifest.load(MANIFEST_PATH)
+        assert "tdd" in manifest.skills
+        assert "review" in manifest.skills
+        assert_words_in_message(result.output, "installed", "tdd", "review")
+
+    def test_fails_fast_on_missing_skill(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_repo_skill(fs, "tdd", root=SKILLS_DIR)
+
+        result = assert_invoke(
+            "install", "tdd", "missing", "--offline", expect_error=True
+        )
+
+        assert_words_in_message(result.exception.message, "missing", "not found")
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").exists()
+
+    def test_pulls_source_only_once(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_repo_skill(fs, "tdd", root=SKILLS_DIR)
+        create_repo_skill(fs, "review", root=SKILLS_DIR)
+
+        assert_invoke("install", "tdd", "review")
+
+        assert _fake_git.pulled is True
+
+
 class TestInstallSourceResolution:
     def test_errors_when_no_sources(self, fs: FakeFilesystem, git_repo: Path) -> None:
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)

@@ -28,7 +28,10 @@ from ._utils import echo
 @app.command(help="Install a skill from a source.")
 def install(
     *,
-    name: str,
+    names: Annotated[
+        list[str],
+        typer.Argument(help="Skill name(s) to install."),
+    ],
     source: Annotated[
         Optional[str],
         typer.Option("--source", help="Source name (required when multiple)."),
@@ -42,14 +45,34 @@ def install(
         typer.Option("--force", help="Overwrite existing skill."),
     ] = False,
 ) -> None:
+    pulled_sources: set[str] = set()
+    for name in names:
+        _install_one(
+            name,
+            source=source,
+            offline=offline,
+            force=force,
+            pulled_sources=pulled_sources,
+        )
+
+
+def _install_one(
+    name: str,
+    *,
+    source: str | None,
+    offline: bool,
+    force: bool,
+    pulled_sources: set[str],
+) -> None:
     source_name, source_path = _resolve_source(source, skill_name=name)
 
     source_cfg = load_source_config(source_path)
     skills_dir = source_path / source_cfg.skills_dir
 
     git = resolve_git_repo(source_path)
-    if not offline:
+    if not offline and source_name not in pulled_sources:
         git.pull()
+        pulled_sources.add(source_name)
     validate_repo(git, branch=resolve_branch(source_cfg, git))
 
     src = skills_dir / name
@@ -82,22 +105,27 @@ def install(
 @app.command(help="Uninstall a skill.")
 def uninstall(
     *,
-    name: str,
+    names: Annotated[
+        list[str],
+        typer.Argument(help="Skill name(s) to uninstall."),
+    ],
 ) -> None:
     manifest = load_skill_manifest()
-    if name not in manifest.skills:
-        raise AppError(f"Skill [green]{name}[/green] is not installed.")
-
     providers = load_provider_registry()
-    for pcfg in providers.providers.values():
-        dst = pcfg.resolve_path(name)
-        if dst.exists():
-            shutil.rmtree(dst)
 
-    manifest.skills.pop(name)
-    save_skill_manifest(manifest)
+    for name in names:
+        if name not in manifest.skills:
+            raise AppError(f"Skill [green]{name}[/green] is not installed.")
 
-    echo(f"Uninstalled [green]{name}[/green].")
+        for pcfg in providers.providers.values():
+            dst = pcfg.resolve_path(name)
+            if dst.exists():
+                shutil.rmtree(dst)
+
+        manifest.skills.pop(name)
+        save_skill_manifest(manifest)
+
+        echo(f"Uninstalled [green]{name}[/green].")
 
 
 def _record_manifest(

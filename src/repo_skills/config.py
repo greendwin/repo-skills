@@ -7,6 +7,8 @@ from typing import Self, TypeAlias
 
 from pydantic import BaseModel
 
+from repo_skills.git import GitRepo
+
 REPO_SKILLS_DIR = ".repo-skills"
 SOURCE_CONFIG_FILE = "source.json"
 SOURCES_REGISTRY_FILE = "sources.json"
@@ -59,6 +61,11 @@ class _Saveable(BaseModel):
 class SourceConfig(_Saveable):
     name: str = ""
     skills_dir: str = "skills"
+    branch: str = ""
+
+
+def resolve_branch(cfg: SourceConfig, git: GitRepo) -> str:
+    return cfg.branch or git.get_main_branch()
 
 
 class ProviderConfig(BaseModel):
@@ -70,16 +77,17 @@ class ProviderRegistry(_Saveable):
     providers: dict[str, ProviderConfig] = {}
 
     def with_builtins(self) -> ProviderRegistry:
-        if BUILTIN_PROVIDER_NAME not in self.providers:
-            merged = {
-                BUILTIN_PROVIDER_NAME: ProviderConfig(
-                    name=BUILTIN_PROVIDER_NAME,
-                    install_dir=BUILTIN_PROVIDER_INSTALL_DIR,
-                ),
-                **self.providers,
-            }
-            return ProviderRegistry(providers=merged)
-        return self
+        if BUILTIN_PROVIDER_NAME in self.providers:
+            return self
+
+        merged = {
+            BUILTIN_PROVIDER_NAME: ProviderConfig(
+                name=BUILTIN_PROVIDER_NAME,
+                install_dir=BUILTIN_PROVIDER_INSTALL_DIR,
+            ),
+            **self.providers,
+        }
+        return ProviderRegistry(providers=merged)
 
 
 class SourceEntry(BaseModel):
@@ -105,10 +113,12 @@ def list_source_skills(source_path: Path) -> list[str]:
     skills_dir = source_path / cfg.skills_dir
     if not skills_dir.is_dir():
         return []
+
     result: list[str] = []
     for dirpath, _, filenames in os.walk(skills_dir):
         if "SKILL.md" in filenames:
             result.append(Path(dirpath).name)
+
     return sorted(result)
 
 

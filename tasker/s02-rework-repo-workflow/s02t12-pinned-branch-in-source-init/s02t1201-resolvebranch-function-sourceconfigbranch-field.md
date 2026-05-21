@@ -1,7 +1,7 @@
 ---
 id: s02t1201
 slug: resolvebranch-function-sourceconfigbranch-field
-status: pending
+status: done
 ---
 
 # `resolve_branch` function + `SourceConfig.branch` field

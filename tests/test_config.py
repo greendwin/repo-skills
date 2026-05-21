@@ -17,7 +17,24 @@ from repo_skills.config import (
     SourceRegistry,
     compute_file_hashes,
     default_config_dir,
+    resolve_branch,
 )
+from tests.cli.helper import FakeGitRepo
+
+# -- resolve_branch --
+
+
+class TestResolveBranch:
+    def test_returns_config_branch_when_set(self) -> None:
+        cfg = SourceConfig(branch="develop")
+        git = FakeGitRepo(main_branch="main")
+        assert resolve_branch(cfg, git) == "develop"
+
+    def test_falls_back_to_main_when_empty(self) -> None:
+        cfg = SourceConfig(branch="")
+        git = FakeGitRepo(main_branch="trunk")
+        assert resolve_branch(cfg, git) == "trunk"
+
 
 # -- default_config_dir --
 
@@ -50,12 +67,21 @@ class TestSourceConfig:
 
     def test_save_and_load_round_trip(self, fs: FakeFilesystem) -> None:
         path = Path("/repo/.repo-skills/source.json")
-        cfg = SourceConfig(name="my-repo", skills_dir="custom/skills")
+        cfg = SourceConfig(name="my-repo", skills_dir="custom/skills", branch="develop")
         cfg.save(path)
 
         loaded = SourceConfig.load(path)
         assert loaded.name == "my-repo"
         assert loaded.skills_dir == "custom/skills"
+        assert loaded.branch == "develop"
+
+    def test_load_legacy_without_branch_defaults_to_empty(
+        self, fs: FakeFilesystem
+    ) -> None:
+        path = Path("/repo/.repo-skills/source.json")
+        fs.create_file(path, contents='{"name": "old-repo", "skills_dir": "skills"}')
+        cfg = SourceConfig.load(path)
+        assert cfg.branch == ""
 
     def test_save_creates_parent_dirs(self, fs: FakeFilesystem) -> None:
         path = Path("/deep/nested/dir/source.json")

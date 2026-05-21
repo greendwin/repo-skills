@@ -1,7 +1,7 @@
 ---
 id: s02t1202
 slug: source-init-writes-current-branch
-status: pending
+status: done
 ---
 
 # `source init` writes current branch + `--branch` flag

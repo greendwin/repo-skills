@@ -14,7 +14,6 @@ services:
     tty: true
     volumes:
       - ..:/work
-      - ~/.local/share/tasker:/home/${USER}/.local/share/tasker
       - npm-cache:/home/${USER}/.npm
       - ./base/tmux.conf:/home/${USER}/.tmux.conf:ro
       - ./base/zshrc:/home/${USER}/.zshrc:ro

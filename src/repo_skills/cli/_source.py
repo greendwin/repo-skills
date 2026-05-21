@@ -11,6 +11,7 @@ from repo_skills.config import (
     SourceConfig,
     SourceEntry,
     load_skill_manifest,
+    load_source_config,
     load_source_registry,
     save_source_registry,
 )
@@ -139,7 +140,18 @@ def source_list() -> None:
     width = max(len(n) for n in registry.sources)
     width = max(width, 16)
     for name, entry in registry.sources.items():
-        echo(f"  [white]{name:<{width}}[/white]  [cyan]{entry.path}[/cyan]")
+        source_path = Path(entry.path)
+        branch_suffix = ""
+        if source_path.exists():
+            cfg = load_source_config(source_path)
+            if cfg.branch:
+                branch_suffix = f"  [dim](branch: {cfg.branch})[/dim]"
+
+        echo(
+            f"  [white]{name:<{width}}[/white]"
+            f"  [cyan]{entry.path}[/cyan]"
+            f"{branch_suffix}"
+        )
 
 
 @source_app.command(name="remove", help="Remove a source from registry.")

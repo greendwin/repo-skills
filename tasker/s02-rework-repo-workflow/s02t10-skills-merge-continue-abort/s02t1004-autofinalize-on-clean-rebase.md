@@ -1,7 +1,7 @@
 ---
 id: s02t1004
 slug: autofinalize-on-clean-rebase
-status: pending
+status: done
 ---
 
 # Auto-finalize on clean rebase

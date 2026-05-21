@@ -141,8 +141,7 @@ def _merge_start(
 
     clean = git.rebase(main_branch)
     if clean:
-        echo("Rebase clean.\n")
-        echo("Run [blue]skills merge --continue[/blue] to finalize.")
+        _finalize(git, provider_name, name)
         return
 
     echo("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
@@ -159,6 +158,12 @@ def _merge_continue() -> None:
         git.rebase_continue()
     elif not git.is_clean():
         raise AppError(f"Repo has uncommitted changes.\n  repo: [dim]{git.path}[/dim]")
+
+    _finalize(git, provider_name, skill_name)
+
+
+def _finalize(git: "GitRepo", provider_name: str, skill_name: str) -> None:
+    branch = f"{MERGE_BRANCH_PREFIX}{provider_name}/{skill_name}"
 
     manifest = load_skill_manifest()
     entry = manifest.skills[skill_name]

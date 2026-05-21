@@ -54,11 +54,9 @@ class TestMergeStart:
     ) -> None:
         _setup_diverged_skill(fs, git_repo)
 
-        result = assert_invoke("merge", "tdd", "--offline")
+        assert_invoke("merge", "tdd", "--offline")
 
-        assert_words_in_message(result.output, "--continue")
         assert _fake_git.created_branches["skill-merge/claude/tdd"] == COMMIT
-        assert _fake_git.branch == "skill-merge/claude/tdd"
         assert _fake_git.rebased_onto == "main"
 
     def test_auto_detects_diverged_provider(
@@ -82,7 +80,35 @@ class TestMergeStart:
         result = assert_invoke("merge", "tdd", "--offline")
 
         assert _fake_git.created_branches["skill-merge/claude/tdd"] == COMMIT
-        assert_words_in_message(result.output, "--continue")
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_auto_finalizes_on_clean_rebase(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_diverged_skill(fs, git_repo)
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        assert _fake_git.ff_targets == ["skill-merge/claude/tdd"]
+        assert _fake_git.branch == "main"
+        assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
+        installed = (INSTALL_DIR / "tdd" / "SKILL.md").read_text()
+        assert installed == "# edited by user"
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].files == compute_file_hashes(INSTALL_DIR / "tdd")
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_prompts_continue_on_conflict(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _fake_git.rebase_clean = False
+        _setup_diverged_skill(fs, git_repo)
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        assert_words_in_message(result.output, "conflicts", "--continue")
+        assert _fake_git.ff_targets == []
+        assert _fake_git.deleted_branches == []
 
 
 class TestMergeProviderResolution:
@@ -133,7 +159,7 @@ class TestMergeProviderResolution:
         result = assert_invoke("merge", "tdd", "--from", "cursor", "--offline")
 
         assert _fake_git.created_branches["skill-merge/cursor/tdd"] == COMMIT
-        assert_words_in_message(result.output, "--continue")
+        assert_words_in_message(result.output, "merge", "complete")
 
     def test_reports_synced_when_no_provider_diverged(
         self, fs: FakeFilesystem, git_repo: Path

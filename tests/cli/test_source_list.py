@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from repo_skills.config import SourceEntry, SourceRegistry
+from repo_skills.config import SOURCES_REGISTRY_FILE, SourceEntry, SourceRegistry
 from tests.cli.helper import (
     SOURCE_CONFIG_DIR,
     assert_invoke,
@@ -18,7 +18,7 @@ class TestSourceList:
                 "beta": SourceEntry(path="/repos/beta"),
             }
         )
-        registry.save(SOURCE_CONFIG_DIR / "sources.json")
+        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
 
         result = assert_invoke("source", "list")
 

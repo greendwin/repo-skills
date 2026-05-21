@@ -10,6 +10,18 @@ from typer.testing import CliRunner
 
 import repo_skills.cli._deps as deps_mod
 from repo_skills.cli import app
+from repo_skills.config import REPO_SKILLS_DIR as REPO_SKILLS_DIR_NAME
+from repo_skills.config import (
+    SKILL_MANIFEST_FILE,
+    SOURCE_CONFIG_FILE,
+    SOURCES_REGISTRY_FILE,
+    SkillEntry,
+    SkillManifest,
+    SourceConfig,
+    SourceEntry,
+    SourceRegistry,
+    compute_file_hashes,
+)
 from repo_skills.errors import AppError
 
 
@@ -24,6 +36,7 @@ SOURCE_CONFIG_DIR = Path("/home/user/.config/repo-skills")
 REPO_SKILLS_DIR = Path("/repo/skills")
 INSTALL_DIR = Path("/home/user/.claude/skills")
 MANIFEST_PATH = INSTALL_DIR / ".skills-manifest.json"
+SKILLS_DIR = SOURCE_REPO_ROOT / "skills"
 
 
 @dataclass
@@ -132,3 +145,47 @@ def create_installed_skill(
     skill_dir = INSTALL_DIR / name
     fs.create_file(skill_dir / "SKILL.md", contents=_skill_md(name, description))
     return skill_dir
+
+
+def register_source(
+    git_repo: Path,
+    *,
+    name: str = "my-project",
+    skills_dir: str = "skills",
+) -> None:
+    registry = SourceRegistry(sources={name: SourceEntry(path=str(git_repo))})
+    registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+
+    cfg = SourceConfig(name=name, skills_dir=skills_dir)
+    cfg.save(git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE)
+
+
+def save_manifest(skills: dict[str, SkillEntry]) -> None:
+    manifest = SkillManifest(skills=skills)
+    manifest.save(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
+
+
+def load_manifest() -> SkillManifest:
+    return SkillManifest.load(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
+
+
+def install_skill(
+    fs: FakeFilesystem,
+    name: str,
+    content: str = "# skill",
+    *,
+    install_dir: Path = INSTALL_DIR,
+) -> dict[str, str]:
+    skill_dir = install_dir / name
+    fs.create_file(skill_dir / "SKILL.md", contents=content)
+    return compute_file_hashes(skill_dir)
+
+
+def create_source_skill(
+    fs: FakeFilesystem,
+    name: str,
+    content: str = "# skill",
+    *,
+    root: Path = SKILLS_DIR,
+) -> None:
+    fs.create_file(root / name / "SKILL.md", contents=content)

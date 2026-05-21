@@ -6,9 +6,14 @@ from pathlib import Path
 import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
+from repo_skills.config import (
+    PROVIDERS_REGISTRY_FILE,
+)
 from repo_skills.config import REPO_SKILLS_DIR as REPO_SKILLS_DIR_NAME
 from repo_skills.config import (
+    SKILL_MANIFEST_FILE,
     SOURCE_CONFIG_FILE,
+    SOURCES_REGISTRY_FILE,
     ProviderConfig,
     ProviderRegistry,
     SkillManifest,
@@ -18,20 +23,20 @@ from repo_skills.config import (
 )
 from tests.cli.helper import (
     INSTALL_DIR,
+    SKILLS_DIR,
     SOURCE_CONFIG_DIR,
-    SOURCE_REPO_ROOT,
     FakeGitRepo,
     assert_invoke,
     assert_words_in_message,
     create_repo_skill,
     install_fake_git,
+    register_source,
     uninstall_fake_git,
 )
 
-SKILLS_DIR = SOURCE_REPO_ROOT / "skills"
 OTHER_REPO_ROOT = Path("/repos/other-project")
 OTHER_SKILLS_DIR = OTHER_REPO_ROOT / "skills"
-MANIFEST_PATH = SOURCE_CONFIG_DIR / "skill-manifest.json"
+MANIFEST_PATH = SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE
 
 
 @pytest.fixture(autouse=True)
@@ -42,19 +47,11 @@ def _fake_git() -> Generator[FakeGitRepo]:
     uninstall_fake_git()
 
 
-def _register_source(git_repo: Path) -> None:
-    registry = SourceRegistry(sources={"my-project": SourceEntry(path=str(git_repo))})
-    registry.save(SOURCE_CONFIG_DIR / "sources.json")
-
-    cfg = SourceConfig(name="my-project", skills_dir="skills")
-    cfg.save(git_repo / ".repo-skills" / "source.json")
-
-
 def _add_second_source(fs: FakeFilesystem) -> None:
     fs.create_dir(OTHER_REPO_ROOT / ".git")
-    registry = SourceRegistry.load(SOURCE_CONFIG_DIR / "sources.json")
+    registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
     registry.sources["other-project"] = SourceEntry(path=str(OTHER_REPO_ROOT))
-    registry.save(SOURCE_CONFIG_DIR / "sources.json")
+    registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
 
     cfg = SourceConfig(name="other-project", skills_dir="skills")
     cfg.save(OTHER_REPO_ROOT / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE)
@@ -62,7 +59,7 @@ def _add_second_source(fs: FakeFilesystem) -> None:
 
 class TestInstall:
     def test_copies_skill_to_provider(self, fs: FakeFilesystem, git_repo: Path) -> None:
-        _register_source(git_repo)
+        register_source(git_repo)
         skill_dir = create_repo_skill(fs, "tdd", root=SKILLS_DIR)
         fs.create_file(skill_dir / "tests.python.md", contents="# Python tests")
 
@@ -74,7 +71,7 @@ class TestInstall:
     def test_records_source_commit_hashes_in_manifest(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        _register_source(git_repo)
+        register_source(git_repo)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
         assert_invoke("install", "tdd", "--offline")
@@ -90,7 +87,7 @@ class TestInstall:
     def test_auto_selects_single_source(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        _register_source(git_repo)
+        register_source(git_repo)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
         result = assert_invoke("install", "tdd", "--offline")
@@ -107,7 +104,7 @@ class TestInstallSourceResolution:
     def test_auto_resolves_when_skill_in_one_source(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        _register_source(git_repo)
+        register_source(git_repo)
         _add_second_source(fs)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
@@ -118,7 +115,7 @@ class TestInstallSourceResolution:
     def test_errors_when_skill_in_multiple_sources(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        _register_source(git_repo)
+        register_source(git_repo)
         _add_second_source(fs)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
         create_repo_skill(fs, "tdd", root=OTHER_SKILLS_DIR)
@@ -130,10 +127,10 @@ class TestInstallSourceResolution:
         )
 
     def test_selects_source_with_flag(self, fs: FakeFilesystem, git_repo: Path) -> None:
-        _register_source(git_repo)
-        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / "sources.json")
+        register_source(git_repo)
+        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
         registry.sources["other"] = SourceEntry(path="/repos/other")
-        registry.save(SOURCE_CONFIG_DIR / "sources.json")
+        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
 
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
@@ -144,7 +141,7 @@ class TestInstallSourceResolution:
     def test_errors_when_source_not_found(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        _register_source(git_repo)
+        register_source(git_repo)
 
         result = assert_invoke(
             "install", "tdd", "--source", "nope", "--offline", expect_error=True
@@ -157,7 +154,7 @@ class TestInstallMultiProvider:
     def test_installs_to_all_providers(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        _register_source(git_repo)
+        register_source(git_repo)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
         cursor_dir = Path("/home/user/.cursor/skills")
@@ -166,7 +163,7 @@ class TestInstallMultiProvider:
                 "cursor": ProviderConfig(name="cursor", install_dir=str(cursor_dir))
             }
         )
-        provider_registry.save(SOURCE_CONFIG_DIR / "providers.json")
+        provider_registry.save(SOURCE_CONFIG_DIR / PROVIDERS_REGISTRY_FILE)
 
         assert_invoke("install", "tdd", "--offline")
 
@@ -178,7 +175,7 @@ class TestInstallCollision:
     def test_errors_when_skill_already_exists(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        _register_source(git_repo)
+        register_source(git_repo)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
         fs.create_dir(INSTALL_DIR / "tdd")
 
@@ -189,7 +186,7 @@ class TestInstallCollision:
     def test_force_overwrites_existing(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        _register_source(git_repo)
+        register_source(git_repo)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
         fs.create_dir(INSTALL_DIR / "tdd")
         fs.create_file(INSTALL_DIR / "tdd" / "old.md", contents="old")
@@ -206,7 +203,7 @@ class TestInstallGitValidation:
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _fake_git.branch = "feature/xyz"
-        _register_source(git_repo)
+        register_source(git_repo)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
@@ -218,7 +215,7 @@ class TestInstallGitValidation:
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _fake_git.branch = "feature/xyz"
-        _register_source(git_repo)
+        register_source(git_repo)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
         result = assert_invoke("install", "tdd", "--offline", "--any-branch")
@@ -229,7 +226,7 @@ class TestInstallGitValidation:
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _fake_git.clean = False
-        _register_source(git_repo)
+        register_source(git_repo)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
@@ -239,7 +236,7 @@ class TestInstallGitValidation:
     def test_errors_when_skill_not_in_source(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        _register_source(git_repo)
+        register_source(git_repo)
         fs.create_dir(SKILLS_DIR)
 
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
@@ -249,7 +246,7 @@ class TestInstallGitValidation:
     def test_pulls_by_default(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        _register_source(git_repo)
+        register_source(git_repo)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
         assert_invoke("install", "tdd")
@@ -259,7 +256,7 @@ class TestInstallGitValidation:
     def test_skips_pull_when_offline(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        _register_source(git_repo)
+        register_source(git_repo)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
         assert_invoke("install", "tdd", "--offline")

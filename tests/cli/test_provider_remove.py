@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from repo_skills.config import ProviderConfig, ProviderRegistry
+from repo_skills.config import PROVIDERS_REGISTRY_FILE, ProviderConfig, ProviderRegistry
 from tests.cli.helper import (
     SOURCE_CONFIG_DIR,
     assert_invoke,
     assert_words_in_message,
 )
 
-PROVIDERS_FILE = SOURCE_CONFIG_DIR / "providers.json"
+PROVIDERS_FILE = SOURCE_CONFIG_DIR / PROVIDERS_REGISTRY_FILE
 
 
 class TestProviderRemove:

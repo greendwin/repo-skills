@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
-from typer_di import Depends
 
 from repo_skills.config import SkillEntry as ManifestSkillEntry
 from repo_skills.config import (
@@ -19,14 +18,9 @@ from repo_skills.config import (
 )
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
-from repo_skills.manifest import Manifest
 
 from ._app import app
-from ._deps import (
-    resolve_git_repo,
-    resolve_install_dir,
-    resolve_manifest_path,
-)
+from ._deps import resolve_git_repo
 from ._utils import echo
 
 
@@ -90,21 +84,23 @@ def install(
 
 @app.command(help="Uninstall a skill.")
 def uninstall(
+    *,
     name: str,
-    install_dir: Path = Depends(resolve_install_dir),
-    manifest_path: Path = Depends(resolve_manifest_path),
 ) -> None:
-    dst = install_dir / name
-    if not dst.exists():
+    manifest = load_skill_manifest()
+    if name not in manifest.skills:
         raise AppError(f"Skill [cyan]{name}[/cyan] is not installed.")
 
-    shutil.rmtree(dst)
+    providers = load_provider_registry()
+    for _pname, pcfg in providers.providers.items():
+        dst = Path(pcfg.install_dir).expanduser() / name
+        if dst.exists():
+            shutil.rmtree(dst)
 
-    manifest = Manifest.load(manifest_path)
-    manifest.skills.pop(name, None)
-    manifest.save(manifest_path)
+    manifest.skills.pop(name)
+    save_skill_manifest(manifest)
 
-    typer.echo(f"Uninstalled '{name}'.")
+    echo(f"Uninstalled [green]{name}[/green].")
 
 
 def _record_manifest(
@@ -184,7 +180,8 @@ def _validate_repo(git: GitRepo, *, any_branch: bool = False) -> None:
     current = git.current_branch()
     if current != main and not any_branch:
         raise AppError(
-            f"Not on main branch (on '{current}', expected '{main}'), use [bold]--any-branch[/bold] to override.\n"
+            f"Not on main branch (on '{current}', expected '{main}'),"
+            f" use [bold]--any-branch[/bold] to override.\n"
             f"  repo: [cyan]{git.path}[/cyan]\n"
         )
 

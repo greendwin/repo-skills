@@ -38,6 +38,6 @@ Rework the repo-skills CLI to support multiple source repos, multiple agent prov
 - [x] [s02t06](s02t06-skills-install-reworked.md): `skills install` (reworked)
 - [x] [s02t07](s02t07-skills-status.md): `skills status`
 - [x] [s02t08](s02t08-skills-update-reworked.md): `skills update` (reworked)
-- [ ] [s02t09](s02t09-skills-uninstall-reworked.md): `skills uninstall` (reworked)
+- [x] [s02t09](s02t09-skills-uninstall-reworked.md): `skills uninstall` (reworked)
 - [ ] [s02t10](s02t10-skills-merge-continue-abort.md): `skills merge` + `--continue` / `--abort`
 - [ ] [s02t11](s02t11-rename-installed-skills-on-source.md): Rename installed skills on source rename

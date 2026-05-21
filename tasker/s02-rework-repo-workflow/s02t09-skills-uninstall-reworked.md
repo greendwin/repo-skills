@@ -1,7 +1,7 @@
 ---
 id: s02t09
 slug: skills-uninstall-reworked
-status: pending
+status: done
 ---
 
 # `skills uninstall` (reworked)

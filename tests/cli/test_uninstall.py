@@ -1,77 +1,82 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from repo_skills.manifest import Manifest, SkillEntry
+from repo_skills.config import (
+    ProviderConfig,
+    ProviderRegistry,
+    SkillEntry,
+    SkillManifest,
+)
 from tests.cli.helper import (
     INSTALL_DIR,
-    MANIFEST_PATH,
+    SOURCE_CONFIG_DIR,
     assert_invoke,
+    assert_words_in_message,
     create_installed_skill,
 )
 
+MANIFEST_PATH = SOURCE_CONFIG_DIR / "skill-manifest.json"
 
-def test_uninstall_removes_skill_directory(
-    fs: FakeFilesystem,
-) -> None:
-    create_installed_skill(fs, "tdd")
 
-    manifest = Manifest(
-        repo_path="/repo",
-        skills={"tdd": SkillEntry(commit="abc1234")},
-    )
+@pytest.fixture()
+def _env(fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", "/home/user")
+    monkeypatch.setenv("XDG_CONFIG_HOME", "/home/user/.config")
+
+
+def _save_manifest(skills: dict[str, SkillEntry]) -> None:
+    manifest = SkillManifest(skills=skills)
     manifest.save(MANIFEST_PATH)
 
-    assert_invoke(
-        "uninstall",
-        "tdd",
-        "--install-dir",
-        str(INSTALL_DIR),
-        "--manifest-path",
-        str(MANIFEST_PATH),
-    )
 
-    assert not (INSTALL_DIR / "tdd").exists()
+def _entry(source: str = "my-project") -> SkillEntry:
+    return SkillEntry(source=source, commit="abc1234", files={"SKILL.md": "sha256:aaa"})
 
 
-def test_uninstall_removes_manifest_entry(
-    fs: FakeFilesystem,
-) -> None:
-    create_installed_skill(fs, "tdd")
+class TestUninstall:
+    def test_removes_skill_directory(self, fs: FakeFilesystem, _env: None) -> None:
+        create_installed_skill(fs, "tdd")
+        _save_manifest({"tdd": _entry()})
 
-    manifest = Manifest(
-        repo_path="/repo",
-        skills={
-            "tdd": SkillEntry(commit="abc1234"),
-            "grill-me": SkillEntry(commit="abc1234"),
-        },
-    )
-    manifest.save(MANIFEST_PATH)
+        assert_invoke("uninstall", "tdd")
 
-    assert_invoke(
-        "uninstall",
-        "tdd",
-        "--install-dir",
-        str(INSTALL_DIR),
-        "--manifest-path",
-        str(MANIFEST_PATH),
-    )
+        assert not (INSTALL_DIR / "tdd").exists()
 
-    manifest = Manifest.load(MANIFEST_PATH)
-    assert "tdd" not in manifest.skills
-    assert "grill-me" in manifest.skills
+    def test_removes_manifest_entry(self, fs: FakeFilesystem, _env: None) -> None:
+        create_installed_skill(fs, "tdd")
+        _save_manifest({"tdd": _entry(), "grill-me": _entry()})
 
+        assert_invoke("uninstall", "tdd")
 
-def test_uninstall_fails_if_not_installed(
-    fs: FakeFilesystem,
-) -> None:
-    fs.create_dir(INSTALL_DIR)
+        manifest = SkillManifest.load(MANIFEST_PATH)
+        assert "tdd" not in manifest.skills
+        assert "grill-me" in manifest.skills
 
-    result = assert_invoke(
-        "uninstall",
-        "nope",
-        "--install-dir",
-        str(INSTALL_DIR),
-        "--manifest-path",
-        str(MANIFEST_PATH),
-        expect_error=True,
-    )
-    assert "not installed" in result.exception.message
+    def test_removes_from_all_providers(self, fs: FakeFilesystem, _env: None) -> None:
+        create_installed_skill(fs, "tdd")
+        cursor_dir = Path("/home/user/.cursor/skills")
+        fs.create_file(cursor_dir / "tdd" / "SKILL.md", contents="# tdd")
+
+        ProviderRegistry(
+            providers={
+                "cursor": ProviderConfig(name="cursor", install_dir=str(cursor_dir))
+            }
+        ).save(SOURCE_CONFIG_DIR / "providers.json")
+
+        _save_manifest({"tdd": _entry()})
+
+        assert_invoke("uninstall", "tdd")
+
+        assert not (INSTALL_DIR / "tdd").exists()
+        assert not (cursor_dir / "tdd").exists()
+
+    def test_errors_when_not_in_manifest(self, fs: FakeFilesystem, _env: None) -> None:
+        _save_manifest({})
+
+        result = assert_invoke("uninstall", "nope", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "not installed")

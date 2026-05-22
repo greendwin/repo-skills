@@ -17,3 +17,4 @@ status: pending
 - [x] [s06t07](s06t07-support-skills-merge-nocommit.md): Support 'skills merge --no-commit'
 - [x] [s06t08](s06t08-use-merge-instead-of-rebase/): Use merge instead of rebase on 'skills merge'
 - [ ] [s06t09](s06t09-skills-status-should-add-a.md): 'skills status' should add a label near 'available' skills wwhen they have untracked counterpart
+- [ ] [s06t10](s06t10-improve-source-init-reinit-feedback/): Improve `source init` re-init feedback & add hidden `skills init`

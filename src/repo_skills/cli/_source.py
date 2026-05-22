@@ -54,18 +54,23 @@ def _handle_reinit(
     branch: str | None,
 ) -> None:
     old_name = cfg.name
+    old_branch = cfg.branch
 
     effective_name = name if name is not None else old_name
     is_rename = effective_name != old_name
     cfg_changed = False
+    changes: list[str] = []
 
     if is_rename:
         _rename_installed_skills(old_name, effective_name)
-
         cfg.name = effective_name
         cfg_changed = True
+        changes.append(
+            f"  name: [green]{old_name}[/green] → [green]{effective_name}[/green]"
+        )
 
     if branch is not None and branch != cfg.branch:
+        changes.append(f"  branch: [blue]{old_branch}[/blue] → [blue]{branch}[/blue]")
         cfg.branch = branch
         cfg_changed = True
 
@@ -73,20 +78,26 @@ def _handle_reinit(
         cfg.save(git_root / REPO_SKILLS_DIR / SOURCE_CONFIG_FILE)
 
     registry = load_source_registry()
-    was_registered = effective_name in registry.sources
+    was_registered = effective_name in registry.sources or (
+        is_rename and old_name in registry.sources
+    )
     if is_rename:
         registry.sources.pop(old_name, None)
     registry.sources[effective_name] = SourceEntry(path=str(git_root))
     save_source_registry(registry)
 
-    if is_rename:
-        old = f"[green]{old_name}[/green]"
-        new = f"[green]{effective_name}[/green]"
-        echo(f"Renamed source {old} to {new}.")
+    source_label = f"[green]{effective_name}[/green]"
+    if changes:
+        if was_registered:
+            echo(f"Updated source {source_label}.")
+        else:
+            echo(f"Registered source {source_label}.")
+        for change in changes:
+            echo(change)
     elif not was_registered:
-        echo(f"Registered source [green]{old_name}[/green].")
+        echo(f"Registered source {source_label}.")
     else:
-        echo(f"Source [green]{old_name}[/green] already initialized.")
+        echo(f"Source {source_label} already initialized.")
 
 
 @source_app.command(name="init", help="Initialize a skill source in the current repo.")

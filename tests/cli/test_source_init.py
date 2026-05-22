@@ -107,12 +107,17 @@ class TestSourceInitBranch:
         assert_invoke("source", "init")
 
         _fake_git.branches = ["release"]
-        assert_invoke("source", "init", "--branch", "release")
+        result = assert_invoke("source", "init", "--branch", "release")
 
         source_cfg = SourceConfig.load(
             git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
         )
         assert source_cfg.branch == "release"
+
+        assert_words_in_message(result.output, "updated", "my-project")
+        assert "branch:" in result.output.lower()
+        assert "main" in result.output
+        assert "release" in result.output
 
 
 class TestSourceInitNameOverride:
@@ -160,6 +165,20 @@ class TestSourceInitIdempotent:
         assert "my-project" in registry.sources
         assert registry.sources["my-project"].path == str(SOURCE_REPO_ROOT)
 
+    def test_re_register_with_branch_change(self, _fake_git: FakeGitRepo) -> None:
+        assert_invoke("source", "init")
+
+        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        registry.sources.pop("my-project", None)
+        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+
+        _fake_git.branches = ["release"]
+        result = assert_invoke("source", "init", "--branch", "release")
+
+        assert_words_in_message(result.output, "registered", "my-project")
+        assert "branch:" in result.output.lower()
+        assert "release" in result.output
+
 
 @pytest.mark.usefixtures("git_repo")
 class TestSourceInitRename:
@@ -167,7 +186,10 @@ class TestSourceInitRename:
         assert_invoke("source", "init", "--name", "old-name")
         result = assert_invoke("source", "init", "--name", "new-name")
 
-        assert_words_in_message(result.output, "renamed", "old-name", "new-name")
+        assert_words_in_message(result.output, "updated", "new-name")
+        assert "name:" in result.output.lower()
+        assert "old-name" in result.output
+        assert "new-name" in result.output
 
         source_cfg = SourceConfig.load(
             SOURCE_REPO_ROOT / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
@@ -178,6 +200,21 @@ class TestSourceInitRename:
         assert "new-name" in registry.sources
         assert "old-name" not in registry.sources
         assert registry.sources["new-name"].path == str(SOURCE_REPO_ROOT)
+
+    def test_rename_with_branch_change_shows_both(self, _fake_git: FakeGitRepo) -> None:
+        assert_invoke("source", "init", "--name", "old-name")
+
+        _fake_git.branches = ["develop"]
+        result = assert_invoke(
+            "source", "init", "--name", "new-name", "--branch", "develop"
+        )
+
+        assert_words_in_message(result.output, "updated", "new-name")
+        assert "name:" in result.output.lower()
+        assert "branch:" in result.output.lower()
+        assert "old-name" in result.output
+        assert "new-name" in result.output
+        assert "develop" in result.output
 
     def test_rename_updates_installed_skills_in_manifest(self) -> None:
         assert_invoke("source", "init", "--name", "old-name")
@@ -192,7 +229,7 @@ class TestSourceInitRename:
         manifest.save(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
 
         result = assert_invoke("source", "init", "--name", "new-name")
-        assert_words_in_message(result.output, "renamed", "old-name", "new-name")
+        assert_words_in_message(result.output, "updated", "new-name")
 
         updated = SkillManifest.load(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
         assert updated.skills["tdd"].source == "new-name"

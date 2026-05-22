@@ -1,6 +1,14 @@
+from importlib.metadata import version
+
 from pytest_subtests import SubTests
 
-from tests.cli.helper import assert_invoke
+from tests.cli.helper import NoopResult, assert_invoke
+
+
+def test_version_flag() -> None:
+    result = assert_invoke("--version")
+    assert isinstance(result, NoopResult)
+    assert version("repo-skills") in result.output
 
 
 def test_help_lists_all_commands() -> None:

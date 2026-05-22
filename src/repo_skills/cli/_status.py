@@ -205,7 +205,10 @@ def _print_source_sections(
 
         for skill_name in sorted(available_by_source.get(source_name, [])):
             hint = _untracked_hint(skill_name, untracked_lookup)
-            echo(f"  {skill_name:<{name_width}}  [cyan]available[/cyan]{hint}")
+            if hint:
+                echo(f"  {skill_name:<{name_width}}  [cyan]mergeable[/cyan]{hint}")
+            else:
+                echo(f"  {skill_name:<{name_width}}  [cyan]available[/cyan]{hint}")
 
     return has_output
 

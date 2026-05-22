@@ -8,9 +8,17 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
     PROVIDERS_REGISTRY_FILE,
+)
+from repo_skills.config import REPO_SKILLS_DIR as REPO_SKILLS_DIR_NAME
+from repo_skills.config import (
+    SOURCE_CONFIG_FILE,
+    SOURCES_REGISTRY_FILE,
     ProviderConfig,
     ProviderRegistry,
     SkillEntry,
+    SourceConfig,
+    SourceEntry,
+    SourceRegistry,
     compute_file_hashes,
 )
 from tests.cli.helper import (
@@ -280,15 +288,119 @@ class TestMergeUntracked:
         assert "tdd" in manifest.skills
         assert manifest.skills["tdd"].source == "my-project"
 
-    def test_errors_when_untracked_orphan(
-        self, fs: FakeFilesystem, git_repo: Path
+    def test_merges_untracked_orphan_with_single_source(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         register_source(git_repo)
         install_skill(fs, "unknown-skill", content="# something")
 
-        result = assert_invoke("merge", "unknown-skill", "--offline", expect_error=True)
+        result = assert_invoke("merge", "unknown-skill", "--offline")
 
-        assert_words_in_message(result.exception.message, "untracked", "does not match")
+        assert_words_in_message(result.output, "merge", "complete")
+        manifest = load_manifest()
+        assert "unknown-skill" in manifest.skills
+        assert manifest.skills["unknown-skill"].source == "my-project"
+
+
+class TestMergeOrphan:
+    def test_single_source_auto_picks_and_merges(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        install_skill(fs, "my-new-skill", content="# brand new")
+
+        result = assert_invoke("merge", "my-new-skill", "--offline")
+
+        source_skill = git_repo / "skills" / "my-new-skill" / "SKILL.md"
+        assert source_skill.read_text() == "# brand new"
+        assert_words_in_message(result.output, "merge", "complete")
+        manifest = load_manifest()
+        assert "my-new-skill" in manifest.skills
+        assert manifest.skills["my-new-skill"].source == "my-project"
+
+    def test_errors_when_multiple_sources_without_flag(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        other_repo = Path("/repos/other-project")
+        fs.create_dir(other_repo)
+        registry = SourceRegistry(
+            sources={
+                "my-project": SourceEntry(path=str(git_repo)),
+                "other-project": SourceEntry(path=str(other_repo)),
+            }
+        )
+        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        SourceConfig(name="my-project").save(
+            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
+        )
+        SourceConfig(name="other-project").save(
+            other_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
+        )
+        install_skill(fs, "my-new-skill", content="# brand new")
+
+        result = assert_invoke("merge", "my-new-skill", "--offline", expect_error=True)
+
+        assert_words_in_message(
+            result.exception.message, "multiple sources", "--source"
+        )
+
+    def test_source_flag_selects_target(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        other_repo = Path("/repos/other-project")
+        fs.create_dir(other_repo)
+        registry = SourceRegistry(
+            sources={
+                "my-project": SourceEntry(path=str(git_repo)),
+                "other-project": SourceEntry(path=str(other_repo)),
+            }
+        )
+        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        SourceConfig(name="my-project").save(
+            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
+        )
+        SourceConfig(name="other-project").save(
+            other_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
+        )
+        install_skill(fs, "my-new-skill", content="# brand new")
+
+        result = assert_invoke(
+            "merge", "my-new-skill", "--offline", "--source", "other-project"
+        )
+
+        source_skill = other_repo / "skills" / "my-new-skill" / "SKILL.md"
+        assert source_skill.read_text() == "# brand new"
+        assert_words_in_message(result.output, "merge", "complete")
+        manifest = load_manifest()
+        assert manifest.skills["my-new-skill"].source == "other-project"
+
+    def test_no_commit_copies_without_committing(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        install_skill(fs, "my-new-skill", content="# brand new")
+
+        assert_invoke("merge", "my-new-skill", "--offline", "--no-commit")
+
+        source_skill = git_repo / "skills" / "my-new-skill" / "SKILL.md"
+        assert source_skill.read_text() == "# brand new"
+        assert _fake_git.committed_messages == []
+        manifest = load_manifest()
+        assert "my-new-skill" not in manifest.skills
+
+    def test_manifest_has_correct_commit_and_hashes(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        install_skill(fs, "my-new-skill", content="# brand new")
+        _fake_git.commits["my-new-skill"] = "orphan-commit-123"
+
+        assert_invoke("merge", "my-new-skill", "--offline")
+
+        manifest = load_manifest()
+        entry = manifest.skills["my-new-skill"]
+        assert entry.commit == "orphan-commit-123"
+        assert entry.files == compute_file_hashes(INSTALL_DIR / "my-new-skill")
 
     def test_errors_when_not_in_any_provider(
         self, fs: FakeFilesystem, git_repo: Path

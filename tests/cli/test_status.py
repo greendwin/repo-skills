@@ -229,7 +229,7 @@ class TestStatusUntrackedHint:
         result = assert_invoke("status")
 
         assert_words_in_message(
-            result.output, "review", "available", "untracked in claude"
+            result.output, "review", "mergeable", "untracked in claude"
         )
 
     def test_available_skill_without_untracked_shows_no_hint(
@@ -263,7 +263,7 @@ class TestStatusUntrackedHint:
         result = assert_invoke("status")
 
         assert_words_in_message(
-            result.output, "review", "available", "untracked in claude, cursor"
+            result.output, "review", "mergeable", "untracked in claude, cursor"
         )
 
 
@@ -278,9 +278,8 @@ class TestStatusMergeable:
 
         result = assert_invoke("status")
 
-        assert "mergeable" not in result.output.lower()
         assert_words_in_message(
-            result.output, "review", "available", "untracked in claude"
+            result.output, "review", "mergeable", "untracked in claude"
         )
 
 

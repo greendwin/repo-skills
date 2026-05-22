@@ -48,7 +48,7 @@ def _find_in_provider(
     return None
 
 
-def _resolve_untracked(name: str, from_provider: str | None) -> SkillEntry:
+def _resolve_untracked(name: str, from_provider: str | None) -> SkillEntry | None:
     providers = load_provider_registry()
 
     installed_path = _find_in_provider(name, providers, from_provider)
@@ -67,10 +67,7 @@ def _resolve_untracked(name: str, from_provider: str | None) -> SkillEntry:
             break
 
     if source_name is None or source_skill_path is None:
-        raise AppError(
-            f"Skill [green]{name}[/green] is untracked"
-            " and does not match any source."
-        )
+        return None
 
     return SkillEntry(
         source=source_name,
@@ -90,6 +87,13 @@ def merge(
         Optional[str],
         typer.Option(
             "--from", help="Provider to merge from (required when ambiguous)."
+        ),
+    ] = None,
+    source: Annotated[
+        Optional[str],
+        typer.Option(
+            "--source",
+            help="Target source (required for orphan skills when ambiguous).",
         ),
     ] = None,
     offline: Annotated[
@@ -135,6 +139,7 @@ def merge(
     _merge_start(
         name,
         from_provider=from_provider,
+        source=source,
         offline=offline,
         no_commit=no_commit,
         rebase=rebase,
@@ -145,6 +150,7 @@ def _merge_start(
     name: str,
     *,
     from_provider: str | None,
+    source: str | None = None,
     offline: bool,
     no_commit: bool = False,
     rebase: bool = False,
@@ -152,6 +158,15 @@ def _merge_start(
     manifest = load_skill_manifest()
     if name not in manifest.skills:
         entry = _resolve_untracked(name, from_provider)
+        if entry is None:
+            _merge_orphan(
+                name,
+                from_provider=from_provider,
+                source=source,
+                offline=offline,
+                no_commit=no_commit,
+            )
+            return
         manifest.skills[name] = entry
         save_skill_manifest(manifest)
     else:
@@ -481,6 +496,76 @@ def _compute_distance(
                 total += 1
 
     return total
+
+
+def _resolve_orphan_source(source: str | None) -> tuple[str, Path]:
+    registry = load_source_registry()
+
+    if source is not None:
+        if source not in registry.sources:
+            raise AppError(f"Source [green]{source}[/green] not found.")
+        return source, Path(registry.sources[source].path)
+
+    sources = list(registry.sources.items())
+    if not sources:
+        raise AppError("No sources registered.")
+
+    if len(sources) > 1:
+        names = ", ".join(f"[green]{n}[/green]" for n, _ in sorted(sources))
+        raise AppError(
+            f"Multiple sources registered ({names}).\n\n"
+            "Use [blue]--source[/blue] to specify."
+        )
+
+    name, entry = sources[0]
+    return name, Path(entry.path)
+
+
+def _merge_orphan(
+    name: str,
+    *,
+    from_provider: str | None,
+    source: str | None,
+    offline: bool,
+    no_commit: bool = False,
+) -> None:
+    source_name, source_path = _resolve_orphan_source(source)
+    git = resolve_git_repo(source_path)
+
+    if not git.is_clean():
+        raise AppError(f"Repo has uncommitted changes.\n  repo: [dim]{git.path}[/dim]")
+
+    source_cfg = load_source_config(source_path)
+    target_branch = resolve_branch(source_cfg, git)
+    if git.current_branch() != target_branch:
+        git.checkout(target_branch)
+
+    if not offline:
+        git.pull()
+
+    providers = load_provider_registry()
+    installed_path = _find_in_provider(name, providers, from_provider)
+    if installed_path is None:
+        raise AppError(f"Skill [green]{name}[/green] is not installed.")
+
+    skill_dst = source_path / source_cfg.skills_dir / name
+    _copy_provider_to_source(installed_path, skill_dst)
+
+    if no_commit:
+        echo("Files copied to source repo. Review and commit manually.")
+        return
+
+    git.commit_all(f"chore: add `{name}` from provider")
+
+    manifest = load_skill_manifest()
+    manifest.skills[name] = SkillEntry(
+        source=source_name,
+        commit=git.get_skill_commit(name),
+        files=compute_file_hashes(installed_path),
+    )
+    save_skill_manifest(manifest)
+
+    echo(f"Merge complete for [green]{name}[/green].")
 
 
 def _copy_provider_to_source(installed_path: Path, skill_src: Path) -> None:

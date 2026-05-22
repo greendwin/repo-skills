@@ -13,3 +13,4 @@
 | **Orphan skill** | A directory inside a provider's install path that is not tracked in the manifest and does not match any skill in a registered source. Likely placed there manually. |
 | **Mergeable skill** | A directory inside a provider's install path that is not tracked in the manifest but matches a skill name in a registered source. Can be brought under management via `skills install --force`. |
 | **Pinned branch** | The branch captured at `source init` time that merge and other write operations target. Defaults to the current branch when `source init` runs. Replaces the need for `--any-branch`. |
+| **Detached skill** | An installed skill whose stored commit is no longer reachable from the pinned branch. Detected by `skills update`; the manifest entry is preserved (with a `detached` flag) so tracking can resume automatically if the commit becomes reachable again. Displayed as mergeable or orphan by `skills status`. |

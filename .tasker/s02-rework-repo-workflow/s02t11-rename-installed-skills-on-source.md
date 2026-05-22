@@ -1,7 +1,7 @@
 ---
 id: s02t11
 slug: rename-installed-skills-on-source
-status: pending
+status: done
 ---
 
 # Rename installed skills on source rename

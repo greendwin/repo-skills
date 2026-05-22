@@ -13,6 +13,7 @@ from repo_skills.config import (
     load_skill_manifest,
     load_source_config,
     load_source_registry,
+    save_skill_manifest,
     save_source_registry,
 )
 from repo_skills.discovery import detect_skills_dir, find_git_root
@@ -34,6 +35,17 @@ def _has_installed_skills(source_name: str) -> bool:
     return any(e.source == source_name for e in manifest.skills.values())
 
 
+def _rename_installed_skills(old_name: str, new_name: str) -> None:
+    manifest = load_skill_manifest()
+    changed = False
+    for entry in manifest.skills.values():
+        if entry.source == old_name:
+            entry.source = new_name
+            changed = True
+    if changed:
+        save_skill_manifest(manifest)
+
+
 def _handle_reinit(
     git_root: Path,
     cfg: SourceConfig,
@@ -48,8 +60,7 @@ def _handle_reinit(
     cfg_changed = False
 
     if is_rename:
-        if _has_installed_skills(old_name):
-            raise AppError("Renaming installed skills is not yet supported.")
+        _rename_installed_skills(old_name, effective_name)
 
         cfg.name = effective_name
         cfg_changed = True

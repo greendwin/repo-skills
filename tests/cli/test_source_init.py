@@ -179,16 +179,25 @@ class TestSourceInitRename:
         assert "old-name" not in registry.sources
         assert registry.sources["new-name"].path == str(SOURCE_REPO_ROOT)
 
-    def test_rename_blocked_by_installed_skills(self) -> None:
+    def test_rename_updates_installed_skills_in_manifest(self) -> None:
         assert_invoke("source", "init", "--name", "old-name")
 
-        manifest = SkillManifest(skills={"tdd": ManifestSkillEntry(source="old-name")})
+        manifest = SkillManifest(
+            skills={
+                "tdd": ManifestSkillEntry(source="old-name"),
+                "review": ManifestSkillEntry(source="old-name"),
+                "deploy": ManifestSkillEntry(source="other-source"),
+            }
+        )
         manifest.save(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
 
-        result = assert_invoke(
-            "source", "init", "--name", "new-name", expect_error=True
-        )
-        assert_words_in_message(result.exception.message, "not yet supported")
+        result = assert_invoke("source", "init", "--name", "new-name")
+        assert_words_in_message(result.output, "renamed", "old-name", "new-name")
+
+        updated = SkillManifest.load(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
+        assert updated.skills["tdd"].source == "new-name"
+        assert updated.skills["review"].source == "new-name"
+        assert updated.skills["deploy"].source == "other-source"
 
 
 class TestSourceInitErrors:

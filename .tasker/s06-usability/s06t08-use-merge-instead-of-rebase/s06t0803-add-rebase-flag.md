@@ -1,7 +1,7 @@
 ---
 id: s06t0803
 slug: add-rebase-flag
-status: pending
+status: done
 ---
 
 # Add --rebase flag

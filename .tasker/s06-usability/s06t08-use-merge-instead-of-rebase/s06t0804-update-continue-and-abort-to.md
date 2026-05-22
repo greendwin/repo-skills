@@ -1,7 +1,7 @@
 ---
 id: s06t0804
 slug: update-continue-and-abort-to
-status: pending
+status: done
 ---
 
 # Update --continue and --abort to handle both states

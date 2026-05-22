@@ -428,6 +428,17 @@ class TestMergeContinue:
 
         assert _fake_git.rebasing is False
 
+    def test_dirty_allowed_during_merge(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git)
+        _fake_git.merging = True
+        _fake_git.clean = False
+
+        result = assert_invoke("merge", "--continue")
+
+        assert_words_in_message(result.output, "merge", "complete")
+
     def test_errors_when_multiple_merge_branches(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
@@ -551,6 +562,49 @@ class TestMergeNoCommit:
         assert_words_in_message(result.output, "--continue")
 
 
+class TestMergeRebase:
+    def test_rebase_flag_uses_rebase_instead_of_merge(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_diverged_skill(fs, git_repo)
+
+        result = assert_invoke("merge", "tdd", "--offline", "--rebase")
+
+        assert _fake_git.rebased_onto == "main"
+        assert _fake_git.merged_branch is None
+        assert _fake_git.ff_targets == ["skill-merge/claude/tdd"]
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_rebase_conflict_prompts_continue(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _fake_git.rebase_clean = False
+        _setup_diverged_skill(fs, git_repo)
+
+        result = assert_invoke("merge", "tdd", "--offline", "--rebase")
+
+        assert_words_in_message(result.output, "rebase", "conflicts", "--continue")
+        assert _fake_git.ff_targets == []
+        assert _fake_git.deleted_branches == []
+
+    def test_rebase_orphan_ignores_flag(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": SkillEntry(source="my-project", commit=None, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        result = assert_invoke("merge", "tdd", "--offline", "--rebase")
+
+        assert "skill-merge/claude/tdd" in _fake_git.orphan_branches
+        assert _fake_git.rebase_root_onto == "main"
+        assert_words_in_message(result.output, "merge", "complete")
+
+
 class TestMergeAbort:
     def test_aborts_rebase_and_cleans_up(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -561,6 +615,19 @@ class TestMergeAbort:
         result = assert_invoke("merge", "--abort")
 
         assert _fake_git.rebasing is False
+        assert _fake_git.branch == "main"
+        assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
+        assert_words_in_message(result.output, "aborted")
+
+    def test_aborts_merge_and_cleans_up(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_merge_branch(fs, git_repo, _fake_git)
+        _fake_git.merging = True
+
+        result = assert_invoke("merge", "--abort")
+
+        assert _fake_git.merging is False
         assert _fake_git.branch == "main"
         assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
         assert_words_in_message(result.output, "aborted")

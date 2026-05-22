@@ -104,6 +104,10 @@ def merge(
         bool,
         typer.Option("--continue", help="Finalize a merge in progress."),
     ] = False,
+    rebase: Annotated[
+        bool,
+        typer.Option("--rebase", help="Use rebase instead of merge."),
+    ] = False,
     abort: Annotated[
         bool,
         typer.Option("--abort", help="Abort a merge in progress."),
@@ -129,7 +133,11 @@ def merge(
         )
 
     _merge_start(
-        name, from_provider=from_provider, offline=offline, no_commit=no_commit
+        name,
+        from_provider=from_provider,
+        offline=offline,
+        no_commit=no_commit,
+        rebase=rebase,
     )
 
 
@@ -139,6 +147,7 @@ def _merge_start(
     from_provider: str | None,
     offline: bool,
     no_commit: bool = False,
+    rebase: bool = False,
 ) -> None:
     manifest = load_skill_manifest()
     if name not in manifest.skills:
@@ -209,21 +218,25 @@ def _merge_start(
 
     git.commit_all(f"chore: merge `{name}` from `{provider_name}`")
 
-    if base_commit is not None:
+    use_merge = False
+    if base_commit is not None and not rebase:
         git.checkout(target_branch)
         clean = git.merge(branch_name)
+        use_merge = True
+    elif base_commit is not None:
+        clean = git.rebase(target_branch)
     else:
         clean = git.rebase_root(target_branch)
 
     if clean:
-        _finalize(git, provider_name, name, already_merged=base_commit is not None)
+        _finalize(git, provider_name, name, already_merged=use_merge)
         return
 
-    if base_commit is not None:
+    if use_merge:
         echo("[yellow]Warning:[/yellow] Merge has conflicts.\n")
     else:
         echo("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
-    
+
     echo("Resolve them, then run [blue]skills merge --continue[/blue].")
 
 
@@ -233,8 +246,11 @@ def _merge_continue() -> None:
     provider_name, skill_name = _parse_merge_branch(branch)
 
     rebasing = git.is_rebasing()
+    merging = git.is_merging()
     if rebasing:
         git.rebase_continue()
+    elif merging:
+        pass
     elif not git.is_clean():
         raise AppError(f"Repo has uncommitted changes.\n  repo: [dim]{git.path}[/dim]")
 
@@ -295,6 +311,8 @@ def _merge_abort() -> None:
 
     if git.is_rebasing():
         git.rebase_abort()
+    elif git.is_merging():
+        git.merge_abort()
 
     manifest = load_skill_manifest()
     entry = manifest.skills[skill_name]

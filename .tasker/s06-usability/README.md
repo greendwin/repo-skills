@@ -15,5 +15,5 @@ status: pending
 - [x] s06t05: Show mergable untracked skills first (sorted, but groupped by status)
 - [ ] [s06t06](s06t06-add-skills-diff-command/): Add 'skills diff' command
 - [x] [s06t07](s06t07-support-skills-merge-nocommit.md): Support 'skills merge --no-commit'
-- [ ] s06t08: Use merge instead of rebase on 'skills merge'
-- [ ] s06t09: 'skills status' should add a label near 'available' skills wwhen they have untracked counterpart
+- [ ] [s06t08](s06t08-use-merge-instead-of-rebase/): Use merge instead of rebase on 'skills merge'
+- [ ] [s06t09](s06t09-skills-status-should-add-a.md): 'skills status' should add a label near 'available' skills wwhen they have untracked counterpart

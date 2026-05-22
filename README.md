@@ -14,7 +14,7 @@ Keep your team's skills in a central git repo, install them into any provider (C
 ## Install
 
 ```bash
-uv tool install git+https://github.com/greendwin/repo-skills.git
+uv tool install repo-skills
 ```
 
 Verify the installation:
@@ -90,13 +90,13 @@ skills uninstall skill-a skill-b
 
 ## Concepts
 
-| Term | Description |
-|------|-------------|
-| **Source** | A git repo registered via `skills source init`. Contains a `skills/` directory with one or more skills. Multiple sources can coexist. |
-| **Skill** | A directory containing a `SKILL.md` file inside a source's `skills/` tree. Identified by leaf directory name, regardless of nesting depth. |
-| **Provider** | An agent platform with a known skills install directory. Claude Code is the built-in default. |
-| **Installed copy** | A skill directory inside a provider's install path, editable by the user. |
-| **Pinned branch** | The branch captured at `source init` time. Merge and write operations target this branch. |
+| Term               | Description                                                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Source**         | A git repo registered via `skills source init`. Contains a `skills/` directory with one or more skills. Multiple sources can coexist.      |
+| **Skill**          | A directory containing a `SKILL.md` file inside a source's `skills/` tree. Identified by leaf directory name, regardless of nesting depth. |
+| **Provider**       | An agent platform with a known skills install directory. Claude Code is the built-in default.                                              |
+| **Installed copy** | A skill directory inside a provider's install path, editable by the user.                                                                  |
+| **Pinned branch**  | The branch captured at `source init` time. Merge and write operations target this branch.                                                  |
 
 ## Commands
 

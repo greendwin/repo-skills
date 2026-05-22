@@ -70,7 +70,9 @@ def _handle_reinit(
         )
 
     if branch is not None and branch != cfg.branch:
-        changes.append(f"  branch: [blue]{old_branch}[/blue] → [blue]{branch}[/blue]")
+        changes.append(
+            f"  branch: [green]{old_branch}[/green] → [green]{branch}[/green]"
+        )
         cfg.branch = branch
         cfg_changed = True
 
@@ -100,6 +102,11 @@ def _handle_reinit(
         echo(f"Source {source_label} already initialized.")
 
 
+@app.command(name="init", hidden=True)
+def init_redirect() -> None:
+    raise AppError("Did you mean [blue]skills source init[/blue]?")
+
+
 @source_app.command(name="init", help="Initialize a skill source in the current repo.")
 def source_init(
     name: str | None = typer.Option(None, "--name", help="Source name override."),
@@ -116,7 +123,7 @@ def source_init(
     git = resolve_git_repo(git_root)
 
     if branch is not None and not git.list_branches(branch):
-        raise AppError(f"Branch [blue]{branch}[/blue] not found.")
+        raise AppError(f"Branch [green]{branch}[/green] not found.")
 
     if source_json.exists():
         cfg = SourceConfig.load(source_json)

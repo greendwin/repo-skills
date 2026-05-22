@@ -1,7 +1,7 @@
 ---
 id: s06t1002
 slug: hidden-skills-init-redirect-command
-status: pending
+status: done
 ---
 
 # Hidden `skills init` redirect command

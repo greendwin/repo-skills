@@ -205,8 +205,8 @@ def validate_repo(git: GitRepo, *, branch: str) -> None:
     if current != branch:
         raise AppError(
             f"Not on the pinned branch"
-            f" (on [cyan]{current}[/cyan],"
-            f" expected [cyan]{branch}[/cyan]).\n\n"
+            f" (on [green]{current}[/green],"
+            f" expected [green]{branch}[/green]).\n\n"
             f"Use [blue]source init --branch {current}[/blue]"
             " to change the pin."
         )

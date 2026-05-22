@@ -1,7 +1,7 @@
 ---
 id: s06t10
 slug: improve-source-init-reinit-feedback
-status: pending
+status: done
 ---
 
 # Improve `source init` re-init feedback & add hidden `skills init`
@@ -22,4 +22,4 @@ status: pending
 ## Subtasks
 
 - [x] [s06t1001](s06t1001-grouped-feedback-in-handlereinit.md): Grouped feedback in `_handle_reinit`
-- [ ] [s06t1002](s06t1002-hidden-skills-init-redirect-command.md): Hidden `skills init` redirect command
+- [x] [s06t1002](s06t1002-hidden-skills-init-redirect-command.md): Hidden `skills init` redirect command

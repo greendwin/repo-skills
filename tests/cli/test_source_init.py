@@ -237,6 +237,16 @@ class TestSourceInitRename:
         assert updated.skills["deploy"].source == "other-source"
 
 
+class TestInitRedirect:
+    def test_init_shows_redirect_to_source_init(self) -> None:
+        result = assert_invoke("init", expect_error=True)
+        assert_words_in_message(result.exception.message, "source init")
+
+    def test_init_hidden_from_help(self) -> None:
+        result = assert_invoke("--help")
+        assert "init" not in result.output.lower()
+
+
 class TestSourceInitErrors:
     def test_not_in_git_repo(
         self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch

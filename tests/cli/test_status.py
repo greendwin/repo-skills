@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pyfakefs.fake_filesystem import FakeFilesystem
 
+from repo_skills.cli._status import UntrackedEntry, _build_untracked_lookup
 from repo_skills.config import (
     PROVIDERS_REGISTRY_FILE,
 )
@@ -216,8 +217,8 @@ class TestStatusOrphan:
         assert_words_in_message(result.output, "untracked", "mystery", "orphan")
 
 
-class TestStatusMergeable:
-    def test_shows_mergeable_when_source_match(
+class TestStatusUntrackedHint:
+    def test_available_skill_shows_untracked_hint(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
@@ -228,20 +229,85 @@ class TestStatusMergeable:
         result = assert_invoke("status")
 
         assert_words_in_message(
-            result.output, "untracked", "review", "mergeable", "my-project"
+            result.output, "review", "available", "untracked in claude"
         )
 
-
-class TestStatusUntrackedOrdering:
-    def test_mergeable_shown_before_orphan(
+    def test_available_skill_without_untracked_shows_no_hint(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
         _init_source_config(fs, git_repo)
-        _create_source_skill(fs, "zeta-skill", git_repo)
+        _create_source_skill(fs, "review", git_repo)
 
+        result = assert_invoke("status")
+
+        assert "untracked in" not in result.output.lower()
+
+    def test_available_skill_shows_multiple_providers_in_hint(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "review", git_repo)
+        fs.create_file(INSTALL_DIR / "review" / "SKILL.md", contents="# review local")
+
+        cursor_dir = Path("/home/user/.cursor/skills")
+        fs.create_file(cursor_dir / "review" / "SKILL.md", contents="# review cursor")
+        provider_registry = ProviderRegistry(
+            providers={
+                "cursor": ProviderConfig(name="cursor", install_dir=str(cursor_dir))
+            }
+        )
+        provider_registry.save(SOURCE_CONFIG_DIR / PROVIDERS_REGISTRY_FILE)
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(
+            result.output, "review", "available", "untracked in claude, cursor"
+        )
+
+
+class TestStatusMergeable:
+    def test_mergeable_not_shown_in_untracked_section(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "review", git_repo)
+        fs.create_file(INSTALL_DIR / "review" / "SKILL.md", contents="# review local")
+
+        result = assert_invoke("status")
+
+        assert "mergeable" not in result.output.lower()
+        assert_words_in_message(
+            result.output, "review", "available", "untracked in claude"
+        )
+
+
+class TestStatusUntrackedOrdering:
+    def test_untracked_section_hidden_when_only_mergeables(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "review", git_repo)
+        fs.create_file(INSTALL_DIR / "review" / "SKILL.md", contents="# review local")
+
+        result = assert_invoke("status")
+
+        lines = result.output.strip().split("\n")
+        section_headers = [
+            line.strip().lower() for line in lines if not line.startswith("  ")
+        ]
+        assert "untracked" not in section_headers
+
+    def test_orphans_sorted_alphabetically(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        fs.create_file(INSTALL_DIR / "zeta-orphan" / "SKILL.md", contents="# zeta")
         fs.create_file(INSTALL_DIR / "alpha-orphan" / "SKILL.md", contents="# alpha")
-        fs.create_file(INSTALL_DIR / "zeta-skill" / "SKILL.md", contents="# zeta local")
 
         result = assert_invoke("status")
 
@@ -256,8 +322,33 @@ class TestStatusUntrackedOrdering:
                 untracked_lines.append(line.strip())
 
         assert len(untracked_lines) == 2
-        assert "zeta-skill" in untracked_lines[0]
-        assert "alpha-orphan" in untracked_lines[1]
+        assert "alpha-orphan" in untracked_lines[0]
+        assert "zeta-orphan" in untracked_lines[1]
+
+
+class TestBuildUntrackedLookup:
+    def test_groups_mergeable_by_skill_name(self) -> None:
+        untracked = [
+            UntrackedEntry("review", "claude", "my-project"),
+            UntrackedEntry("review", "cursor", "my-project"),
+            UntrackedEntry("mystery", "claude", ""),
+        ]
+
+        result = _build_untracked_lookup(untracked)
+
+        assert result == {"review": ["claude", "cursor"]}
+
+    def test_excludes_orphans(self) -> None:
+        untracked = [
+            UntrackedEntry("mystery", "claude", ""),
+        ]
+
+        result = _build_untracked_lookup(untracked)
+
+        assert result == {}
+
+    def test_empty_input(self) -> None:
+        assert _build_untracked_lookup([]) == {}
 
 
 class TestStatusSync:

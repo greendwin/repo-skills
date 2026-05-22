@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, TypeAlias
+from typing import Annotated, NamedTuple, TypeAlias
 
 import typer
 
@@ -23,7 +23,23 @@ from ._utils import echo
 
 SkillsBySource: TypeAlias = dict[str, list[str]]
 SourceSkillIndex: TypeAlias = dict[str, set[str]]
-UntrackedEntry: TypeAlias = tuple[str, str, str]
+
+
+class UntrackedEntry(NamedTuple):
+    name: str
+    provider: str
+    source_match: str
+
+
+UntrackedLookup: TypeAlias = dict[str, list[str]]
+
+
+def _build_untracked_lookup(untracked: list[UntrackedEntry]) -> UntrackedLookup:
+    result: UntrackedLookup = {}
+    for name, pname, source_match in untracked:
+        if source_match:
+            result.setdefault(name, []).append(pname)
+    return result
 
 
 @app.command(help="Show status of installed skills.")
@@ -46,6 +62,7 @@ def status(
     installed_by_source = _group_installed_by_source(manifest)
     available_by_source, all_source_skills = _scan_sources(sources, installed_by_source)
     untracked = _collect_untracked(manifest, providers, all_source_skills)
+    untracked_lookup = _build_untracked_lookup(untracked)
 
     all_names: list[str] = []
     for names in installed_by_source.values():
@@ -66,6 +83,7 @@ def status(
         providers,
         name_width,
         provider_width,
+        untracked_lookup,
     )
 
     has_output |= _print_untracked_section(untracked, name_width, provider_width)
@@ -130,15 +148,22 @@ def _collect_untracked(
                 continue
 
             if name not in all_known:
-                result.append((name, pname, ""))
+                result.append(UntrackedEntry(name, pname, ""))
                 continue
 
             source_match = next(
                 sn for sn, skills in all_source_skills.items() if name in skills
             )
-            result.append((name, pname, source_match))
+            result.append(UntrackedEntry(name, pname, source_match))
 
     return result
+
+
+def _untracked_hint(skill_name: str, lookup: UntrackedLookup) -> str:
+    providers = lookup.get(skill_name)
+    if not providers:
+        return ""
+    return f"  [dim](untracked in {', '.join(providers)})[/dim]"
 
 
 def _print_source_sections(
@@ -149,6 +174,7 @@ def _print_source_sections(
     providers: ProviderRegistry,
     name_width: int,
     provider_width: int,
+    untracked_lookup: UntrackedLookup,
 ) -> bool:
     all_sources = sorted(
         set(installed_by_source.keys()) | set(available_by_source.keys())
@@ -178,7 +204,8 @@ def _print_source_sections(
                 )
 
         for skill_name in sorted(available_by_source.get(source_name, [])):
-            echo(f"  {skill_name:<{name_width}}  [cyan]available[/cyan]")
+            hint = _untracked_hint(skill_name, untracked_lookup)
+            echo(f"  {skill_name:<{name_width}}  [cyan]available[/cyan]{hint}")
 
     return has_output
 
@@ -188,27 +215,18 @@ def _print_untracked_section(
     name_width: int,
     provider_width: int,
 ) -> bool:
-    if not untracked:
+    orphans = sorted((e for e in untracked if not e.source_match), key=lambda e: e.name)
+    if not orphans:
         return False
-
-    mergeable = sorted((e for e in untracked if e[2]), key=lambda e: e[0])
-    orphans = sorted((e for e in untracked if not e[2]), key=lambda e: e[0])
 
     echo("")
     echo("[yellow]Untracked[/yellow]")
-    for name, pname, source_match in mergeable + orphans:
-        if source_match:
-            echo(
-                f"  {name:<{name_width}}"
-                f"  [dim]{pname:<{provider_width}}[/dim]"
-                f"  [cyan]mergeable[/cyan] ({source_match})"
-            )
-        else:
-            echo(
-                f"  {name:<{name_width}}"
-                f"  [dim]{pname:<{provider_width}}[/dim]"
-                f"  [dim magenta]orphan[/dim magenta]"
-            )
+    for skill in orphans:
+        echo(
+            f"  {skill.name:<{name_width}}"
+            f"  [dim]{skill.provider:<{provider_width}}[/dim]"
+            f"  [dim magenta]orphan[/dim magenta]"
+        )
 
     return True
 

@@ -1,7 +1,7 @@
 ---
 id: s06t0802
 slug: switch-mergestart-to-use-merge
-status: pending
+status: done
 ---
 
 # Switch _merge_start to use merge by default

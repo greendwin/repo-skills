@@ -146,6 +146,21 @@ class RealGitRepo:
     def rebase_abort(self) -> None:
         self._run("rebase", "--abort")
 
+    def merge(self, branch: str) -> bool:
+        try:
+            self._run("merge", branch)
+        except AppError:
+            if self._in_merge():
+                return False
+            raise
+        return True
+
+    def is_merging(self) -> bool:
+        return self._in_merge()
+
+    def merge_abort(self) -> None:
+        self._run("merge", "--abort")
+
     def fast_forward(self, branch: str) -> None:
         self._run("merge", "--ff-only", branch)
 
@@ -167,6 +182,9 @@ class RealGitRepo:
             return True
         except AppError:
             return False
+
+    def _in_merge(self) -> bool:
+        return (self._path / ".git" / "MERGE_HEAD").exists()
 
     def verify_commit_content(self, commit: str, skill_name: str) -> bool:
         skill_path = f"skills/{skill_name}"

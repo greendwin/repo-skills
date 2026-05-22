@@ -51,7 +51,7 @@ def _setup_diverged_skill(
 
 
 class TestMergeStart:
-    def test_creates_branch_and_starts_rebase(
+    def test_creates_branch_and_merges(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _setup_diverged_skill(fs, git_repo)
@@ -59,7 +59,7 @@ class TestMergeStart:
         assert_invoke("merge", "tdd", "--offline")
 
         assert _fake_git.created_branches["skill-merge/claude/tdd"] == COMMIT
-        assert _fake_git.rebased_onto == "main"
+        assert _fake_git.merged_branch == "skill-merge/claude/tdd"
 
     def test_auto_detects_diverged_provider(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -84,14 +84,14 @@ class TestMergeStart:
         assert _fake_git.created_branches["skill-merge/claude/tdd"] == COMMIT
         assert_words_in_message(result.output, "merge", "complete")
 
-    def test_auto_finalizes_on_clean_rebase(
+    def test_auto_finalizes_on_clean_merge(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _setup_diverged_skill(fs, git_repo)
 
         result = assert_invoke("merge", "tdd", "--offline")
 
-        assert _fake_git.ff_targets == ["skill-merge/claude/tdd"]
+        assert _fake_git.ff_targets == []
         assert _fake_git.branch == "main"
         assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
         installed = (INSTALL_DIR / "tdd" / "SKILL.md").read_text()
@@ -103,7 +103,7 @@ class TestMergeStart:
     def test_prompts_continue_on_conflict(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        _fake_git.rebase_clean = False
+        _fake_git.merge_clean = False
         _setup_diverged_skill(fs, git_repo)
 
         result = assert_invoke("merge", "tdd", "--offline")
@@ -350,7 +350,7 @@ class TestMergeValidation:
 
         assert_invoke("merge", "tdd", "--offline")
 
-        assert _fake_git.rebased_onto == "develop"
+        assert _fake_git.merged_branch == "skill-merge/claude/tdd"
 
     def test_auto_checkouts_main_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

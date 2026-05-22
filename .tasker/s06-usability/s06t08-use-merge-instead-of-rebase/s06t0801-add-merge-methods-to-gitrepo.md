@@ -1,7 +1,7 @@
 ---
 id: s06t0801
 slug: add-merge-methods-to-gitrepo
-status: pending
+status: done
 ---
 
 # Add merge methods to GitRepo protocol and implementations

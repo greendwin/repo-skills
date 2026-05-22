@@ -210,15 +210,20 @@ def _merge_start(
     git.commit_all(f"chore: merge `{name}` from `{provider_name}`")
 
     if base_commit is not None:
-        clean = git.rebase(target_branch)
+        git.checkout(target_branch)
+        clean = git.merge(branch_name)
     else:
         clean = git.rebase_root(target_branch)
 
     if clean:
-        _finalize(git, provider_name, name)
+        _finalize(git, provider_name, name, already_merged=base_commit is not None)
         return
 
-    echo("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
+    if base_commit is not None:
+        echo("[yellow]Warning:[/yellow] Merge has conflicts.\n")
+    else:
+        echo("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
+    
     echo("Resolve them, then run [blue]skills merge --continue[/blue].")
 
 
@@ -236,7 +241,13 @@ def _merge_continue() -> None:
     _finalize(git, provider_name, skill_name)
 
 
-def _finalize(git: GitRepo, provider_name: str, skill_name: str) -> None:
+def _finalize(
+    git: GitRepo,
+    provider_name: str,
+    skill_name: str,
+    *,
+    already_merged: bool = False,
+) -> None:
     branch = f"{MERGE_BRANCH_PREFIX}{provider_name}/{skill_name}"
 
     manifest = load_skill_manifest()
@@ -249,8 +260,9 @@ def _finalize(git: GitRepo, provider_name: str, skill_name: str) -> None:
     skill_src = source_path / source_cfg.skills_dir / skill_name
 
     target_branch = resolve_branch(source_cfg, git)
-    git.checkout(target_branch)
-    git.fast_forward(branch)
+    if not already_merged:
+        git.checkout(target_branch)
+        git.fast_forward(branch)
 
     providers = load_provider_registry()
     pcfg = providers.require(provider_name)

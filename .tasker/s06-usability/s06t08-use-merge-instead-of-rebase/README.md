@@ -19,7 +19,7 @@ status: pending
 
 ## Subtasks
 
-- [ ] [s06t0801](s06t0801-add-merge-methods-to-gitrepo.md): Add merge methods to GitRepo protocol and implementations
-- [ ] [s06t0802](s06t0802-switch-mergestart-to-use-merge.md): Switch _merge_start to use merge by default
+- [x] [s06t0801](s06t0801-add-merge-methods-to-gitrepo.md): Add merge methods to GitRepo protocol and implementations
+- [x] [s06t0802](s06t0802-switch-mergestart-to-use-merge.md): Switch _merge_start to use merge by default
 - [ ] [s06t0803](s06t0803-add-rebase-flag.md): Add --rebase flag
 - [ ] [s06t0804](s06t0804-update-continue-and-abort-to.md): Update --continue and --abort to handle both states

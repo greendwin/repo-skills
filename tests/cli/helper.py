@@ -68,6 +68,9 @@ class FakeGitRepo:
     orphan_branches: list[str] = field(default_factory=list)
     rebase_root_clean: bool = True
     rebase_root_onto: str | None = None
+    merge_clean: bool = True
+    merged_branch: str | None = None
+    merging: bool = False
 
     def pull(self) -> None:
         self.pulled = True
@@ -123,6 +126,16 @@ class FakeGitRepo:
 
     def rebase_abort(self) -> None:
         self.rebasing = False
+
+    def merge(self, branch: str) -> bool:
+        self.merged_branch = branch
+        return self.merge_clean
+
+    def is_merging(self) -> bool:
+        return self.merging
+
+    def merge_abort(self) -> None:
+        self.merging = False
 
     def fast_forward(self, branch: str) -> None:
         if self.ff_fails:

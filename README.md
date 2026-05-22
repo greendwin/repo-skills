@@ -202,7 +202,7 @@ Configuration files are stored in `~/.config/repo-skills/`:
 
 [MIT](LICENSE)
 
-## Patch notes
+## Release Notes
 
 ### v0.2.0 (unreleased)
 

@@ -1,7 +1,7 @@
 ---
 id: s06t07
 slug: support-skills-merge-nocommit
-status: pending
+status: done
 ---
 
 # Support 'skills merge --no-commit'

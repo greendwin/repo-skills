@@ -96,6 +96,10 @@ def merge(
         bool,
         typer.Option("--offline", help="Skip git pull."),
     ] = False,
+    no_commit: Annotated[
+        bool,
+        typer.Option("--no-commit", "-n", help="Stop before committing."),
+    ] = False,
     continue_merge: Annotated[
         bool,
         typer.Option("--continue", help="Finalize a merge in progress."),
@@ -124,7 +128,9 @@ def merge(
             "Use [blue]--continue[/blue] to finalize a merge in progress."
         )
 
-    _merge_start(name, from_provider=from_provider, offline=offline)
+    _merge_start(
+        name, from_provider=from_provider, offline=offline, no_commit=no_commit
+    )
 
 
 def _merge_start(
@@ -132,6 +138,7 @@ def _merge_start(
     *,
     from_provider: str | None,
     offline: bool,
+    no_commit: bool = False,
 ) -> None:
     manifest = load_skill_manifest()
     if name not in manifest.skills:
@@ -192,6 +199,13 @@ def _merge_start(
         git.create_orphan_branch(branch_name)
 
     _copy_provider_to_source(installed_path, skill_src)
+
+    if no_commit:
+        echo(
+            "Files copied to source repo. Review, commit, and run"
+            " [blue]skills merge --continue[/blue]."
+        )
+        return
 
     git.commit_all(f"chore: merge `{name}` from `{provider_name}`")
 

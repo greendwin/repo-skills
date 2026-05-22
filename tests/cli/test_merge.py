@@ -523,6 +523,34 @@ class TestMergeContinue:
         assert _fake_git.branch == "develop"
 
 
+class TestMergeNoCommit:
+    def test_creates_branch_and_copies_without_commit(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_diverged_skill(fs, git_repo)
+
+        result = assert_invoke("merge", "tdd", "--offline", "--no-commit")
+
+        assert _fake_git.created_branches["skill-merge/claude/tdd"] == COMMIT
+        source_skill = git_repo / "skills" / "tdd" / "SKILL.md"
+        assert source_skill.read_text() == "# edited by user"
+        assert _fake_git.committed_messages == []
+        assert _fake_git.rebased_onto is None
+        assert _fake_git.ff_targets == []
+        assert _fake_git.deleted_branches == []
+        assert_words_in_message(result.output, "--continue")
+
+    def test_short_flag(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_diverged_skill(fs, git_repo)
+
+        result = assert_invoke("merge", "tdd", "--offline", "-n")
+
+        assert _fake_git.committed_messages == []
+        assert_words_in_message(result.output, "--continue")
+
+
 class TestMergeAbort:
     def test_aborts_rebase_and_cleans_up(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

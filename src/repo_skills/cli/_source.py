@@ -50,6 +50,7 @@ def _handle_reinit(
     if is_rename:
         if _has_installed_skills(old_name):
             raise AppError("Renaming installed skills is not yet supported.")
+
         cfg.name = effective_name
         cfg_changed = True
 

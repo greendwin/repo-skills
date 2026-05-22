@@ -14,4 +14,5 @@ status: pending
 - [x] s06t04: Support -p and -s for --provider and --source options
 - [x] s06t05: Show mergable untracked skills first (sorted, but groupped by status)
 - [ ] [s06t06](s06t06-add-skills-diff-command/): Add 'skills diff' command
-- [ ] [s06t07](s06t07-support-skills-merge-nocommit.md): Support 'skills merge --no-commit'
+- [x] [s06t07](s06t07-support-skills-merge-nocommit.md): Support 'skills merge --no-commit'
+- [ ] s06t08: Use merge instead of rebase on 'skills merge'

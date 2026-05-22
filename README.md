@@ -204,15 +204,17 @@ Configuration files are stored in `~/.config/repo-skills/`:
 
 ## Release Notes
 
-### v0.2.0 (unreleased)
+### v0.2.0
 
-- Register and manage multiple skill sources (`source init`, `source list`, `source remove`)
-- Install, update, and uninstall skills across providers
-- Merge provider-side edits back into source repos with conflict handling
-- Status overview: installed, available, orphan, and mergeable skills
-- Provider management (Claude Code built-in by default)
-- Pinned branch support for sources
+- Multi-source architecture: register skill sources (`source init/list/remove`), pin to a branch
+- Provider management: add, list, and remove agent platforms (Claude Code built-in)
+- Install, update, and uninstall skills across sources and providers
+- `skills merge` — push provider-side edits back to source repos with `--continue`, `--abort`, `--no-commit`
+- `skills status` — installed, available, orphan, and mergeable skills at a glance
+- `--version` and `--debug` global flags
+- Short flags (`-s`, `-f`) for install; multi-skill install/uninstall
 - Offline mode (`--offline`) for all network operations
+- Pretty error reporting with structured CLI output styling
 
 ### v0.1.0
 

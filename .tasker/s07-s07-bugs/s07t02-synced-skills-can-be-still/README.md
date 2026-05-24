@@ -36,7 +36,7 @@ Skills can show as "synced" in `skills status` even though their stored commit i
 ## Subtasks
 
 - [x] [s07t0201](s07t0201-orphan-merge-simple-copy-path.md): Orphan merge (simple copy path)
-- [ ] [s07t0202](s07t0202-searchbase-and-search-reporting.md): --search-base and search reporting
+- [x] [s07t0202](s07t0202-searchbase-and-search-reporting.md): --search-base and search reporting
 - [ ] [s07t0203](s07t0203-gitrepo-protocol-isancestor-and-commitexistsinanybranch.md): GitRepo protocol: is_ancestor and commit_exists_in_any_branch
 - [ ] [s07t0204](s07t0204-update-detached-detection-and-autorecovery.md): Update detached detection and auto-recovery
 - [ ] [s07t0205](s07t0205-status-display-for-detached-skills.md): Status display for detached skills

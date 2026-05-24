@@ -71,6 +71,7 @@ class FakeGitRepo:
     merge_clean: bool = True
     merged_branch: str | None = None
     merging: bool = False
+    commit_messages: dict[str, str] = field(default_factory=dict)
 
     def pull(self) -> None:
         self.pulled = True
@@ -144,6 +145,9 @@ class FakeGitRepo:
 
     def delete_branch(self, name: str) -> None:
         self.deleted_branches.append(name)
+
+    def get_commit_message(self, commit: str) -> str:
+        return self.commit_messages.get(commit, "")
 
     def list_branches(self, pattern: str) -> list[str]:
         return [b for b in self.branches if pattern.rstrip("*") in b]

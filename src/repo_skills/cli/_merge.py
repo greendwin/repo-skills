@@ -112,6 +112,10 @@ def merge(
         bool,
         typer.Option("--rebase", help="Use rebase instead of merge."),
     ] = False,
+    search_base: Annotated[
+        bool,
+        typer.Option("--search-base", help="Search git history for base commit."),
+    ] = False,
     abort: Annotated[
         bool,
         typer.Option("--abort", help="Abort a merge in progress."),
@@ -143,6 +147,7 @@ def merge(
         offline=offline,
         no_commit=no_commit,
         rebase=rebase,
+        search_base=search_base,
     )
 
 
@@ -154,6 +159,7 @@ def _merge_start(
     offline: bool,
     no_commit: bool = False,
     rebase: bool = False,
+    search_base: bool = False,
 ) -> None:
     manifest = load_skill_manifest()
     if name not in manifest.skills:
@@ -212,7 +218,7 @@ def _merge_start(
     skill_src = source_path / source_cfg.skills_dir / name
 
     base_commit = entry.commit
-    if base_commit is None:
+    if base_commit is None or search_base:
         skill_rel = f"{source_cfg.skills_dir}/{name}"
         base_commit = _find_base_commit(git, skill_rel, entry, installed_path)
 
@@ -444,12 +450,21 @@ def _find_base_commit(
             commit_hashes[rel_path] = f"sha256:{sha}"
 
         if commit_hashes == entry.files:
+            msg = git.get_commit_message(commit)
+            echo(f"Base commit: [green]{commit}[/green]" f" (exact match, {msg})")
             return commit
 
         distance = _compute_distance(git, commit, skill_rel, entry, installed_path)
         if distance < best_distance:
             best_distance = distance
             best_commit = commit
+
+    if best_commit is not None:
+        msg = git.get_commit_message(best_commit)
+        echo(
+            f"Base commit: [green]{best_commit}[/green]"
+            f" (distance: {best_distance}, {msg})"
+        )
 
     return best_commit
 

@@ -176,6 +176,9 @@ class RealGitRepo:
             line.strip().lstrip("* ") for line in output.splitlines() if line.strip()
         ]
 
+    def get_commit_message(self, commit: str) -> str:
+        return self._run("log", "-1", "--format=%s", commit)
+
     def _in_rebase(self) -> bool:
         try:
             self._run("rev-parse", "--verify", "REBASE_HEAD")

@@ -1,7 +1,7 @@
 ---
 id: s07t0202
 slug: searchbase-and-search-reporting
-status: pending
+status: done
 ---
 
 # --search-base and search reporting

@@ -271,6 +271,74 @@ class TestBaseCommitSearch:
         assert _fake_git.rebase_root_onto == "main"
         assert_words_in_message(result.output, "merge", "complete")
 
+    def test_search_base_ignores_stored_commit(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
+        _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = b"# original"
+        _fake_git.commit_messages = {"bbb222": "feat: add tdd skill"}
+
+        result = assert_invoke("merge", "tdd", "--search-base", "--offline")
+
+        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "bbb222"
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_search_base_reports_found_commit(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
+        _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = (
+            b"# totally different\nline2\nline3"
+        )
+        _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = b"# original"
+        _fake_git.commit_messages = {
+            "aaa111": "fix: update tdd",
+            "bbb222": "feat: add tdd skill",
+        }
+
+        result = assert_invoke("merge", "tdd", "--search-base", "--offline")
+
+        assert "bbb222" in result.output
+        assert "exact match" in result.output
+        assert "feat: add tdd skill" in result.output
+
+    def test_search_base_reports_distance_for_closest(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": SkillEntry(source="my-project", commit=None, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        _fake_git.commit_logs["skills/tdd"] = ["aaa111"]
+        _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = b"# original-ish"
+        _fake_git.commit_messages = {"aaa111": "chore: tweak tdd"}
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        assert "aaa111" in result.output
+        assert "distance:" in result.output
+        assert "chore: tweak tdd" in result.output
+
 
 class TestMergeUntracked:
     def test_merges_untracked_mergeable_skill(

@@ -3,9 +3,9 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
-from typing import Self, TypeAlias
 
 from pydantic import BaseModel
+from typing_extensions import Self, TypeAlias
 
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo

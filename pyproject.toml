@@ -11,6 +11,7 @@ dependencies = [
     "typer-di>=0.1.5",
     "pydantic>=2.0",
     "rich>=13.0",
+    "typing-extensions>=4.15.0",
 ]
 
 [project.urls]

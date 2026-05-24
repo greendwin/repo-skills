@@ -700,6 +700,7 @@ dependencies = [
     { name = "rich" },
     { name = "typer" },
     { name = "typer-di" },
+    { name = "typing-extensions" },
 ]
 
 [package.dev-dependencies]
@@ -721,6 +722,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13.0" },
     { name = "typer", specifier = ">=0.9.0" },
     { name = "typer-di", specifier = ">=0.1.5" },
+    { name = "typing-extensions", specifier = ">=4.15.0" },
 ]
 
 [package.metadata.requires-dev]

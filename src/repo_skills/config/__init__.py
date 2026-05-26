@@ -1,21 +1,31 @@
 __all__ = [
     "REPO_SKILLS_DIR",
     "SOURCES_REGISTRY_FILE",
+    "Provider",
+    "ProviderRegistry",
     "SourceBrokenError",
     "Source",
     "SourceConfig",
     "SourceEntry",
     "SourceSkill",
     "SourceRegistry",
+    "load_provider_registry",
     "load_source",
     "load_source_config",
     "save_source_config",
     "load_source_registry",
+    "save_provider_registry",
     "save_source_registry",
     "compute_file_hashes",
     "default_config_path",
 ]
 
+from ._provider_registry import (
+    Provider,
+    ProviderRegistry,
+    load_provider_registry,
+    save_provider_registry,
+)
 from ._source import (
     REPO_SKILLS_DIR,
     Source,

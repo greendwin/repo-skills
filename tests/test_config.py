@@ -8,22 +8,24 @@ import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
+    ProviderRegistry,
     Source,
     SourceConfig,
     SourceRegistry,
     compute_file_hashes,
     default_config_path,
+    load_provider_registry,
     load_source_config,
     load_source_registry,
+    save_provider_registry,
     save_source_config,
     save_source_registry,
 )
 from repo_skills.config.deprecated import (
     ManifestSkill,
-    ProviderConfig,
-    ProviderRegistry,
     SkillManifest,
 )
+from repo_skills.errors import AppError
 from tests.cli.helper import FakeGitRepo
 
 # -- Source.get_branch --
@@ -104,42 +106,85 @@ class TestSourceConfig:
         assert (repo_root / ".repo-skills" / "source.json").exists()
 
 
-# -- ProviderConfig / ProviderRegistry --
+# -- Provider / ProviderRegistry --
 
 
 class TestProviderRegistry:
-    def test_load_missing_file_returns_empty(self, fs: FakeFilesystem) -> None:
-        reg = ProviderRegistry.load(Path("/nonexistent/providers.json"))
-        assert reg.providers == {}
+    def test_load_missing_file_creates_with_default_provider(
+        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HOME", "/home/user")
+        reg = load_provider_registry()
+        assert "claude" in reg.providers
+        assert reg.providers["claude"].install_path == Path("/home/user/.claude/skills")
 
-    def test_save_and_load_round_trip(self, fs: FakeFilesystem) -> None:
-        path = Path("/config/providers.json")
-        reg = ProviderRegistry(
-            providers={
-                "claude": ProviderConfig(
-                    name="claude", install_dir="/home/u/.claude/skills"
-                ),
-                "cursor": ProviderConfig(
-                    name="cursor", install_dir="/home/u/.cursor/skills"
-                ),
-            }
+    def test_load_existing_v1_does_not_reinject_defaults(
+        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HOME", "/home/user")
+        reg = load_provider_registry()
+        reg.unregister_provider("claude")
+        save_provider_registry(reg)
+
+        reloaded = load_provider_registry()
+        assert "claude" not in reloaded.providers
+
+    def test_install_path_resolves_tilde(
+        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HOME", "/home/user")
+        reg = ProviderRegistry()
+        reg.register_provider("test", "~/my-skills")
+        assert reg.providers["test"].install_path == Path("/home/user/my-skills")
+
+    def test_save_and_load_round_trip(
+        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HOME", "/home/user")
+        reg = load_provider_registry()
+        reg.register_provider("cursor", "/opt/cursor/skills")
+        save_provider_registry(reg)
+
+        reloaded = load_provider_registry()
+        assert len(reloaded.providers) == 2
+        assert reloaded.providers["claude"].install_path == Path(
+            "/home/user/.claude/skills"
         )
-        reg.save(path)
+        assert reloaded.providers["cursor"].install_path == Path("/opt/cursor/skills")
 
-        loaded = ProviderRegistry.load(path)
-        assert len(loaded.providers) == 2
-        assert loaded.providers["cursor"].install_dir == "/home/u/.cursor/skills"
+    def test_require_unknown_raises(self) -> None:
+        reg = ProviderRegistry()
+        with pytest.raises(AppError):
+            reg.require("nonexistent")
 
-    def test_load_existing_with_providers_keeps_them(self, fs: FakeFilesystem) -> None:
-        path = Path("/config/providers.json")
-        data = {
-            "providers": {"custom": {"name": "custom", "install_dir": "/custom/path"}}
-        }
+    def test_require_returns_registered_provider(self) -> None:
+        reg = ProviderRegistry()
+        reg.register_provider("test", "/opt/test")
+        provider = reg.require("test")
+        assert provider.name == "test"
+        assert provider.install_path == Path("/opt/test")
+
+    def test_unregister_removes_provider(self) -> None:
+        reg = ProviderRegistry()
+        reg.register_provider("test", "/opt/test")
+        reg.unregister_provider("test")
+        assert "test" not in reg.providers
+
+    def test_unregister_missing_is_noop(self) -> None:
+        reg = ProviderRegistry()
+        reg.unregister_provider("nonexistent")
+
+    def test_load_unversioned_file_migrates_and_injects_defaults(
+        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HOME", "/home/user")
+        path = default_config_path("providers.json")
+        data = {"providers": {"custom": {"install_dir": "/custom/path"}}}
         fs.create_file(path, contents=json.dumps(data))
 
-        reg = ProviderRegistry.load(path)
+        reg = load_provider_registry()
         assert "custom" in reg.providers
-        assert reg.providers["custom"].install_dir == "/custom/path"
+        assert "claude" in reg.providers
 
 
 # -- SourceRegistry --

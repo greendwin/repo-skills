@@ -1,7 +1,7 @@
 ---
 id: s04t04
 slug: refactor-providerregistry-out-of-configdeprecated
-status: pending
+status: done
 ---
 
 # Refactor ProviderRegistry out of config.deprecated
@@ -36,4 +36,4 @@ None — all Provider-side decisions resolved.
 
 - [x] [s04t0401](s04t0401-providerregistrypy-module-with-versioned-loadsave.md): _provider_registry.py module with versioned load/save
 - [x] [s04t0402](s04t0402-migrate-cli-commands-to-new.md): Migrate CLI commands to new provider API
-- [ ] [s04t0403](s04t0403-update-tests-and-helper-for.md): Update tests and helper for new provider API
+- [x] [s04t0403](s04t0403-update-tests-and-helper-for.md): Update tests and helper for new provider API

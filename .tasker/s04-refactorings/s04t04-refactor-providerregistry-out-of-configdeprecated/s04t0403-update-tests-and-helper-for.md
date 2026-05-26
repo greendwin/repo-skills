@@ -1,7 +1,7 @@
 ---
 id: s04t0403
 slug: update-tests-and-helper-for
-status: pending
+status: done
 ---
 
 # Update tests and helper for new provider API

@@ -1,8 +1,10 @@
 __all__ = [
     "REPO_SKILLS_DIR",
     "SOURCES_REGISTRY_FILE",
+    "InstalledSkill",
     "Provider",
     "ProviderRegistry",
+    "SkillManifest",
     "SourceBrokenError",
     "Source",
     "SourceConfig",
@@ -10,11 +12,13 @@ __all__ = [
     "SourceSkill",
     "SourceRegistry",
     "load_provider_registry",
+    "load_skill_manifest",
     "load_source",
     "load_source_config",
     "save_source_config",
     "load_source_registry",
     "save_provider_registry",
+    "save_skill_manifest",
     "save_source_registry",
     "compute_file_hashes",
     "default_config_path",
@@ -25,6 +29,12 @@ from ._provider_registry import (
     ProviderRegistry,
     load_provider_registry,
     save_provider_registry,
+)
+from ._skill_manifest import (
+    InstalledSkill,
+    SkillManifest,
+    load_skill_manifest,
+    save_skill_manifest,
 )
 from ._source import (
     REPO_SKILLS_DIR,

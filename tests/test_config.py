@@ -9,22 +9,25 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
     ProviderRegistry,
+    SkillManifest,
     Source,
     SourceConfig,
     SourceRegistry,
     compute_file_hashes,
     default_config_path,
     load_provider_registry,
+    load_skill_manifest,
     load_source_config,
     load_source_registry,
     save_provider_registry,
+    save_skill_manifest,
     save_source_config,
     save_source_registry,
 )
 from repo_skills.config.deprecated import (
     ManifestSkill,
-    SkillManifest,
 )
+from repo_skills.config.deprecated import SkillManifest as _DeprecatedSkillManifest
 from repo_skills.errors import AppError
 from tests.cli.helper import FakeGitRepo
 
@@ -214,12 +217,12 @@ class TestSourceRegistry:
 
 class TestSkillManifest:
     def test_load_missing_file_returns_empty(self, fs: FakeFilesystem) -> None:
-        m = SkillManifest.load(Path("/nonexistent/manifest.json"))
+        m = _DeprecatedSkillManifest.load(Path("/nonexistent/manifest.json"))
         assert m.skills == {}
 
     def test_save_and_load_round_trip(self, fs: FakeFilesystem) -> None:
         path = Path("/config/manifest.json")
-        m = SkillManifest(
+        m = _DeprecatedSkillManifest(
             skills={
                 "tdd": ManifestSkill(
                     source="my-repo",
@@ -230,7 +233,7 @@ class TestSkillManifest:
         )
         m.save(path)
 
-        loaded = SkillManifest.load(path)
+        loaded = _DeprecatedSkillManifest.load(path)
         assert "tdd" in loaded.skills
         entry = loaded.skills["tdd"]
         assert entry.source == "my-repo"
@@ -245,7 +248,7 @@ class TestSkillManifest:
 
     def test_multiple_skills(self, fs: FakeFilesystem) -> None:
         path = Path("/config/manifest.json")
-        m = SkillManifest(
+        m = _DeprecatedSkillManifest(
             skills={
                 "tdd": ManifestSkill(source="repo-a", commit="aaa"),
                 "review": ManifestSkill(source="repo-b", commit="bbb"),
@@ -253,8 +256,54 @@ class TestSkillManifest:
         )
         m.save(path)
 
-        loaded = SkillManifest.load(path)
+        loaded = _DeprecatedSkillManifest.load(path)
         assert set(loaded.skills.keys()) == {"tdd", "review"}
+
+
+# -- SkillManifest (new API) --
+
+
+class TestNewSkillManifest:
+    def test_load_missing_file_returns_empty(self, fs: FakeFilesystem) -> None:
+        manifest = load_skill_manifest()
+        assert dict(manifest.skills) == {}
+
+    def test_save_and_load_round_trip(self, fs: FakeFilesystem) -> None:
+        manifest = SkillManifest()
+        manifest.register_skill(
+            "tdd",
+            source="my-repo",
+            commit="abc1234",
+            files={"SKILL.md": "sha256:deadbeef"},
+        )
+        save_skill_manifest(manifest)
+
+        loaded = load_skill_manifest()
+        assert "tdd" in loaded.skills
+        entry = loaded.skills["tdd"]
+        assert entry.source == "my-repo"
+        assert entry.commit == "abc1234"
+        assert entry.files == {"SKILL.md": "sha256:deadbeef"}
+
+    def test_register_skill(self) -> None:
+        manifest = SkillManifest()
+        manifest.register_skill("tdd", source="my-repo", commit="abc")
+        assert "tdd" in manifest.skills
+        assert manifest.skills["tdd"].source == "my-repo"
+        assert manifest.skills["tdd"].commit == "abc"
+
+    def test_unregister_skill(self) -> None:
+        manifest = SkillManifest()
+        manifest.register_skill("tdd", source="my-repo")
+        manifest.unregister_skill("tdd")
+        assert "tdd" not in manifest.skills
+
+    def test_skills_property_returns_mapping(self) -> None:
+        from collections.abc import Mapping
+
+        manifest = SkillManifest()
+        manifest.register_skill("tdd", source="my-repo")
+        assert isinstance(manifest.skills, Mapping)
 
 
 # -- compute_file_hashes --

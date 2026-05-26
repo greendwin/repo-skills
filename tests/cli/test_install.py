@@ -7,19 +7,17 @@ import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
-    PROVIDERS_REGISTRY_FILE,
+    SourceConfig,
+    load_source_registry,
+    save_source_config,
+    save_source_registry,
 )
-from repo_skills.config import REPO_SKILLS_DIR as REPO_SKILLS_DIR_NAME
-from repo_skills.config import (
+from repo_skills.config.deprecated import (
+    PROVIDERS_REGISTRY_FILE,
     SKILL_MANIFEST_FILE,
-    SOURCE_CONFIG_FILE,
-    SOURCES_REGISTRY_FILE,
     ProviderConfig,
     ProviderRegistry,
     SkillManifest,
-    SourceConfig,
-    SourceEntry,
-    SourceRegistry,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
@@ -49,12 +47,12 @@ def _fake_git() -> Generator[FakeGitRepo]:
 
 def _add_second_source(fs: FakeFilesystem) -> None:
     fs.create_dir(OTHER_REPO_ROOT / ".git")
-    registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
-    registry.sources["other-project"] = SourceEntry(path=str(OTHER_REPO_ROOT))
-    registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+    registry = load_source_registry()
+    registry.register_source("other-project", OTHER_REPO_ROOT)
+    save_source_registry(registry)
 
-    cfg = SourceConfig(name="other-project", skills_dir="skills")
-    cfg.save(OTHER_REPO_ROOT / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE)
+    cfg = SourceConfig(name="other-project", skills_dir="skills", branch="")
+    save_source_config(cfg, OTHER_REPO_ROOT)
 
 
 class TestInstall:
@@ -175,9 +173,9 @@ class TestInstallSourceResolution:
 
     def test_selects_source_with_flag(self, fs: FakeFilesystem, git_repo: Path) -> None:
         register_source(git_repo)
-        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
-        registry.sources["other"] = SourceEntry(path="/repos/other")
-        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        registry = load_source_registry()
+        registry.register_source("other", Path("/repos/other"))
+        save_source_registry(registry)
 
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
@@ -189,9 +187,9 @@ class TestInstallSourceResolution:
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
-        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
-        registry.sources["other"] = SourceEntry(path="/repos/other")
-        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        registry = load_source_registry()
+        registry.register_source("other", Path("/repos/other"))
+        save_source_registry(registry)
 
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 

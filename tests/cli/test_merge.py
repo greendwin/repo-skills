@@ -7,19 +7,17 @@ import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
-    PROVIDERS_REGISTRY_FILE,
-)
-from repo_skills.config import REPO_SKILLS_DIR as REPO_SKILLS_DIR_NAME
-from repo_skills.config import (
-    SOURCE_CONFIG_FILE,
-    SOURCES_REGISTRY_FILE,
-    ProviderConfig,
-    ProviderRegistry,
-    SkillEntry,
     SourceConfig,
-    SourceEntry,
     SourceRegistry,
     compute_file_hashes,
+    save_source_config,
+    save_source_registry,
+)
+from repo_skills.config.deprecated import (
+    PROVIDERS_REGISTRY_FILE,
+    ManifestSkill,
+    ProviderConfig,
+    ProviderRegistry,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
@@ -54,7 +52,9 @@ def _setup_diverged_skill(
     register_source(git_repo, branch=branch)
     create_source_skill(fs, "tdd", content="# original")
     hashes = install_skill(fs, "tdd", content="# original")
-    save_manifest({"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)})
+    save_manifest(
+        {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
+    )
     (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
 
@@ -77,7 +77,7 @@ class TestMergeStart:
         hashes = install_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
         ProviderRegistry(
             providers={
@@ -130,7 +130,7 @@ class TestMergeProviderResolution:
         hashes = install_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
         ProviderRegistry(
             providers={
@@ -155,7 +155,7 @@ class TestMergeProviderResolution:
         hashes = install_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
         ProviderRegistry(
             providers={
@@ -178,7 +178,7 @@ class TestMergeProviderResolution:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
 
         result = assert_invoke("merge", "tdd", "--offline")
@@ -194,7 +194,7 @@ class TestBaseCommitSearch:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit=None, files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit=None, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -214,7 +214,7 @@ class TestBaseCommitSearch:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit=None, files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit=None, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -238,7 +238,7 @@ class TestBaseCommitSearch:
         fs.create_file(INSTALL_DIR / "tdd" / "extra.md", contents="line1\nline2\nline3")
         hashes = compute_file_hashes(INSTALL_DIR / "tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit=None, files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit=None, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -261,7 +261,7 @@ class TestBaseCommitSearch:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit=None, files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit=None, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -278,7 +278,7 @@ class TestBaseCommitSearch:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -298,7 +298,7 @@ class TestBaseCommitSearch:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -325,7 +325,7 @@ class TestBaseCommitSearch:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit=None, files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit=None, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -390,19 +390,16 @@ class TestMergeOrphan:
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         other_repo = Path("/repos/other-project")
-        fs.create_dir(other_repo)
-        registry = SourceRegistry(
-            sources={
-                "my-project": SourceEntry(path=str(git_repo)),
-                "other-project": SourceEntry(path=str(other_repo)),
-            }
+        fs.create_dir(other_repo / ".git")
+        registry = SourceRegistry()
+        registry.register_source("my-project", git_repo)
+        registry.register_source("other-project", other_repo)
+        save_source_registry(registry)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dir="skills"), git_repo
         )
-        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
-        SourceConfig(name="my-project").save(
-            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
-        )
-        SourceConfig(name="other-project").save(
-            other_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
+        save_source_config(
+            SourceConfig(name="other-project", skills_dir="skills"), other_repo
         )
         install_skill(fs, "my-new-skill", content="# brand new")
 
@@ -416,19 +413,16 @@ class TestMergeOrphan:
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         other_repo = Path("/repos/other-project")
-        fs.create_dir(other_repo)
-        registry = SourceRegistry(
-            sources={
-                "my-project": SourceEntry(path=str(git_repo)),
-                "other-project": SourceEntry(path=str(other_repo)),
-            }
+        fs.create_dir(other_repo / ".git")
+        registry = SourceRegistry()
+        registry.register_source("my-project", git_repo)
+        registry.register_source("other-project", other_repo)
+        save_source_registry(registry)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dir="skills"), git_repo
         )
-        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
-        SourceConfig(name="my-project").save(
-            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
-        )
-        SourceConfig(name="other-project").save(
-            other_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
+        save_source_config(
+            SourceConfig(name="other-project", skills_dir="skills"), other_repo
         )
         install_skill(fs, "my-new-skill", content="# brand new")
 
@@ -576,7 +570,9 @@ def _setup_merge_branch(
 ) -> None:
     register_source(git_repo, branch=source_branch)
     hashes = install_skill(fs, "tdd", content="# original")
-    save_manifest({"tdd": SkillEntry(source="my-project", commit=COMMIT, files=hashes)})
+    save_manifest(
+        {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
+    )
     create_source_skill(fs, "tdd", content=content)
     fake_git.branch = branch
 
@@ -774,7 +770,7 @@ class TestMergeRebase:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit=None, files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit=None, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 

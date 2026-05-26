@@ -5,17 +5,16 @@ from pathlib import Path
 import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from repo_skills.config import REPO_SKILLS_DIR as REPO_SKILLS_DIR_NAME
 from repo_skills.config import (
-    SKILL_MANIFEST_FILE,
-    SOURCE_CONFIG_FILE,
-    SOURCES_REGISTRY_FILE,
+    REPO_SKILLS_DIR,
+    load_source_config,
+    load_source_registry,
+    save_source_registry,
 )
-from repo_skills.config import SkillEntry as ManifestSkillEntry
-from repo_skills.config import (
+from repo_skills.config.deprecated import (
+    SKILL_MANIFEST_FILE,
+    ManifestSkill,
     SkillManifest,
-    SourceConfig,
-    SourceRegistry,
 )
 from tests.cli.helper import (
     SOURCE_CONFIG_DIR,
@@ -31,22 +30,21 @@ class TestSourceInitFreshRepo:
     def test_creates_source_config_and_registers(self, git_repo: Path) -> None:
         result = assert_invoke("source", "init")
 
-        source_cfg = SourceConfig.load(
-            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
-        )
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
         assert source_cfg.name == "my-project"
         assert source_cfg.skills_dir == "skills"
         assert source_cfg.branch == "main"
 
         assert (git_repo / "skills" / ".gitkeep").exists()
 
-        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        registry = load_source_registry()
         assert "my-project" in registry.sources
-        assert registry.sources["my-project"].path == str(SOURCE_REPO_ROOT)
+        assert registry.sources["my-project"].repo_root == Path(str(SOURCE_REPO_ROOT))
 
         assert_words_in_message(result.output, "initialized", "source", "my-project")
 
-        gitignore = git_repo / REPO_SKILLS_DIR_NAME / ".gitignore"
+        gitignore = git_repo / REPO_SKILLS_DIR / ".gitignore"
         assert gitignore.exists()
         assert "*" in gitignore.read_text()
 
@@ -59,9 +57,8 @@ class TestSourceInitPopulatedRepo:
 
         assert_invoke("source", "init")
 
-        source_cfg = SourceConfig.load(
-            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
-        )
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
         assert source_cfg.skills_dir == "skills"
         assert not (git_repo / "skills" / ".gitkeep").exists()
 
@@ -73,9 +70,8 @@ class TestSourceInitBranch:
         _fake_git.branches = ["develop"]
         assert_invoke("source", "init", "--branch", "develop")
 
-        source_cfg = SourceConfig.load(
-            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
-        )
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
         assert source_cfg.branch == "develop"
 
     def test_branch_flag_errors_when_branch_missing(
@@ -96,9 +92,8 @@ class TestSourceInitBranch:
         _fake_git.branch = "feature/xyz"
         assert_invoke("source", "init")
 
-        source_cfg = SourceConfig.load(
-            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
-        )
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
         assert source_cfg.branch == "develop"
 
     def test_reinit_with_branch_updates_pin(
@@ -109,9 +104,8 @@ class TestSourceInitBranch:
         _fake_git.branches = ["release"]
         result = assert_invoke("source", "init", "--branch", "release")
 
-        source_cfg = SourceConfig.load(
-            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
-        )
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
         assert source_cfg.branch == "release"
 
         assert_words_in_message(result.output, "updated", "my-project")
@@ -124,12 +118,11 @@ class TestSourceInitNameOverride:
     def test_name_flag_overrides_derived_name(self, git_repo: Path) -> None:
         result = assert_invoke("source", "init", "--name", "custom-name")
 
-        source_cfg = SourceConfig.load(
-            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
-        )
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
         assert source_cfg.name == "custom-name"
 
-        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        registry = load_source_registry()
         assert "custom-name" in registry.sources
         assert "my-project" not in registry.sources
 
@@ -153,24 +146,24 @@ class TestSourceInitIdempotent:
     def test_reinit_re_registers_removed_source(self) -> None:
         assert_invoke("source", "init")
 
-        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
-        registry.sources.pop("my-project", None)
-        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        registry = load_source_registry()
+        registry.unregister_source("my-project")
+        save_source_registry(registry)
 
         result = assert_invoke("source", "init")
 
         assert_words_in_message(result.output, "registered", "my-project")
 
-        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        registry = load_source_registry()
         assert "my-project" in registry.sources
-        assert registry.sources["my-project"].path == str(SOURCE_REPO_ROOT)
+        assert registry.sources["my-project"].repo_root == Path(str(SOURCE_REPO_ROOT))
 
     def test_re_register_with_branch_change(self, _fake_git: FakeGitRepo) -> None:
         assert_invoke("source", "init")
 
-        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
-        registry.sources.pop("my-project", None)
-        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        registry = load_source_registry()
+        registry.unregister_source("my-project")
+        save_source_registry(registry)
 
         _fake_git.branches = ["release"]
         result = assert_invoke("source", "init", "--branch", "release")
@@ -191,15 +184,14 @@ class TestSourceInitRename:
         assert "old-name" in result.output
         assert "new-name" in result.output
 
-        source_cfg = SourceConfig.load(
-            SOURCE_REPO_ROOT / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
-        )
+        source_cfg = load_source_config(SOURCE_REPO_ROOT)
+        assert source_cfg is not None
         assert source_cfg.name == "new-name"
 
-        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        registry = load_source_registry()
         assert "new-name" in registry.sources
         assert "old-name" not in registry.sources
-        assert registry.sources["new-name"].path == str(SOURCE_REPO_ROOT)
+        assert registry.sources["new-name"].repo_root == Path(str(SOURCE_REPO_ROOT))
 
     def test_rename_with_branch_change_shows_both(self, _fake_git: FakeGitRepo) -> None:
         assert_invoke("source", "init", "--name", "old-name")
@@ -221,9 +213,9 @@ class TestSourceInitRename:
 
         manifest = SkillManifest(
             skills={
-                "tdd": ManifestSkillEntry(source="old-name"),
-                "review": ManifestSkillEntry(source="old-name"),
-                "deploy": ManifestSkillEntry(source="other-source"),
+                "tdd": ManifestSkill(source="old-name"),
+                "review": ManifestSkill(source="old-name"),
+                "deploy": ManifestSkill(source="other-source"),
             }
         )
         manifest.save(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
@@ -267,9 +259,8 @@ class TestSourceInitAutoDetect:
 
         assert_invoke("source", "init")
 
-        source_cfg = SourceConfig.load(
-            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
-        )
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
         assert source_cfg.skills_dir == "my-skills"
 
     def test_detects_skills_with_categories(
@@ -280,7 +271,6 @@ class TestSourceInitAutoDetect:
 
         assert_invoke("source", "init")
 
-        source_cfg = SourceConfig.load(
-            git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE
-        )
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
         assert source_cfg.skills_dir == "skills"

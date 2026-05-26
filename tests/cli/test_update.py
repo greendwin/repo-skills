@@ -4,11 +4,11 @@ from pathlib import Path
 
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from repo_skills.config import (
+from repo_skills.config.deprecated import (
     PROVIDERS_REGISTRY_FILE,
+    ManifestSkill,
     ProviderConfig,
     ProviderRegistry,
-    SkillEntry,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
@@ -35,7 +35,7 @@ class TestUpdateSynced:
         create_source_skill(fs, "tdd", content="# tdd v2")
         hashes = install_skill(fs, "tdd", content="# tdd v1")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="old", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="old", files=hashes)}
         )
 
         result = assert_invoke("update", "--offline")
@@ -55,7 +55,7 @@ class TestUpdateSkipsModified:
         create_source_skill(fs, "tdd", content="# tdd v2")
         baseline = install_skill(fs, "tdd", content="# tdd v1")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="old", files=baseline)}
+            {"tdd": ManifestSkill(source="my-project", commit="old", files=baseline)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# user edit")
 
@@ -73,7 +73,7 @@ class TestUpdateUpToDate:
         create_source_skill(fs, "tdd", content="# tdd")
         hashes = install_skill(fs, "tdd", content="# tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         result = assert_invoke("update", "--offline")
@@ -87,7 +87,7 @@ class TestUpdateAutoInstallsNewProvider:
         create_source_skill(fs, "tdd", content="# tdd")
         hashes = install_skill(fs, "tdd", content="# tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         cursor_dir = Path("/home/user/.cursor/skills")
@@ -112,7 +112,7 @@ class TestUpdatePull:
         create_source_skill(fs, "tdd")
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         assert_invoke("update")
@@ -126,7 +126,7 @@ class TestUpdatePull:
         create_source_skill(fs, "tdd")
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         assert_invoke("update", "--offline")
@@ -143,7 +143,7 @@ class TestUpdateValidation:
         create_source_skill(fs, "tdd")
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         result = assert_invoke("update", "--offline", expect_error=True)
@@ -159,7 +159,7 @@ class TestUpdateValidation:
         create_source_skill(fs, "tdd")
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         result = assert_invoke("update", "--offline")
@@ -174,7 +174,7 @@ class TestUpdateValidation:
         create_source_skill(fs, "tdd")
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         result = assert_invoke("update", "--offline", expect_error=True)
@@ -188,7 +188,7 @@ class TestUpdateValidation:
         create_source_skill(fs, "tdd")
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         result = assert_invoke("update", "nope", "--offline", expect_error=True)
@@ -214,8 +214,8 @@ class TestUpdateAll:
         h2 = install_skill(fs, "review", content="# review v1")
         save_manifest(
             {
-                "tdd": SkillEntry(source="my-project", commit="old", files=h1),
-                "review": SkillEntry(source="my-project", commit="old", files=h2),
+                "tdd": ManifestSkill(source="my-project", commit="old", files=h1),
+                "review": ManifestSkill(source="my-project", commit="old", files=h2),
             }
         )
 
@@ -236,8 +236,8 @@ class TestUpdateBatchResilience:
         h2 = install_skill(fs, "review", content="# review v1")
         save_manifest(
             {
-                "tdd": SkillEntry(source="my-project", commit="old", files=h1),
-                "review": SkillEntry(source="my-project", commit="old", files=h2),
+                "tdd": ManifestSkill(source="my-project", commit="old", files=h1),
+                "review": ManifestSkill(source="my-project", commit="old", files=h2),
             }
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# user edit")

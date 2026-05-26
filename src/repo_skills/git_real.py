@@ -7,12 +7,14 @@ from rich.markup import escape
 
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
+from repo_skills.utils import fmt_command, fmt_ident, fmt_path
 
 
 def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> AppError:
     cmd = " ".join(["git", *args])
-    msg = f"git command failed: [blue]{cmd}[/blue]"
-    msg += f"\n  repo: [dim]{repo_path}[/dim]"
+
+    props = {"repo": fmt_path(repo_path)}
+
     try:
         branch = subprocess.run(
             ["git", "branch", "--show-current"],
@@ -22,13 +24,17 @@ def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> AppError:
             check=True,
         ).stdout.strip()
         if branch:
-            msg += f"\n  branch: [green]{branch}[/green]"
+            props["branch"] = fmt_ident(branch)
     except subprocess.CalledProcessError:
         pass
 
     if output:
-        msg += f"\n[dim]{escape(output)}[/dim]"
-    return AppError(msg)
+        props[""] = f"[dim]{escape(output)}[/dim]"
+
+    return AppError(
+        f"git command failed: {fmt_command(cmd)}",
+        props=props,
+    )
 
 
 class RealGitRepo:
@@ -36,7 +42,7 @@ class RealGitRepo:
         self._path = repo_path
 
     @property
-    def path(self) -> Path:
+    def root(self) -> Path:
         return self._path
 
     def _run(self, *args: str) -> str:

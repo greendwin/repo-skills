@@ -4,9 +4,8 @@ from pathlib import Path
 
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from repo_skills.config import SOURCES_REGISTRY_FILE, SourceEntry, SourceRegistry
+from repo_skills.config import SourceRegistry, save_source_registry
 from tests.cli.helper import (
-    SOURCE_CONFIG_DIR,
     assert_invoke,
     assert_words_in_message,
     register_source,
@@ -15,13 +14,10 @@ from tests.cli.helper import (
 
 class TestSourceList:
     def test_shows_registered_sources(self, git_repo: Path) -> None:
-        registry = SourceRegistry(
-            sources={
-                "alpha": SourceEntry(path="/repos/alpha"),
-                "beta": SourceEntry(path="/repos/beta"),
-            }
-        )
-        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        registry = SourceRegistry()
+        registry.register_source("alpha", Path("/repos/alpha"))
+        registry.register_source("beta", Path("/repos/beta"))
+        save_source_registry(registry)
 
         result = assert_invoke("source", "list")
 

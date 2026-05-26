@@ -10,19 +10,20 @@ from typer.testing import CliRunner
 
 import repo_skills.cli._deps as deps_mod
 from repo_skills.cli import app
-from repo_skills.config import REPO_SKILLS_DIR as REPO_SKILLS_DIR_NAME
 from repo_skills.config import (
-    SKILL_MANIFEST_FILE,
-    SOURCE_CONFIG_FILE,
-    SOURCES_REGISTRY_FILE,
-    SkillEntry,
-    SkillManifest,
     SourceConfig,
-    SourceEntry,
     SourceRegistry,
     compute_file_hashes,
+    save_source_config,
+    save_source_registry,
+)
+from repo_skills.config.deprecated import (
+    SKILL_MANIFEST_FILE,
+    ManifestSkill,
+    SkillManifest,
 )
 from repo_skills.errors import AppError, NoopError
+from repo_skills.git import GitRepo
 
 
 @dataclass
@@ -47,7 +48,7 @@ SKILLS_DIR = SOURCE_REPO_ROOT / "skills"
 
 @dataclass
 class FakeGitRepo:
-    path: Path = Path("/repos/my-project")
+    root: Path = Path("/repos/my-project")
     main_branch: str = "main"
     branch: str = "main"
     clean: bool = True
@@ -154,7 +155,10 @@ class FakeGitRepo:
 
 
 def install_fake_git(fake: FakeGitRepo) -> None:
-    deps_mod._git_repo_factory = lambda _path: fake
+    def factory(_path: Path) -> GitRepo:
+        return fake
+
+    deps_mod._git_repo_factory = factory
 
 
 def uninstall_fake_git() -> None:
@@ -242,14 +246,15 @@ def register_source(
     skills_dir: str = "skills",
     branch: str = "",
 ) -> None:
-    registry = SourceRegistry(sources={name: SourceEntry(path=str(git_repo))})
-    registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+    registry = SourceRegistry()
+    registry.register_source(name, git_repo)
+    save_source_registry(registry)
 
     cfg = SourceConfig(name=name, skills_dir=skills_dir, branch=branch)
-    cfg.save(git_repo / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE)
+    save_source_config(cfg, git_repo)
 
 
-def save_manifest(skills: dict[str, SkillEntry]) -> None:
+def save_manifest(skills: dict[str, ManifestSkill]) -> None:
     manifest = SkillManifest(skills=skills)
     manifest.save(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
 

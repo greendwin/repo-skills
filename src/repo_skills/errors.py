@@ -6,6 +6,8 @@ from contextlib import contextmanager
 from rich.console import Console
 from rich.markup import escape
 
+from repo_skills.utils import fmt_message
+
 _print_callstack = False
 
 
@@ -15,9 +17,15 @@ def set_print_callstack(value: bool) -> None:
 
 
 class AppError(Exception):
-    def __init__(self, message: str) -> None:
-        self.message = message
-        super().__init__(message)
+    def __init__(
+        self,
+        message: str,
+        *,
+        hint: str = "",
+        props: dict[str, str] | None = None,
+    ) -> None:
+        self.message = fmt_message(message, hint=hint, props=props)
+        super().__init__(self.message)
 
 
 class NoopError(Exception):

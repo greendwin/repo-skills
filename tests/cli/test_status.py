@@ -6,18 +6,18 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.cli._status import UntrackedEntry, _build_untracked_lookup
 from repo_skills.config import (
-    PROVIDERS_REGISTRY_FILE,
+    SourceConfig,
+    SourceRegistry,
+    load_source_config,
+    load_source_registry,
+    save_source_config,
+    save_source_registry,
 )
-from repo_skills.config import REPO_SKILLS_DIR as REPO_SKILLS_DIR_NAME
-from repo_skills.config import (
-    SOURCE_CONFIG_FILE,
-    SOURCES_REGISTRY_FILE,
+from repo_skills.config.deprecated import (
+    PROVIDERS_REGISTRY_FILE,
+    ManifestSkill,
     ProviderConfig,
     ProviderRegistry,
-    SkillEntry,
-    SourceConfig,
-    SourceEntry,
-    SourceRegistry,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
@@ -37,7 +37,7 @@ class TestStatusSynced:
         register_source(git_repo)
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc123", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc123", files=hashes)}
         )
 
         result = assert_invoke("status")
@@ -52,7 +52,7 @@ class TestStatusModified:
         register_source(git_repo)
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc123", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc123", files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -68,7 +68,7 @@ class TestStatusMissing:
         register_source(git_repo)
         save_manifest(
             {
-                "tdd": SkillEntry(
+                "tdd": ManifestSkill(
                     source="my-project",
                     commit="abc123",
                     files={"SKILL.md": "sha256:aaa"},
@@ -86,16 +86,16 @@ class TestStatusGrouping:
         register_source(git_repo)
         other_source = Path("/repos/other-project")
         fs.create_dir(other_source / ".git")
-        registry = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
-        registry.sources["other-project"] = SourceEntry(path=str(other_source))
-        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        registry = load_source_registry()
+        registry.register_source("other-project", other_source)
+        save_source_registry(registry)
 
         h1 = install_skill(fs, "tdd")
         h2 = install_skill(fs, "review")
         save_manifest(
             {
-                "tdd": SkillEntry(source="my-project", commit="abc", files=h1),
-                "review": SkillEntry(source="other-project", commit="def", files=h2),
+                "tdd": ManifestSkill(source="my-project", commit="abc", files=h1),
+                "review": ManifestSkill(source="other-project", commit="def", files=h2),
             }
         )
 
@@ -130,7 +130,7 @@ class TestStatusMultiProvider:
         provider_registry.save(SOURCE_CONFIG_DIR / PROVIDERS_REGISTRY_FILE)
 
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         result = assert_invoke("status")
@@ -142,7 +142,8 @@ class TestStatusMultiProvider:
 def _create_source_skill(
     fs: FakeFilesystem, name: str, git_root: Path = SOURCE_REPO_ROOT
 ) -> None:
-    source_cfg = SourceConfig.load(git_root / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE)
+    source_cfg = load_source_config(git_root)
+    assert source_cfg is not None
     skill_dir = git_root / source_cfg.skills_dir / name
     fs.create_file(skill_dir / "SKILL.md", contents=f"# {name}")
 
@@ -151,7 +152,7 @@ def _init_source_config(
     fs: FakeFilesystem, git_root: Path = SOURCE_REPO_ROOT, skills_dir: str = "skills"
 ) -> None:
     cfg = SourceConfig(name=git_root.name, skills_dir=skills_dir)
-    cfg.save(git_root / REPO_SKILLS_DIR_NAME / SOURCE_CONFIG_FILE)
+    save_source_config(cfg, git_root)
 
 
 class TestStatusAvailable:
@@ -174,7 +175,7 @@ class TestStatusAvailableExcludesInstalled:
         _create_source_skill(fs, "tdd", git_repo)
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         result = assert_invoke("status")
@@ -194,14 +195,13 @@ class TestStatusSourceNotFound:
     def test_shows_warning_for_missing_source_repo(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        registry = SourceRegistry(
-            sources={"gone-project": SourceEntry(path="/repos/gone-project")}
-        )
-        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        registry = SourceRegistry()
+        registry.register_source("gone-project", Path("/repos/gone-project"))
+        save_source_registry(registry)
 
         result = assert_invoke("status")
 
-        assert_words_in_message(result.output, "gone-project", "source not found")
+        assert_words_in_message(result.output, "gone-project", "broken")
 
 
 class TestStatusOrphan:
@@ -357,7 +357,7 @@ class TestStatusSync:
         register_source(git_repo)
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         assert_invoke("status", "--sync")
@@ -370,7 +370,7 @@ class TestStatusSync:
         register_source(git_repo)
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": SkillEntry(source="my-project", commit="abc", files=hashes)}
+            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         assert_invoke("status")

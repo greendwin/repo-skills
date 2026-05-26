@@ -6,19 +6,21 @@ from typing import Annotated, Optional
 
 import typer
 
-from repo_skills.config import SkillEntry as ManifestSkillEntry
 from repo_skills.config import (
+    Source,
+    SourceRegistry,
     compute_file_hashes,
-    list_source_skills,
+    load_source_registry,
+)
+from repo_skills.config.deprecated import (
+    ManifestSkill,
     load_provider_registry,
     load_skill_manifest,
-    load_source_config,
-    load_source_registry,
-    resolve_branch,
     save_skill_manifest,
 )
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
+from repo_skills.utils import fmt_command, fmt_ident, fmt_path
 
 from ._app import app
 from ._deps import resolve_git_repo
@@ -45,61 +47,17 @@ def install(
         typer.Option("--force", "-f", help="Overwrite existing skill."),
     ] = False,
 ) -> None:
+    source_registry = load_source_registry()
     pulled_sources: set[str] = set()
     for name in names:
         _install_one(
+            source_registry,
             name,
-            source=source,
+            from_source=source,
             offline=offline,
             force=force,
             pulled_sources=pulled_sources,
         )
-
-
-def _install_one(
-    name: str,
-    *,
-    source: str | None,
-    offline: bool,
-    force: bool,
-    pulled_sources: set[str],
-) -> None:
-    source_name, source_path = _resolve_source(source, skill_name=name)
-
-    source_cfg = load_source_config(source_path)
-    skills_dir = source_path / source_cfg.skills_dir
-
-    git = resolve_git_repo(source_path)
-    if not offline and source_name not in pulled_sources:
-        git.pull()
-        pulled_sources.add(source_name)
-    validate_repo(git, branch=resolve_branch(source_cfg, git))
-
-    src = skills_dir / name
-    if not src.is_dir():
-        raise AppError(
-            f"Skill [green]{name}[/green] not found in source "
-            f"[green]{source_name}[/green]."
-        )
-
-    commit = _resolve_commit(git, name)
-
-    providers = load_provider_registry()
-
-    for pname, pcfg in providers.providers.items():
-        install_dir = pcfg.resolve_path()
-        _copy_skill(
-            src, name, install_dir=install_dir, provider_name=pname, force=force
-        )
-
-    _record_manifest(
-        name,
-        source_name=source_name,
-        commit=commit,
-        skill_src=src,
-    )
-
-    echo(f"Installed [green]{name}[/green] from [green]{source_name}[/green].")
 
 
 @app.command(help="Uninstall a skill.")
@@ -111,13 +69,13 @@ def uninstall(
     ],
 ) -> None:
     manifest = load_skill_manifest()
-    providers = load_provider_registry()
+    provider_registry = load_provider_registry()
 
     for name in names:
         if name not in manifest.skills:
-            raise AppError(f"Skill [green]{name}[/green] is not installed.")
+            raise AppError(f"Skill {fmt_ident(name)} is not installed.")
 
-        for pcfg in providers.providers.values():
+        for pcfg in provider_registry.providers.values():
             dst = pcfg.resolve_path(name)
             if dst.exists():
                 shutil.rmtree(dst)
@@ -125,7 +83,123 @@ def uninstall(
         manifest.skills.pop(name)
         save_skill_manifest(manifest)
 
-        echo(f"Uninstalled [green]{name}[/green].")
+        echo(f"Uninstalled {fmt_ident(name)}.")
+
+
+def _install_one(
+    source_registry: SourceRegistry,
+    skill_name: str,
+    *,
+    from_source: str | None,
+    offline: bool,
+    force: bool,
+    pulled_sources: set[str],
+) -> None:
+    source = _resolve_source(source_registry, from_source, skill_name=skill_name)
+
+    git = resolve_git_repo(source.repo_root)
+    if not offline and source.name not in pulled_sources:
+        git.pull()
+        pulled_sources.add(source.name)
+    validate_repo(git, branch=source.get_branch(git))
+
+    skill = source.skills.get(skill_name)
+    if skill is None:
+        raise AppError(
+            f"Skill {fmt_ident(skill_name)} not found in source "
+            f"{fmt_ident(source.name)}."
+        )
+
+    src = source.repo_root / skill.rel_path
+    commit = _resolve_commit(git, skill_name)
+
+    provider_registry = load_provider_registry()
+
+    for prov_name, prov_cfg in provider_registry.providers.items():
+        install_dir = prov_cfg.resolve_path()
+        _copy_skill(
+            src,
+            skill_name,
+            install_dir=install_dir,
+            provider_name=prov_name,
+            force=force,
+        )
+
+    _record_manifest(
+        skill_name,
+        source_name=source.name,
+        commit=commit,
+        skill_src=src,
+    )
+
+    echo(f"Installed {fmt_ident(skill_name)} from {fmt_ident(source.name)}.")
+
+
+def _resolve_source(
+    source_registry: SourceRegistry, source_name: str | None, *, skill_name: str
+) -> Source:
+    if not source_registry.sources:
+        raise AppError(
+            "No sources registered.",
+            hint=f"Run {fmt_command('skills source init')} first.",
+        )
+
+    if source_name is not None:
+        if source_name not in source_registry.sources:
+            raise AppError(f"Source {fmt_ident(source_name)} not found.")
+
+        return source_registry.get_source(source_name, load_skills=True)
+
+    if len(source_registry.sources) == 1:
+        only = next(iter(source_registry.sources))
+        return source_registry.get_source(only, load_skills=True)
+
+    matches: list[Source] = []
+    for sn in source_registry.sources:
+        candidate = source_registry.get_source(sn, load_skills=True)
+        if skill_name in candidate.skills:
+            matches.append(candidate)
+
+    if len(matches) == 1:
+        return matches[0]
+
+    names = ", ".join(
+        fmt_ident(name) for name in sorted(source_registry.sources.keys())
+    )
+    raise AppError(
+        f"Multiple sources registered ({names}).",
+        hint=f"Use {fmt_command('--source')} to specify.",
+    )
+
+
+def validate_repo(git: GitRepo, *, branch: str) -> None:
+    if not git.is_clean():
+        raise AppError(
+            "Repo has uncommitted changes.",
+            props={"repo": fmt_path(git.root)},
+        )
+
+    # TODO: lets switch automatically if it's clean
+    # TODO: merge this code with others that check current_branch and
+    #       switches to it (in update/merge modules)
+    current = git.current_branch()
+    if current != branch:
+        raise AppError(
+            f"Not on the pinned branch (on {fmt_ident(current)},"
+            f" expected {fmt_ident(branch)}).",
+            hint=f"Use {fmt_command(f'source init --branch {current}')}"
+            " to change the pin.",
+        )
+
+
+def _resolve_commit(git: GitRepo, skill_name: str) -> str:
+    commit = git.get_skill_commit(skill_name)
+    if git.verify_commit_content(commit, skill_name):
+        return commit
+
+    raise AppError(
+        f"Skill {fmt_ident(skill_name)} content does not match commit {commit}."
+    )
 
 
 def _record_manifest(
@@ -136,7 +210,7 @@ def _record_manifest(
     skill_src: Path,
 ) -> None:
     manifest = load_skill_manifest()
-    manifest.skills[name] = ManifestSkillEntry(
+    manifest.skills[name] = ManifestSkill(
         source=source_name,
         commit=commit,
         files=compute_file_hashes(skill_src),
@@ -156,8 +230,9 @@ def _copy_skill(
 
     if dst.exists() and not force:
         raise AppError(
-            f"Skill [green]{name}[/green] already exists at provider "
-            f"[green]{provider_name}[/green].\n\nUse [blue]--force[/blue] to overwrite."
+            f"Skill {fmt_ident(name)} already exists at provider "
+            f"{fmt_ident(provider_name)}.",
+            hint=f"Use {fmt_command('--force')} to overwrite.",
         )
 
     if dst.exists():
@@ -165,61 +240,3 @@ def _copy_skill(
 
     install_dir.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dst)
-
-
-def _resolve_source(source_name: str | None, *, skill_name: str) -> tuple[str, Path]:
-    registry = load_source_registry()
-
-    if not registry.sources:
-        raise AppError(
-            "No sources registered.\n\nRun [blue]skills source init[/blue] first."
-        )
-
-    if source_name is not None:
-        if source_name not in registry.sources:
-            raise AppError(f"Source [green]{source_name}[/green] not found.")
-        return source_name, Path(registry.sources[source_name].path)
-
-    if len(registry.sources) == 1:
-        name = next(iter(registry.sources))
-        return name, Path(registry.sources[name].path)
-
-    matches = [
-        sn
-        for sn, se in registry.sources.items()
-        if skill_name in list_source_skills(Path(se.path))
-    ]
-
-    if len(matches) == 1:
-        return matches[0], Path(registry.sources[matches[0]].path)
-
-    names = ", ".join(sorted(registry.sources.keys()))
-    raise AppError(
-        f"Multiple sources registered ({names}).\n\n"
-        f"Use [blue]--source[/blue] to specify."
-    )
-
-
-def validate_repo(git: GitRepo, *, branch: str) -> None:
-    current = git.current_branch()
-    if current != branch:
-        raise AppError(
-            f"Not on the pinned branch"
-            f" (on [green]{current}[/green],"
-            f" expected [green]{branch}[/green]).\n\n"
-            f"Use [blue]source init --branch {current}[/blue]"
-            " to change the pin."
-        )
-
-    if not git.is_clean():
-        raise AppError(f"Repo has uncommitted changes.\n  repo: [dim]{git.path}[/dim]")
-
-
-def _resolve_commit(git: GitRepo, skill_name: str) -> str:
-    commit = git.get_skill_commit(skill_name)
-    if git.verify_commit_content(commit, skill_name):
-        return commit
-
-    raise AppError(
-        f"Skill [green]{skill_name}[/green] content does not match commit {commit}."
-    )

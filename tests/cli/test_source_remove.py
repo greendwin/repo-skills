@@ -2,36 +2,34 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from repo_skills.config import (
+from pyfakefs.fake_filesystem import FakeFilesystem
+
+from repo_skills.config import load_source_registry, save_source_registry
+from repo_skills.config.deprecated import (
     SKILL_MANIFEST_FILE,
-    SOURCES_REGISTRY_FILE,
-)
-from repo_skills.config import SkillEntry as ManifestSkillEntry
-from repo_skills.config import (
+    ManifestSkill,
     SkillManifest,
-    SourceEntry,
-    SourceRegistry,
 )
 from tests.cli.helper import (
     SOURCE_CONFIG_DIR,
     assert_invoke,
     assert_words_in_message,
+    register_source,
 )
 
 
 class TestSourceRemove:
-    def test_removes_source_from_registry(self, git_repo: Path) -> None:
-        registry = SourceRegistry(
-            sources={
-                "alpha": SourceEntry(path="/repos/alpha"),
-                "beta": SourceEntry(path="/repos/beta"),
-            }
-        )
-        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+    def test_removes_source_from_registry(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo, name="alpha")
+        registry = load_source_registry()
+        registry.register_source("beta", Path("/repos/beta"))
+        save_source_registry(registry)
 
         result = assert_invoke("source", "remove", "alpha")
 
-        updated = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        updated = load_source_registry()
         assert "alpha" not in updated.sources
         assert "beta" in updated.sources
 
@@ -42,16 +40,17 @@ class TestSourceRemove:
 
         assert_words_in_message(result.exception.message, "not found")
 
-    def test_blocked_when_skills_installed(self, git_repo: Path) -> None:
-        registry = SourceRegistry(sources={"alpha": SourceEntry(path="/repos/alpha")})
-        registry.save(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+    def test_blocked_when_skills_installed(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo, name="alpha")
 
-        manifest = SkillManifest(skills={"tdd": ManifestSkillEntry(source="alpha")})
+        manifest = SkillManifest(skills={"tdd": ManifestSkill(source="alpha")})
         manifest.save(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
 
         result = assert_invoke("source", "remove", "alpha", expect_error=True)
 
         assert_words_in_message(result.exception.message, "installed skills")
 
-        updated = SourceRegistry.load(SOURCE_CONFIG_DIR / SOURCES_REGISTRY_FILE)
+        updated = load_source_registry()
         assert "alpha" in updated.sources

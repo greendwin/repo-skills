@@ -1,22 +1,19 @@
 from __future__ import annotations
 
 import shutil
-from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
 
-from repo_skills.config import (
-    SkillEntry,
-    compute_file_hashes,
+from repo_skills.config import compute_file_hashes, load_source_registry
+from repo_skills.config.deprecated import (
+    ManifestSkill,
     load_provider_registry,
     load_skill_manifest,
-    load_source_config,
-    load_source_registry,
-    resolve_branch,
     save_skill_manifest,
 )
 from repo_skills.errors import AppError, NoopError
+from repo_skills.utils import fmt_ident
 
 from ._app import app
 from ._deps import resolve_git_repo
@@ -36,7 +33,7 @@ def update(
         typer.Option("--offline", help="Skip git pull."),
     ] = False,
 ) -> None:
-    sources = load_source_registry()
+    source_registry = load_source_registry()
     providers = load_provider_registry()
     manifest = load_skill_manifest()
 
@@ -44,33 +41,32 @@ def update(
         raise NoopError("[dim]No skills installed.[/dim]")
 
     if name and name not in manifest.skills:
-        raise AppError(f"Skill [green]{name}[/green] is not installed.")
+        raise AppError(f"Skill {fmt_ident(name)} is not installed.")
 
-    for sentry in sources.sources.values():
-        source_path = Path(sentry.path)
-        source_cfg = load_source_config(source_path)
-        git = resolve_git_repo(source_path)
+    for source_name in source_registry.sources:
+        source = source_registry.get_source(source_name, load_skills=False)
+        git = resolve_git_repo(source.repo_root)
         if not offline:
             git.pull()
-        validate_repo(git, branch=resolve_branch(source_cfg, git))
+        validate_repo(git, branch=source.get_branch(git))
 
     skills_to_update = {name: manifest.skills[name]} if name else dict(manifest.skills)
 
     results: list[tuple[str, str]] = []
 
     for skill_name, entry in skills_to_update.items():
-        source_entry = sources.sources.get(entry.source)
-        if source_entry is None:
+        if entry.source not in source_registry.sources:
             results.append((skill_name, "error"))
             continue
 
-        source_path = Path(source_entry.path)
-        source_cfg = load_source_config(source_path)
-        src = source_path / source_cfg.skills_dir / skill_name
+        source = source_registry.get_source(entry.source, load_skills=True)
+        skill = source.skills.get(skill_name)
 
-        if not src.is_dir():
+        if skill is None:
             results.append((skill_name, "error"))
             continue
+
+        src = source.repo_root / skill.rel_path
 
         source_hashes = compute_file_hashes(src)
         updated_any = False
@@ -106,7 +102,7 @@ def update(
         else:
             results.append((skill_name, "up-to-date"))
 
-        manifest.skills[skill_name] = SkillEntry(
+        manifest.skills[skill_name] = ManifestSkill(
             source=entry.source,
             commit=entry.commit,
             files=source_hashes,

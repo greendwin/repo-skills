@@ -7,7 +7,7 @@ from typing import Annotated, Optional
 import typer
 from typer_di import Depends
 
-from repo_skills.discovery import find_install_dir, find_repo_skills_dir
+from repo_skills.discovery import find_git_root, find_install_dir, find_repo_skills_dir
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
 from repo_skills.git_real import RealGitRepo
@@ -76,7 +76,12 @@ def resolve_manifest_path(
 _git_repo_factory: Callable[[Path], GitRepo] | None = None
 
 
-def resolve_git_repo(repo_dir: Path) -> GitRepo:
+def resolve_git_repo(path: Path) -> GitRepo:
+    git_root = find_git_root(path)
+    if git_root is None:
+        raise AppError("Not inside a git repository.")
+
     if _git_repo_factory is not None:
-        return _git_repo_factory(repo_dir)
-    return RealGitRepo(repo_dir)
+        return _git_repo_factory(git_root)
+
+    return RealGitRepo(git_root)

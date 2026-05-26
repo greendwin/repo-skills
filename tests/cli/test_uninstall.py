@@ -4,11 +4,11 @@ from pathlib import Path
 
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from repo_skills.config import (
+from repo_skills.config.deprecated import (
     PROVIDERS_REGISTRY_FILE,
+    ManifestSkill,
     ProviderConfig,
     ProviderRegistry,
-    SkillEntry,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
@@ -21,8 +21,10 @@ from tests.cli.helper import (
 )
 
 
-def _entry(source: str = "my-project") -> SkillEntry:
-    return SkillEntry(source=source, commit="abc1234", files={"SKILL.md": "sha256:aaa"})
+def _entry(source: str = "my-project") -> ManifestSkill:
+    return ManifestSkill(
+        source=source, commit="abc1234", files={"SKILL.md": "sha256:aaa"}
+    )
 
 
 class TestUninstall:

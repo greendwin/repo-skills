@@ -1,0 +1,76 @@
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+
+from pydantic import BaseModel
+
+from repo_skills.errors import AppError
+from repo_skills.utils import fmt_ident, load_config, save_config
+
+from ._source import Source, load_source
+from ._utils import default_config_path
+
+SOURCES_REGISTRY_FILE = "sources.json"
+
+
+class _SourceEntryDesc(BaseModel):
+    path: str = ""
+
+
+class _SourceRegistryConfig(BaseModel):
+    sources: dict[str, _SourceEntryDesc] = {}
+
+
+@dataclass
+class SourceEntry:
+    repo_root: Path
+    source: Source | None = None
+
+
+class SourceRegistry:
+    def __init__(self) -> None:
+        self._entries: dict[str, SourceEntry] = {}
+
+    @property
+    def sources(self) -> Mapping[str, SourceEntry]:
+        return self._entries
+
+    def get_source(self, name: str, *, load_skills: bool) -> Source:
+        entry = self._entries.get(name)
+        if entry is None:
+            raise AppError(f"Source {fmt_ident(name)} not found.")
+
+        if entry.source is not None:
+            return entry.source
+
+        if not load_skills:
+            # don't cache source without loaded skills
+            return load_source(entry.repo_root, load_skills=False)
+
+        entry.source = load_source(entry.repo_root, load_skills=True)
+        return entry.source
+
+    def register_source(self, name: str, repo_root: Path) -> None:
+        self._entries[name] = SourceEntry(repo_root)
+
+    def unregister_source(self, name: str) -> None:
+        self._entries.pop(name, None)
+
+
+def load_source_registry() -> SourceRegistry:
+    cfg = load_config(_SourceRegistryConfig, default_config_path(SOURCES_REGISTRY_FILE))
+    if cfg is None:
+        cfg = _SourceRegistryConfig()
+
+    r = SourceRegistry()
+    for name, p in cfg.sources.items():
+        r.register_source(name, Path(p.path))
+    return r
+
+
+def save_source_registry(reg: SourceRegistry) -> None:
+    cfg = _SourceRegistryConfig()
+    for name, entry in reg.sources.items():
+        cfg.sources[name] = _SourceEntryDesc(path=str(entry.repo_root))
+
+    save_config(cfg, default_config_path(SOURCES_REGISTRY_FILE))

@@ -6,16 +6,19 @@ from typing import Annotated, NamedTuple, TypeAlias
 import typer
 
 from repo_skills.config import (
-    ProviderRegistry,
-    SkillManifest,
+    SourceBrokenError,
     SourceRegistry,
     compute_file_hashes,
-    list_source_skills,
-    load_provider_registry,
-    load_skill_manifest,
     load_source_registry,
 )
+from repo_skills.config.deprecated import (
+    ProviderRegistry,
+    SkillManifest,
+    load_provider_registry,
+    load_skill_manifest,
+)
 from repo_skills.errors import NoopError
+from repo_skills.utils import fmt_ident
 
 from ._app import app
 from ._deps import resolve_git_repo
@@ -51,17 +54,19 @@ def status(
     ] = False,
 ) -> None:
     manifest = load_skill_manifest()
-    sources = load_source_registry()
-    providers = load_provider_registry()
+    source_registry = load_source_registry()
+    provider_registry = load_provider_registry()
 
     if sync:
-        for sentry in sources.sources.values():
-            git = resolve_git_repo(Path(sentry.path))
+        for source_entry in source_registry.sources.values():
+            git = resolve_git_repo(source_entry.repo_root)
             git.pull()
 
     installed_by_source = _group_installed_by_source(manifest)
-    available_by_source, all_source_skills = _scan_sources(sources, installed_by_source)
-    untracked = _collect_untracked(manifest, providers, all_source_skills)
+    available_by_source, all_source_skills = _scan_sources(
+        source_registry, installed_by_source
+    )
+    untracked = _collect_untracked(manifest, provider_registry, all_source_skills)
     untracked_lookup = _build_untracked_lookup(untracked)
 
     all_names: list[str] = []
@@ -73,14 +78,14 @@ def status(
         all_names.append(name)
 
     name_width = max((len(n) for n in all_names), default=0)
-    provider_width = max((len(n) for n in providers.providers), default=0)
+    provider_width = max((len(n) for n in provider_registry.providers), default=0)
 
     has_output = _print_source_sections(
-        sources,
+        source_registry,
         installed_by_source,
         available_by_source,
         manifest,
-        providers,
+        provider_registry,
         name_width,
         provider_width,
         untracked_lookup,
@@ -100,23 +105,24 @@ def _group_installed_by_source(manifest: SkillManifest) -> SkillsBySource:
 
 
 def _scan_sources(
-    sources: SourceRegistry,
+    source_registry: SourceRegistry,
     installed_by_source: SkillsBySource,
 ) -> tuple[SkillsBySource, SourceSkillIndex]:
     available_by_source: SkillsBySource = {}
     all_source_skills: SourceSkillIndex = {}
 
-    for source_name, sentry in sources.sources.items():
-        source_path = Path(sentry.path)
-        if not source_path.exists():
+    for source_name, source_entry in source_registry.sources.items():
+        # TODO: show corresponding source as broken in status list
+        try:
+            source = source_registry.get_source(source_name, load_skills=True)
+        except SourceBrokenError:
             available_by_source[source_name] = []
             all_source_skills[source_name] = set()
             continue
 
-        skills = list_source_skills(source_path)
-        all_source_skills[source_name] = set(skills)
+        all_source_skills[source_name] = set(source.skills)
         already_installed = set(installed_by_source.get(source_name, []))
-        available = [s for s in skills if s not in already_installed]
+        available = [s for s in source.skills if s not in already_installed]
         if available:
             available_by_source[source_name] = available
 
@@ -167,7 +173,7 @@ def _untracked_hint(skill_name: str, lookup: UntrackedLookup) -> str:
 
 
 def _print_source_sections(
-    sources: SourceRegistry,
+    source_registry: SourceRegistry,
     installed_by_source: SkillsBySource,
     available_by_source: SkillsBySource,
     manifest: SkillManifest,
@@ -183,13 +189,16 @@ def _print_source_sections(
     has_output = False
 
     for source_name in all_sources:
-        source_path = Path(sources.sources[source_name].path)
-        if not source_path.exists():
-            echo(f"[yellow]{source_name}[/yellow]  [dim]source not found[/dim]")
+        try:
+            _ = source_registry.get_source(source_name, load_skills=False)
+        except SourceBrokenError:
+            echo(
+                f"[yellow]Source[/yellow] {fmt_ident(source_name)} - [red]broken[/red]"
+            )
             has_output = True
             continue
 
-        echo(f"[yellow]Source[/yellow] [green]{source_name}[/green]")
+        echo(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
         has_output = True
 
         for skill_name in sorted(installed_by_source.get(source_name, [])):

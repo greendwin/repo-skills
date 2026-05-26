@@ -8,32 +8,45 @@ import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
-    ProviderConfig,
-    ProviderRegistry,
-    SkillEntry,
-    SkillManifest,
+    Source,
     SourceConfig,
-    SourceEntry,
     SourceRegistry,
     compute_file_hashes,
-    default_config_dir,
-    resolve_branch,
+    default_config_path,
+    load_source_config,
+    load_source_registry,
+    save_source_config,
+    save_source_registry,
+)
+from repo_skills.config.deprecated import (
+    ManifestSkill,
+    ProviderConfig,
+    ProviderRegistry,
+    SkillManifest,
 )
 from tests.cli.helper import FakeGitRepo
 
-# -- resolve_branch --
+# -- Source.get_branch --
 
 
-class TestResolveBranch:
+class TestGetBranch:
     def test_returns_config_branch_when_set(self) -> None:
-        cfg = SourceConfig(branch="develop")
+        source = Source(
+            repo_root=Path("/repo"),
+            config=SourceConfig(name="", skills_dir="skills", branch="develop"),
+            skills={},
+        )
         git = FakeGitRepo(main_branch="main")
-        assert resolve_branch(cfg, git) == "develop"
+        assert source.get_branch(git) == "develop"
 
     def test_falls_back_to_main_when_empty(self) -> None:
-        cfg = SourceConfig(branch="")
+        source = Source(
+            repo_root=Path("/repo"),
+            config=SourceConfig(name="", skills_dir="skills"),
+            skills={},
+        )
         git = FakeGitRepo(main_branch="trunk")
-        assert resolve_branch(cfg, git) == "trunk"
+        assert source.get_branch(git) == "trunk"
 
 
 # -- default_config_dir --
@@ -44,7 +57,7 @@ class TestDefaultConfigDir:
         self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("XDG_CONFIG_HOME", "/custom/config")
-        result = default_config_dir()
+        result = default_config_path()
         assert result == Path("/custom/config/repo-skills")
 
     def test_falls_back_to_dot_config(
@@ -52,7 +65,7 @@ class TestDefaultConfigDir:
     ) -> None:
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         monkeypatch.setenv("HOME", "/home/testuser")
-        result = default_config_dir()
+        result = default_config_path()
         assert result == Path("/home/testuser/.config/repo-skills")
 
 
@@ -60,17 +73,17 @@ class TestDefaultConfigDir:
 
 
 class TestSourceConfig:
-    def test_load_missing_file_returns_defaults(self, fs: FakeFilesystem) -> None:
-        cfg = SourceConfig.load(Path("/nonexistent/source.json"))
-        assert cfg.name == ""
-        assert cfg.skills_dir == "skills"
+    def test_load_missing_returns_none(self, fs: FakeFilesystem) -> None:
+        cfg = load_source_config(Path("/nonexistent"))
+        assert cfg is None
 
     def test_save_and_load_round_trip(self, fs: FakeFilesystem) -> None:
-        path = Path("/repo/.repo-skills/source.json")
+        repo_root = Path("/repo")
         cfg = SourceConfig(name="my-repo", skills_dir="custom/skills", branch="develop")
-        cfg.save(path)
+        save_source_config(cfg, repo_root)
 
-        loaded = SourceConfig.load(path)
+        loaded = load_source_config(repo_root)
+        assert loaded is not None
         assert loaded.name == "my-repo"
         assert loaded.skills_dir == "custom/skills"
         assert loaded.branch == "develop"
@@ -80,14 +93,15 @@ class TestSourceConfig:
     ) -> None:
         path = Path("/repo/.repo-skills/source.json")
         fs.create_file(path, contents='{"name": "old-repo", "skills_dir": "skills"}')
-        cfg = SourceConfig.load(path)
+        cfg = load_source_config(Path("/repo"))
+        assert cfg is not None
         assert cfg.branch == ""
 
     def test_save_creates_parent_dirs(self, fs: FakeFilesystem) -> None:
-        path = Path("/deep/nested/dir/source.json")
-        cfg = SourceConfig(name="test")
-        cfg.save(path)
-        assert path.exists()
+        repo_root = Path("/deep/nested/dir")
+        cfg = SourceConfig(name="test", skills_dir="skills")
+        save_source_config(cfg, repo_root)
+        assert (repo_root / ".repo-skills" / "source.json").exists()
 
 
 # -- ProviderConfig / ProviderRegistry --
@@ -132,24 +146,22 @@ class TestProviderRegistry:
 
 
 class TestSourceRegistry:
-    def test_load_missing_file_returns_empty(self, fs: FakeFilesystem) -> None:
-        reg = SourceRegistry.load(Path("/nonexistent/sources.json"))
+    def test_empty_registry_has_no_sources(self, fs: FakeFilesystem) -> None:
+        reg = SourceRegistry()
         assert reg.sources == {}
 
     def test_save_and_load_round_trip(self, fs: FakeFilesystem) -> None:
-        path = Path("/config/sources.json")
-        reg = SourceRegistry(
-            sources={
-                "my-repo": SourceEntry(path="/home/user/projects/my-repo"),
-                "other": SourceEntry(path="/opt/other"),
-            }
-        )
-        reg.save(path)
+        reg = SourceRegistry()
+        reg.register_source("my-repo", Path("/home/user/projects/my-repo"))
+        reg.register_source("other", Path("/opt/other"))
+        save_source_registry(reg)
 
-        loaded = SourceRegistry.load(path)
+        loaded = load_source_registry()
         assert len(loaded.sources) == 2
-        assert loaded.sources["my-repo"].path == "/home/user/projects/my-repo"
-        assert loaded.sources["other"].path == "/opt/other"
+        assert loaded.sources["my-repo"].repo_root == Path(
+            "/home/user/projects/my-repo"
+        )
+        assert loaded.sources["other"].repo_root == Path("/opt/other")
 
 
 # -- SkillEntry / SkillManifest --
@@ -164,7 +176,7 @@ class TestSkillManifest:
         path = Path("/config/manifest.json")
         m = SkillManifest(
             skills={
-                "tdd": SkillEntry(
+                "tdd": ManifestSkill(
                     source="my-repo",
                     commit="abc1234",
                     files={"SKILL.md": "sha256:deadbeef"},
@@ -181,7 +193,7 @@ class TestSkillManifest:
         assert entry.files == {"SKILL.md": "sha256:deadbeef"}
 
     def test_skill_entry_defaults(self) -> None:
-        entry = SkillEntry()
+        entry = ManifestSkill()
         assert entry.source == ""
         assert entry.commit is None
         assert entry.files == {}
@@ -190,8 +202,8 @@ class TestSkillManifest:
         path = Path("/config/manifest.json")
         m = SkillManifest(
             skills={
-                "tdd": SkillEntry(source="repo-a", commit="aaa"),
-                "review": SkillEntry(source="repo-b", commit="bbb"),
+                "tdd": ManifestSkill(source="repo-a", commit="aaa"),
+                "review": ManifestSkill(source="repo-b", commit="bbb"),
             }
         )
         m.save(path)

@@ -14,6 +14,8 @@ from repo_skills.config import (
     SourceConfig,
     SourceRegistry,
     compute_file_hashes,
+    load_provider_registry,
+    save_provider_registry,
     save_source_config,
     save_source_registry,
 )
@@ -283,3 +285,9 @@ def create_source_skill(
     root: Path = SKILLS_DIR,
 ) -> None:
     fs.create_file(root / name / "SKILL.md", contents=content)
+
+
+def register_provider(name: str, install_dir: str) -> None:
+    reg = load_provider_registry()
+    reg.register_provider(name, install_dir)
+    save_provider_registry(reg)

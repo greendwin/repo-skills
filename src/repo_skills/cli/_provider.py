@@ -3,9 +3,7 @@ from __future__ import annotations
 import typer
 from typer_di import TyperDI
 
-from repo_skills.config.deprecated import (
-    BUILTIN_PROVIDER_NAME,
-    ProviderConfig,
+from repo_skills.config import (
     load_provider_registry,
     save_provider_registry,
 )
@@ -29,12 +27,12 @@ def provider_add(
         ..., "--install-dir", help="Path to the provider's skills directory."
     ),
 ) -> None:
-    registry = load_provider_registry(with_builtins=False)
+    registry = load_provider_registry()
 
-    if name in load_provider_registry().providers:
+    if name in registry.providers:
         raise AppError(f"Provider {fmt_ident(name)} already exists.")
 
-    registry.providers[name] = ProviderConfig(name=name, install_dir=install_dir)
+    registry.register_provider(name, install_dir)
     save_provider_registry(registry)
 
     echo(f"Added provider {fmt_ident(name)}.")
@@ -47,26 +45,20 @@ def provider_list() -> None:
     echo("[yellow]Providers:[/yellow]")
     width = max(len(n) for n in registry.providers)
     width = max(width, 16)
-    for name, cfg in registry.providers.items():
+    for name, provider in registry.providers.items():
         label = fmt_ident(f"{name:<{width}}")
-        path = fmt_data(str(cfg.install_dir))
-        if name == BUILTIN_PROVIDER_NAME:
-            echo(f"* {label}  {path}  [dim](built-in)[/dim]")
-        else:
-            echo(f"* {label}  {path}")
+        path = fmt_data(str(provider.install_path))
+        echo(f"* {label}  {path}")
 
 
 @provider_app.command(name="remove", help="Remove a provider.")
 def provider_remove(
     name: str = typer.Argument(help="Name of the provider to remove."),
 ) -> None:
-    if name == BUILTIN_PROVIDER_NAME:
-        raise AppError("Cannot remove the built-in provider.")
-
-    registry = load_provider_registry(with_builtins=False)
+    registry = load_provider_registry()
 
     registry.require(name)
-    del registry.providers[name]
+    registry.unregister_provider(name)
     save_provider_registry(registry)
 
     echo(f"Removed provider {fmt_ident(name)}.")

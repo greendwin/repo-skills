@@ -11,15 +11,15 @@ import typer
 from rich.markup import escape
 
 from repo_skills.config import (
+    ProviderRegistry,
     Source,
     SourceRegistry,
     compute_file_hashes,
+    load_provider_registry,
     load_source_registry,
 )
 from repo_skills.config.deprecated import (
     ManifestSkill,
-    ProviderRegistry,
-    load_provider_registry,
     load_skill_manifest,
     save_skill_manifest,
 )
@@ -177,8 +177,8 @@ def _merge_start(
 
     provider_name = _resolve_provider(skill_name, entry, providers, from_provider)
 
-    provider_cfg = providers.require(provider_name)
-    installed_path = provider_cfg.resolve_path(skill_name)
+    provider = providers.require(provider_name)
+    installed_path = provider.install_path / skill_name
 
     skill = source.get_skill(skill_name)
 
@@ -328,11 +328,11 @@ def _find_in_provider(
 ) -> Path | None:
     if from_provider is not None:
         pr = providers.require(from_provider)
-        skill_path = pr.resolve_path(skill_name)
+        skill_path = pr.install_path / skill_name
         return skill_path if skill_path.is_dir() else None
 
     for pr in providers.providers.values():
-        skill_path = pr.resolve_path(skill_name)
+        skill_path = pr.install_path / skill_name
         if skill_path.is_dir():
             return skill_path
 
@@ -356,8 +356,8 @@ def _resolve_provider(
         return from_provider
 
     diverged: list[str] = []
-    for pname, pcfg in providers.providers.items():
-        installed_path = pcfg.resolve_path(skill_name)
+    for pname, provider in providers.providers.items():
+        installed_path = provider.install_path / skill_name
         if not installed_path.exists():
             continue
 
@@ -474,8 +474,8 @@ def _finalize(
         git.fast_forward(merge_branch)
 
     providers = load_provider_registry()
-    pcfg = providers.require(provider_name)
-    installed_path = pcfg.resolve_path(skill_name)
+    provider = providers.require(provider_name)
+    installed_path = provider.install_path / skill_name
 
     _copy_skill_with_replace(
         src=source.repo_root / skill.rel_path,

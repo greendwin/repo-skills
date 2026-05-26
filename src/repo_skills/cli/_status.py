@@ -6,15 +6,15 @@ from typing import Annotated, NamedTuple, TypeAlias
 import typer
 
 from repo_skills.config import (
+    ProviderRegistry,
     SourceBrokenError,
     SourceRegistry,
     compute_file_hashes,
+    load_provider_registry,
     load_source_registry,
 )
 from repo_skills.config.deprecated import (
-    ProviderRegistry,
     SkillManifest,
-    load_provider_registry,
     load_skill_manifest,
 )
 from repo_skills.errors import NoopError
@@ -140,8 +140,8 @@ def _collect_untracked(
         all_known |= source_skills
 
     result: list[UntrackedEntry] = []
-    for pname, pcfg in providers.providers.items():
-        provider_dir = pcfg.resolve_path()
+    for pname, provider in providers.providers.items():
+        provider_dir = provider.install_path
         if not provider_dir.is_dir():
             continue
 
@@ -203,8 +203,8 @@ def _print_source_sections(
 
         for skill_name in sorted(installed_by_source.get(source_name, [])):
             entry = manifest.skills[skill_name]
-            for pname, pcfg in providers.providers.items():
-                installed_path = pcfg.resolve_path(skill_name)
+            for pname, provider in providers.providers.items():
+                installed_path = provider.install_path / skill_name
                 divergence = _check_divergence(installed_path, entry.files)
                 echo(
                     f"  {skill_name:<{name_width}}"

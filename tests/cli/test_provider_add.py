@@ -2,18 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from repo_skills.config.deprecated import (
-    PROVIDERS_REGISTRY_FILE,
-    ProviderConfig,
-    ProviderRegistry,
+from repo_skills.config import (
+    load_provider_registry,
+    save_provider_registry,
 )
 from tests.cli.helper import (
-    SOURCE_CONFIG_DIR,
     assert_invoke,
     assert_words_in_message,
 )
-
-PROVIDERS_FILE = SOURCE_CONFIG_DIR / PROVIDERS_REGISTRY_FILE
 
 
 class TestProviderAdd:
@@ -22,20 +18,15 @@ class TestProviderAdd:
             "provider", "add", "cursor", "--install-dir", "/home/user/.cursor/skills"
         )
 
-        registry = ProviderRegistry.load(PROVIDERS_FILE)
-        assert "cursor" in registry.providers
-        assert registry.providers["cursor"].install_dir == "/home/user/.cursor/skills"
+        reg = load_provider_registry()
+        assert "cursor" in reg.providers
+        assert reg.providers["cursor"].install_path == Path("/home/user/.cursor/skills")
         assert_words_in_message(result.output, "added", "cursor")
 
     def test_error_when_duplicate_name(self, git_repo: Path) -> None:
-        registry = ProviderRegistry(
-            providers={
-                "cursor": ProviderConfig(
-                    name="cursor", install_dir="/home/user/.cursor/skills"
-                )
-            }
-        )
-        registry.save(PROVIDERS_FILE)
+        reg = load_provider_registry()
+        reg.register_provider("cursor", "/home/user/.cursor/skills")
+        save_provider_registry(reg)
 
         result = assert_invoke(
             "provider",

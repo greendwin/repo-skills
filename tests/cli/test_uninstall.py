@@ -5,18 +5,15 @@ from pathlib import Path
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config.deprecated import (
-    PROVIDERS_REGISTRY_FILE,
     ManifestSkill,
-    ProviderConfig,
-    ProviderRegistry,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
-    SOURCE_CONFIG_DIR,
     assert_invoke,
     assert_words_in_message,
     create_installed_skill,
     load_manifest,
+    register_provider,
     save_manifest,
 )
 
@@ -51,11 +48,7 @@ class TestUninstall:
         cursor_dir = Path("/home/user/.cursor/skills")
         fs.create_file(cursor_dir / "tdd" / "SKILL.md", contents="# tdd")
 
-        ProviderRegistry(
-            providers={
-                "cursor": ProviderConfig(name="cursor", install_dir=str(cursor_dir))
-            }
-        ).save(SOURCE_CONFIG_DIR / PROVIDERS_REGISTRY_FILE)
+        register_provider("cursor", str(cursor_dir))
 
         save_manifest({"tdd": _entry()})
 

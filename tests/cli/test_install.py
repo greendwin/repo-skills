@@ -13,10 +13,7 @@ from repo_skills.config import (
     save_source_registry,
 )
 from repo_skills.config.deprecated import (
-    PROVIDERS_REGISTRY_FILE,
     SKILL_MANIFEST_FILE,
-    ProviderConfig,
-    ProviderRegistry,
     SkillManifest,
 )
 from tests.cli.helper import (
@@ -28,6 +25,7 @@ from tests.cli.helper import (
     assert_words_in_message,
     create_repo_skill,
     install_fake_git,
+    register_provider,
     register_source,
     uninstall_fake_git,
 )
@@ -217,12 +215,7 @@ class TestInstallMultiProvider:
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
         cursor_dir = Path("/home/user/.cursor/skills")
-        provider_registry = ProviderRegistry(
-            providers={
-                "cursor": ProviderConfig(name="cursor", install_dir=str(cursor_dir))
-            }
-        )
-        provider_registry.save(SOURCE_CONFIG_DIR / PROVIDERS_REGISTRY_FILE)
+        register_provider("cursor", str(cursor_dir))
 
         assert_invoke("install", "tdd", "--offline")
 

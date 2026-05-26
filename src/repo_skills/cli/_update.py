@@ -5,10 +5,13 @@ from typing import Annotated, Optional
 
 import typer
 
-from repo_skills.config import compute_file_hashes, load_source_registry
+from repo_skills.config import (
+    compute_file_hashes,
+    load_provider_registry,
+    load_source_registry,
+)
 from repo_skills.config.deprecated import (
     ManifestSkill,
-    load_provider_registry,
     load_skill_manifest,
     save_skill_manifest,
 )
@@ -72,8 +75,8 @@ def update(
         updated_any = False
         skipped_any = False
 
-        for pcfg in providers.providers.values():
-            install_dir = pcfg.resolve_path()
+        for provider in providers.providers.values():
+            install_dir = provider.install_path
             dst = install_dir / skill_name
 
             if not dst.exists():

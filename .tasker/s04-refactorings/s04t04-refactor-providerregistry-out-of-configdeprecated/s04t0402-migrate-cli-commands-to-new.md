@@ -1,7 +1,7 @@
 ---
 id: s04t0402
 slug: migrate-cli-commands-to-new
-status: pending
+status: done
 ---
 
 # Migrate CLI commands to new provider API

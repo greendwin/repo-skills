@@ -5,14 +5,10 @@ from pathlib import Path
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config.deprecated import (
-    PROVIDERS_REGISTRY_FILE,
     ManifestSkill,
-    ProviderConfig,
-    ProviderRegistry,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
-    SOURCE_CONFIG_DIR,
     SOURCE_REPO_ROOT,
     FakeGitRepo,
     assert_invoke,
@@ -20,6 +16,7 @@ from tests.cli.helper import (
     create_source_skill,
     install_skill,
     load_manifest,
+    register_provider,
     register_source,
     save_manifest,
 )
@@ -91,12 +88,7 @@ class TestUpdateAutoInstallsNewProvider:
         )
 
         cursor_dir = Path("/home/user/.cursor/skills")
-        provider_registry = ProviderRegistry(
-            providers={
-                "cursor": ProviderConfig(name="cursor", install_dir=str(cursor_dir))
-            }
-        )
-        provider_registry.save(SOURCE_CONFIG_DIR / PROVIDERS_REGISTRY_FILE)
+        register_provider("cursor", str(cursor_dir))
 
         result = assert_invoke("update", "--offline")
 

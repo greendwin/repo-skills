@@ -14,19 +14,16 @@ from repo_skills.config import (
     save_source_registry,
 )
 from repo_skills.config.deprecated import (
-    PROVIDERS_REGISTRY_FILE,
     ManifestSkill,
-    ProviderConfig,
-    ProviderRegistry,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
-    SOURCE_CONFIG_DIR,
     SOURCE_REPO_ROOT,
     FakeGitRepo,
     assert_invoke,
     assert_words_in_message,
     install_skill,
+    register_provider,
     register_source,
     save_manifest,
 )
@@ -122,12 +119,7 @@ class TestStatusMultiProvider:
         cursor_dir = Path("/home/user/.cursor/skills")
         install_skill(fs, "tdd", install_dir=cursor_dir)
 
-        provider_registry = ProviderRegistry(
-            providers={
-                "cursor": ProviderConfig(name="cursor", install_dir=str(cursor_dir))
-            }
-        )
-        provider_registry.save(SOURCE_CONFIG_DIR / PROVIDERS_REGISTRY_FILE)
+        register_provider("cursor", str(cursor_dir))
 
         save_manifest(
             {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
@@ -253,12 +245,7 @@ class TestStatusUntrackedHint:
 
         cursor_dir = Path("/home/user/.cursor/skills")
         fs.create_file(cursor_dir / "review" / "SKILL.md", contents="# review cursor")
-        provider_registry = ProviderRegistry(
-            providers={
-                "cursor": ProviderConfig(name="cursor", install_dir=str(cursor_dir))
-            }
-        )
-        provider_registry.save(SOURCE_CONFIG_DIR / PROVIDERS_REGISTRY_FILE)
+        register_provider("cursor", str(cursor_dir))
 
         result = assert_invoke("status")
 

@@ -10,11 +10,11 @@ from repo_skills.config import (
     Source,
     SourceRegistry,
     compute_file_hashes,
+    load_provider_registry,
     load_source_registry,
 )
 from repo_skills.config.deprecated import (
     ManifestSkill,
-    load_provider_registry,
     load_skill_manifest,
     save_skill_manifest,
 )
@@ -75,8 +75,8 @@ def uninstall(
         if name not in manifest.skills:
             raise AppError(f"Skill {fmt_ident(name)} is not installed.")
 
-        for pcfg in provider_registry.providers.values():
-            dst = pcfg.resolve_path(name)
+        for provider in provider_registry.providers.values():
+            dst = provider.install_path / name
             if dst.exists():
                 shutil.rmtree(dst)
 
@@ -115,12 +115,11 @@ def _install_one(
 
     provider_registry = load_provider_registry()
 
-    for prov_name, prov_cfg in provider_registry.providers.items():
-        install_dir = prov_cfg.resolve_path()
+    for prov_name, provider in provider_registry.providers.items():
         _copy_skill(
             src,
             skill_name,
-            install_dir=install_dir,
+            install_dir=provider.install_path,
             provider_name=prov_name,
             force=force,
         )

@@ -14,14 +14,10 @@ from repo_skills.config import (
     save_source_registry,
 )
 from repo_skills.config.deprecated import (
-    PROVIDERS_REGISTRY_FILE,
     ManifestSkill,
-    ProviderConfig,
-    ProviderRegistry,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
-    SOURCE_CONFIG_DIR,
     FakeGitRepo,
     assert_invoke,
     assert_words_in_message,
@@ -29,6 +25,7 @@ from tests.cli.helper import (
     install_fake_git,
     install_skill,
     load_manifest,
+    register_provider,
     register_source,
     save_manifest,
     uninstall_fake_git,
@@ -79,11 +76,7 @@ class TestMergeStart:
         save_manifest(
             {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
-        ProviderRegistry(
-            providers={
-                "cursor": ProviderConfig(name="cursor", install_dir=str(CURSOR_DIR))
-            }
-        ).save(SOURCE_CONFIG_DIR / PROVIDERS_REGISTRY_FILE)
+        register_provider("cursor", str(CURSOR_DIR))
 
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited in claude")
 
@@ -132,11 +125,7 @@ class TestMergeProviderResolution:
         save_manifest(
             {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
-        ProviderRegistry(
-            providers={
-                "cursor": ProviderConfig(name="cursor", install_dir=str(CURSOR_DIR))
-            }
-        ).save(SOURCE_CONFIG_DIR / PROVIDERS_REGISTRY_FILE)
+        register_provider("cursor", str(CURSOR_DIR))
 
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited in claude")
         (CURSOR_DIR / "tdd" / "SKILL.md").write_text("# edited in cursor")
@@ -157,11 +146,7 @@ class TestMergeProviderResolution:
         save_manifest(
             {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
-        ProviderRegistry(
-            providers={
-                "cursor": ProviderConfig(name="cursor", install_dir=str(CURSOR_DIR))
-            }
-        ).save(SOURCE_CONFIG_DIR / PROVIDERS_REGISTRY_FILE)
+        register_provider("cursor", str(CURSOR_DIR))
 
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited in claude")
         (CURSOR_DIR / "tdd" / "SKILL.md").write_text("# edited in cursor")

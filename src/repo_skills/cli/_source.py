@@ -9,12 +9,13 @@ from repo_skills.config import (
     REPO_SKILLS_DIR,
     SourceBrokenError,
     SourceConfig,
+    load_skill_manifest,
     load_source_config,
     load_source_registry,
+    save_skill_manifest,
     save_source_config,
     save_source_registry,
 )
-from repo_skills.config.deprecated import load_skill_manifest, save_skill_manifest
 from repo_skills.discovery import detect_skills_dir
 from repo_skills.errors import AppError, NoopError
 from repo_skills.utils import fmt_ident, fmt_path, write_text
@@ -132,12 +133,19 @@ def _handle_reinit(
 
 def _rename_installed_skills(old_name: str, new_name: str) -> None:
     manifest = load_skill_manifest()
-    changed = False
-    for entry in manifest.skills.values():
-        if entry.source == old_name:
-            entry.source = new_name
-            changed = True
-    if changed:
+    to_update = [
+        (name, entry)
+        for name, entry in manifest.skills.items()
+        if entry.source == old_name
+    ]
+    for name, entry in to_update:
+        manifest.register_skill(
+            name,
+            source=new_name,
+            commit=entry.commit,
+            files=dict(entry.files),
+        )
+    if to_update:
         save_skill_manifest(manifest)
 
 

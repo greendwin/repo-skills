@@ -1,7 +1,7 @@
 ---
 id: s04t0503
 slug: migrate-tests-and-delete-configdeprecated
-status: pending
+status: done
 ---
 
 # Migrate tests and delete config.deprecated

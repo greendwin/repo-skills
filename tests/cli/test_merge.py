@@ -7,14 +7,12 @@ import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
+    InstalledSkill,
     SourceConfig,
     SourceRegistry,
     compute_file_hashes,
     save_source_config,
     save_source_registry,
-)
-from repo_skills.config.deprecated import (
-    ManifestSkill,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
@@ -50,7 +48,7 @@ def _setup_diverged_skill(
     create_source_skill(fs, "tdd", content="# original")
     hashes = install_skill(fs, "tdd", content="# original")
     save_manifest(
-        {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
+        {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
     )
     (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -74,7 +72,7 @@ class TestMergeStart:
         hashes = install_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
         register_provider("cursor", str(CURSOR_DIR))
 
@@ -123,7 +121,7 @@ class TestMergeProviderResolution:
         hashes = install_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
         register_provider("cursor", str(CURSOR_DIR))
 
@@ -144,7 +142,7 @@ class TestMergeProviderResolution:
         hashes = install_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
         register_provider("cursor", str(CURSOR_DIR))
 
@@ -163,7 +161,7 @@ class TestMergeProviderResolution:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
 
         result = assert_invoke("merge", "tdd", "--offline")
@@ -179,7 +177,7 @@ class TestBaseCommitSearch:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit=None, files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -199,7 +197,7 @@ class TestBaseCommitSearch:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit=None, files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -223,7 +221,7 @@ class TestBaseCommitSearch:
         fs.create_file(INSTALL_DIR / "tdd" / "extra.md", contents="line1\nline2\nline3")
         hashes = compute_file_hashes(INSTALL_DIR / "tdd")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit=None, files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -246,7 +244,7 @@ class TestBaseCommitSearch:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit=None, files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -263,7 +261,7 @@ class TestBaseCommitSearch:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -283,7 +281,7 @@ class TestBaseCommitSearch:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -310,7 +308,7 @@ class TestBaseCommitSearch:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit=None, files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -556,7 +554,7 @@ def _setup_merge_branch(
     register_source(git_repo, branch=source_branch)
     hashes = install_skill(fs, "tdd", content="# original")
     save_manifest(
-        {"tdd": ManifestSkill(source="my-project", commit=COMMIT, files=hashes)}
+        {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
     )
     create_source_skill(fs, "tdd", content=content)
     fake_git.branch = branch
@@ -755,7 +753,7 @@ class TestMergeRebase:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit=None, files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 

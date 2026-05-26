@@ -24,10 +24,6 @@ from repo_skills.config import (
     save_source_config,
     save_source_registry,
 )
-from repo_skills.config.deprecated import (
-    ManifestSkill,
-)
-from repo_skills.config.deprecated import SkillManifest as _DeprecatedSkillManifest
 from repo_skills.errors import AppError
 from tests.cli.helper import FakeGitRepo
 
@@ -212,58 +208,10 @@ class TestSourceRegistry:
         assert loaded.sources["other"].repo_root == Path("/opt/other")
 
 
-# -- SkillEntry / SkillManifest --
+# -- SkillManifest --
 
 
 class TestSkillManifest:
-    def test_load_missing_file_returns_empty(self, fs: FakeFilesystem) -> None:
-        m = _DeprecatedSkillManifest.load(Path("/nonexistent/manifest.json"))
-        assert m.skills == {}
-
-    def test_save_and_load_round_trip(self, fs: FakeFilesystem) -> None:
-        path = Path("/config/manifest.json")
-        m = _DeprecatedSkillManifest(
-            skills={
-                "tdd": ManifestSkill(
-                    source="my-repo",
-                    commit="abc1234",
-                    files={"SKILL.md": "sha256:deadbeef"},
-                ),
-            }
-        )
-        m.save(path)
-
-        loaded = _DeprecatedSkillManifest.load(path)
-        assert "tdd" in loaded.skills
-        entry = loaded.skills["tdd"]
-        assert entry.source == "my-repo"
-        assert entry.commit == "abc1234"
-        assert entry.files == {"SKILL.md": "sha256:deadbeef"}
-
-    def test_skill_entry_defaults(self) -> None:
-        entry = ManifestSkill()
-        assert entry.source == ""
-        assert entry.commit is None
-        assert entry.files == {}
-
-    def test_multiple_skills(self, fs: FakeFilesystem) -> None:
-        path = Path("/config/manifest.json")
-        m = _DeprecatedSkillManifest(
-            skills={
-                "tdd": ManifestSkill(source="repo-a", commit="aaa"),
-                "review": ManifestSkill(source="repo-b", commit="bbb"),
-            }
-        )
-        m.save(path)
-
-        loaded = _DeprecatedSkillManifest.load(path)
-        assert set(loaded.skills.keys()) == {"tdd", "review"}
-
-
-# -- SkillManifest (new API) --
-
-
-class TestNewSkillManifest:
     def test_load_missing_file_returns_empty(self, fs: FakeFilesystem) -> None:
         manifest = load_skill_manifest()
         assert dict(manifest.skills) == {}

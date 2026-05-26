@@ -7,22 +7,19 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
     REPO_SKILLS_DIR,
+    InstalledSkill,
     load_source_config,
     load_source_registry,
     save_source_registry,
 )
-from repo_skills.config.deprecated import (
-    SKILL_MANIFEST_FILE,
-    ManifestSkill,
-    SkillManifest,
-)
 from tests.cli.helper import (
-    SOURCE_CONFIG_DIR,
     SOURCE_REPO_ROOT,
     FakeGitRepo,
     assert_invoke,
     assert_words_in_message,
     create_repo_skill,
+    load_manifest,
+    save_manifest,
 )
 
 
@@ -211,19 +208,18 @@ class TestSourceInitRename:
     def test_rename_updates_installed_skills_in_manifest(self) -> None:
         assert_invoke("source", "init", "--name", "old-name")
 
-        manifest = SkillManifest(
-            skills={
-                "tdd": ManifestSkill(source="old-name"),
-                "review": ManifestSkill(source="old-name"),
-                "deploy": ManifestSkill(source="other-source"),
+        save_manifest(
+            {
+                "tdd": InstalledSkill(source="old-name", commit=None),
+                "review": InstalledSkill(source="old-name", commit=None),
+                "deploy": InstalledSkill(source="other-source", commit=None),
             }
         )
-        manifest.save(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
 
         result = assert_invoke("source", "init", "--name", "new-name")
         assert_words_in_message(result.output, "updated", "new-name")
 
-        updated = SkillManifest.load(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
+        updated = load_manifest()
         assert updated.skills["tdd"].source == "new-name"
         assert updated.skills["review"].source == "new-name"
         assert updated.skills["deploy"].source == "other-source"

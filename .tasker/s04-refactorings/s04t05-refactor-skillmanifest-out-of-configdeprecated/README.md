@@ -1,7 +1,7 @@
 ---
 id: s04t05
 slug: refactor-skillmanifest-out-of-configdeprecated
-status: pending
+status: done
 ---
 
 # Refactor SkillManifest out of config.deprecated
@@ -43,5 +43,5 @@ To be grilled separately. Depends on Provider refactoring being complete first â
 ## Subtasks
 
 - [x] [s04t0501](s04t0501-create-skillmanifestpy-with-new-types.md): Create _skill_manifest.py with new types and load/save
-- [ ] [s04t0502](s04t0502-migrate-cli-commands-to-new.md): Migrate CLI commands to new manifest API
-- [ ] [s04t0503](s04t0503-migrate-tests-and-delete-configdeprecated.md): Migrate tests and delete config.deprecated
+- [x] [s04t0502](s04t0502-migrate-cli-commands-to-new.md): Migrate CLI commands to new manifest API
+- [x] [s04t0503](s04t0503-migrate-tests-and-delete-configdeprecated.md): Migrate tests and delete config.deprecated

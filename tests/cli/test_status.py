@@ -6,15 +6,13 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.cli._status import UntrackedEntry, _build_untracked_lookup
 from repo_skills.config import (
+    InstalledSkill,
     SourceConfig,
     SourceRegistry,
     load_source_config,
     load_source_registry,
     save_source_config,
     save_source_registry,
-)
-from repo_skills.config.deprecated import (
-    ManifestSkill,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
@@ -34,7 +32,7 @@ class TestStatusSynced:
         register_source(git_repo)
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit="abc123", files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit="abc123", files=hashes)}
         )
 
         result = assert_invoke("status")
@@ -49,7 +47,7 @@ class TestStatusModified:
         register_source(git_repo)
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit="abc123", files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit="abc123", files=hashes)}
         )
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -65,7 +63,7 @@ class TestStatusMissing:
         register_source(git_repo)
         save_manifest(
             {
-                "tdd": ManifestSkill(
+                "tdd": InstalledSkill(
                     source="my-project",
                     commit="abc123",
                     files={"SKILL.md": "sha256:aaa"},
@@ -91,8 +89,10 @@ class TestStatusGrouping:
         h2 = install_skill(fs, "review")
         save_manifest(
             {
-                "tdd": ManifestSkill(source="my-project", commit="abc", files=h1),
-                "review": ManifestSkill(source="other-project", commit="def", files=h2),
+                "tdd": InstalledSkill(source="my-project", commit="abc", files=h1),
+                "review": InstalledSkill(
+                    source="other-project", commit="def", files=h2
+                ),
             }
         )
 
@@ -122,7 +122,7 @@ class TestStatusMultiProvider:
         register_provider("cursor", str(cursor_dir))
 
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         result = assert_invoke("status")
@@ -167,7 +167,7 @@ class TestStatusAvailableExcludesInstalled:
         _create_source_skill(fs, "tdd", git_repo)
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         result = assert_invoke("status")
@@ -344,7 +344,7 @@ class TestStatusSync:
         register_source(git_repo)
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         assert_invoke("status", "--sync")
@@ -357,7 +357,7 @@ class TestStatusSync:
         register_source(git_repo)
         hashes = install_skill(fs, "tdd")
         save_manifest(
-            {"tdd": ManifestSkill(source="my-project", commit="abc", files=hashes)}
+            {"tdd": InstalledSkill(source="my-project", commit="abc", files=hashes)}
         )
 
         assert_invoke("status")

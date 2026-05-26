@@ -8,11 +8,8 @@ import typer
 from repo_skills.config import (
     compute_file_hashes,
     load_provider_registry,
-    load_source_registry,
-)
-from repo_skills.config.deprecated import (
-    ManifestSkill,
     load_skill_manifest,
+    load_source_registry,
     save_skill_manifest,
 )
 from repo_skills.errors import AppError, NoopError
@@ -105,7 +102,8 @@ def update(
         else:
             results.append((skill_name, "up-to-date"))
 
-        manifest.skills[skill_name] = ManifestSkill(
+        manifest.register_skill(
+            skill_name,
             source=entry.source,
             commit=entry.commit,
             files=source_hashes,

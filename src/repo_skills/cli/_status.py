@@ -7,15 +7,13 @@ import typer
 
 from repo_skills.config import (
     ProviderRegistry,
+    SkillManifest,
     SourceBrokenError,
     SourceRegistry,
     compute_file_hashes,
     load_provider_registry,
-    load_source_registry,
-)
-from repo_skills.config.deprecated import (
-    SkillManifest,
     load_skill_manifest,
+    load_source_registry,
 )
 from repo_skills.errors import NoopError
 from repo_skills.utils import fmt_ident

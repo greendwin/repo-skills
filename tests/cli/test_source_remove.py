@@ -4,17 +4,16 @@ from pathlib import Path
 
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from repo_skills.config import load_source_registry, save_source_registry
-from repo_skills.config.deprecated import (
-    SKILL_MANIFEST_FILE,
-    ManifestSkill,
-    SkillManifest,
+from repo_skills.config import (
+    InstalledSkill,
+    load_source_registry,
+    save_source_registry,
 )
 from tests.cli.helper import (
-    SOURCE_CONFIG_DIR,
     assert_invoke,
     assert_words_in_message,
     register_source,
+    save_manifest,
 )
 
 
@@ -45,8 +44,7 @@ class TestSourceRemove:
     ) -> None:
         register_source(git_repo, name="alpha")
 
-        manifest = SkillManifest(skills={"tdd": ManifestSkill(source="alpha")})
-        manifest.save(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
+        save_manifest({"tdd": InstalledSkill(source="alpha", commit=None)})
 
         result = assert_invoke("source", "remove", "alpha", expect_error=True)
 

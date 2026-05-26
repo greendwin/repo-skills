@@ -11,18 +11,17 @@ from typer.testing import CliRunner
 import repo_skills.cli._deps as deps_mod
 from repo_skills.cli import app
 from repo_skills.config import (
+    InstalledSkill,
+    SkillManifest,
     SourceConfig,
     SourceRegistry,
     compute_file_hashes,
     load_provider_registry,
+    load_skill_manifest,
     save_provider_registry,
+    save_skill_manifest,
     save_source_config,
     save_source_registry,
-)
-from repo_skills.config.deprecated import (
-    SKILL_MANIFEST_FILE,
-    ManifestSkill,
-    SkillManifest,
 )
 from repo_skills.errors import AppError, NoopError
 from repo_skills.git import GitRepo
@@ -256,13 +255,20 @@ def register_source(
     save_source_config(cfg, git_repo)
 
 
-def save_manifest(skills: dict[str, ManifestSkill]) -> None:
-    manifest = SkillManifest(skills=skills)
-    manifest.save(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
+def save_manifest(skills: dict[str, InstalledSkill]) -> None:
+    manifest = SkillManifest()
+    for name, entry in skills.items():
+        manifest.register_skill(
+            name,
+            source=entry.source,
+            commit=entry.commit,
+            files=dict(entry.files),
+        )
+    save_skill_manifest(manifest)
 
 
 def load_manifest() -> SkillManifest:
-    return SkillManifest.load(SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE)
+    return load_skill_manifest()
 
 
 def install_skill(

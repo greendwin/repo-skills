@@ -11,16 +11,14 @@ import typer
 from rich.markup import escape
 
 from repo_skills.config import (
+    InstalledSkill,
     ProviderRegistry,
     Source,
     SourceRegistry,
     compute_file_hashes,
     load_provider_registry,
-    load_source_registry,
-)
-from repo_skills.config.deprecated import (
-    ManifestSkill,
     load_skill_manifest,
+    load_source_registry,
     save_skill_manifest,
 )
 from repo_skills.errors import AppError, NoopError
@@ -143,7 +141,12 @@ def _merge_start(
             )
             return
 
-        manifest.skills[skill_name] = entry
+        manifest.register_skill(
+            skill_name,
+            source=entry.source,
+            commit=entry.commit,
+            files=dict(entry.files),
+        )
         save_skill_manifest(manifest)
 
     source = sources.get_source(entry.source, load_skills=True)
@@ -251,7 +254,7 @@ def _resolve_untracked(
     *,
     from_provider: str | None,
     skill_name: str,
-) -> ManifestSkill | None:
+) -> InstalledSkill | None:
     installed_path = _find_in_provider(skill_name, providers, from_provider)
     if installed_path is None:
         raise AppError(f"Skill {fmt_ident(skill_name)} is not installed.")
@@ -267,8 +270,9 @@ def _resolve_untracked(
     if source is None or skill is None:
         return None
 
-    return ManifestSkill(
+    return InstalledSkill(
         source=source.name,
+        commit=None,
         files=compute_file_hashes(source.repo_root / skill.rel_path),
     )
 
@@ -313,7 +317,8 @@ def _merge_orphan(
     git.commit_all(f"chore: add `{skill_name}` from provider")
 
     manifest = load_skill_manifest()
-    manifest.skills[skill_name] = ManifestSkill(
+    manifest.register_skill(
+        skill_name,
         source=source.name,
         commit=git.get_skill_commit(skill_name),
         files=compute_file_hashes(installed_path),
@@ -347,7 +352,7 @@ def _copy_skill_with_replace(*, src: Path, dst: Path) -> None:
 
 def _resolve_provider(
     skill_name: str,
-    entry: ManifestSkill,
+    entry: InstalledSkill,
     providers: ProviderRegistry,
     from_provider: str | None,
 ) -> str:
@@ -391,7 +396,7 @@ class _BestCommit:
 def _find_base_commit(
     git: GitRepo,
     skill_rel: str,
-    entry: ManifestSkill,
+    entry: InstalledSkill,
     installed_path: Path,
 ) -> _BestCommit | None:
     commits = git.log_commits(skill_rel, _MAX_SEARCH_COMMITS)
@@ -487,8 +492,12 @@ def _finalize(
     # TODO: if equal, then why do we copy?
     is_equal = new_hashes == entry.files
 
-    entry.commit = git.get_skill_commit(skill_name)
-    entry.files = new_hashes
+    manifest.register_skill(
+        skill_name,
+        source=entry.source,
+        commit=git.get_skill_commit(skill_name),
+        files=new_hashes,
+    )
     save_skill_manifest(manifest)
 
     git.delete_branch(merge_branch)
@@ -570,7 +579,7 @@ def _compute_distance(
     git: GitRepo,
     commit: str,
     skill_rel: str,
-    entry: ManifestSkill,
+    entry: InstalledSkill,
     installed_path: Path,
 ) -> int:
     total = 0

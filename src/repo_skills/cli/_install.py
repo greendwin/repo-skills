@@ -11,11 +11,8 @@ from repo_skills.config import (
     SourceRegistry,
     compute_file_hashes,
     load_provider_registry,
-    load_source_registry,
-)
-from repo_skills.config.deprecated import (
-    ManifestSkill,
     load_skill_manifest,
+    load_source_registry,
     save_skill_manifest,
 )
 from repo_skills.errors import AppError
@@ -80,7 +77,7 @@ def uninstall(
             if dst.exists():
                 shutil.rmtree(dst)
 
-        manifest.skills.pop(name)
+        manifest.unregister_skill(name)
         save_skill_manifest(manifest)
 
         echo(f"Uninstalled {fmt_ident(name)}.")
@@ -209,7 +206,8 @@ def _record_manifest(
     skill_src: Path,
 ) -> None:
     manifest = load_skill_manifest()
-    manifest.skills[name] = ManifestSkill(
+    manifest.register_skill(
+        name,
         source=source_name,
         commit=commit,
         files=compute_file_hashes(skill_src),

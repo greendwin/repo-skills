@@ -4,9 +4,7 @@ from pathlib import Path
 
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from repo_skills.config.deprecated import (
-    ManifestSkill,
-)
+from repo_skills.config import InstalledSkill
 from tests.cli.helper import (
     INSTALL_DIR,
     assert_invoke,
@@ -18,8 +16,8 @@ from tests.cli.helper import (
 )
 
 
-def _entry(source: str = "my-project") -> ManifestSkill:
-    return ManifestSkill(
+def _entry(source: str = "my-project") -> InstalledSkill:
+    return InstalledSkill(
         source=source, commit="abc1234", files={"SKILL.md": "sha256:aaa"}
     )
 

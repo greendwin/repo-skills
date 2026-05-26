@@ -8,18 +8,14 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
     SourceConfig,
+    load_skill_manifest,
     load_source_registry,
     save_source_config,
     save_source_registry,
 )
-from repo_skills.config.deprecated import (
-    SKILL_MANIFEST_FILE,
-    SkillManifest,
-)
 from tests.cli.helper import (
     INSTALL_DIR,
     SKILLS_DIR,
-    SOURCE_CONFIG_DIR,
     FakeGitRepo,
     assert_invoke,
     assert_words_in_message,
@@ -32,7 +28,6 @@ from tests.cli.helper import (
 
 OTHER_REPO_ROOT = Path("/repos/other-project")
 OTHER_SKILLS_DIR = OTHER_REPO_ROOT / "skills"
-MANIFEST_PATH = SOURCE_CONFIG_DIR / SKILL_MANIFEST_FILE
 
 
 @pytest.fixture(autouse=True)
@@ -72,7 +67,7 @@ class TestInstall:
 
         assert_invoke("install", "tdd", "--offline")
 
-        manifest = SkillManifest.load(MANIFEST_PATH)
+        manifest = load_skill_manifest()
         assert "tdd" in manifest.skills
         entry = manifest.skills["tdd"]
         assert entry.source == "my-project"
@@ -108,7 +103,7 @@ class TestInstallMultipleSkills:
 
         assert (INSTALL_DIR / "tdd" / "SKILL.md").exists()
         assert (INSTALL_DIR / "review" / "SKILL.md").exists()
-        manifest = SkillManifest.load(MANIFEST_PATH)
+        manifest = load_skill_manifest()
         assert "tdd" in manifest.skills
         assert "review" in manifest.skills
         assert_words_in_message(result.output, "installed", "tdd", "review")

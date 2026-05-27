@@ -1,7 +1,7 @@
 ---
 id: s07t0205
 slug: status-display-for-detached-skills
-status: pending
+status: done
 ---
 
 # Status display for detached skills

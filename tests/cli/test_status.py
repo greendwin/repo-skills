@@ -337,6 +337,64 @@ class TestBuildUntrackedLookup:
         assert _build_untracked_lookup([]) == {}
 
 
+class TestStatusDetached:
+    def test_detached_skill_not_shown_as_installed(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", commit="abc123", files=hashes, detached=True
+                )
+            }
+        )
+
+        result = assert_invoke("status")
+
+        assert "synced" not in result.output.lower()
+        assert "modified" not in result.output.lower()
+        assert "missing" not in result.output.lower()
+
+    def test_detached_skill_with_source_shown_as_mergeable(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "tdd", git_repo)
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", commit="abc123", files=hashes, detached=True
+                )
+            }
+        )
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "tdd", "mergeable")
+
+    def test_detached_skill_without_source_shown_as_orphan(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", commit="abc123", files=hashes, detached=True
+                )
+            }
+        )
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "untracked", "tdd", "orphan")
+
+
 class TestStatusSync:
     def test_sync_pulls_source_repos(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

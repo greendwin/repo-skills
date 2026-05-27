@@ -98,7 +98,9 @@ def status(
 def _group_installed_by_source(manifest: SkillManifest) -> SkillsBySource:
     result: SkillsBySource = {}
     for skill_name, entry in manifest.skills.items():
-        result.setdefault(entry.source, []).append(skill_name)
+        if not entry.detached:
+            result.setdefault(entry.source, []).append(skill_name)
+
     return result
 
 
@@ -132,7 +134,9 @@ def _collect_untracked(
     providers: ProviderRegistry,
     all_source_skills: SourceSkillIndex,
 ) -> list[UntrackedEntry]:
-    installed_names = set(manifest.skills.keys())
+    installed_names = {
+        name for name, skill in manifest.skills.items() if not skill.detached
+    }
     all_known: set[str] = set()
     for source_skills in all_source_skills.values():
         all_known |= source_skills

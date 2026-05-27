@@ -215,6 +215,82 @@ class TestUpdateAll:
         assert_words_in_message(result.output, "review", "updated")
 
 
+class TestUpdateDetached:
+    def test_unreachable_commit_marks_skill_detached(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd")
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit="abc123", files=hashes)}
+        )
+
+        result = assert_invoke("update", "--offline")
+
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].detached is True
+        assert_words_in_message(result.output, "tdd", "detached")
+
+    def test_previously_detached_skill_recovers(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd")
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", commit="abc123", files=hashes, detached=True
+                )
+            }
+        )
+        _fake_git.ancestors[("abc123", "main")] = True
+
+        result = assert_invoke("update", "--offline")
+
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].detached is False
+        assert_words_in_message(result.output, "tdd", "recovered")
+
+    def test_no_message_when_still_detached(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd")
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", commit="abc123", files=hashes, detached=True
+                )
+            }
+        )
+
+        result = assert_invoke("update", "--offline")
+
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].detached is True
+        assert "detached" not in result.output.lower()
+        assert "recovered" not in result.output.lower()
+
+    def test_no_detached_check_when_commit_is_none(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd")
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
+        )
+
+        result = assert_invoke("update", "--offline")
+
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].detached is False
+        assert "detached" not in result.output.lower()
+
+
 class TestUpdateBatchResilience:
     def test_modified_skill_does_not_block_others(
         self, fs: FakeFilesystem, git_repo: Path

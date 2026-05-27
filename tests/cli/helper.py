@@ -271,6 +271,7 @@ def save_manifest(skills: dict[str, InstalledSkill]) -> None:
             source=entry.source,
             commit=entry.commit,
             files=dict(entry.files),
+            detached=entry.detached,
         )
     save_skill_manifest(manifest)
 

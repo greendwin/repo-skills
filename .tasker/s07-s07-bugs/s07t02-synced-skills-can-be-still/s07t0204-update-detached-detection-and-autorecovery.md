@@ -1,7 +1,7 @@
 ---
 id: s07t0204
 slug: update-detached-detection-and-autorecovery
-status: pending
+status: done
 ---
 
 # Update detached detection and auto-recovery

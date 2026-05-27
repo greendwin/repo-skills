@@ -16,6 +16,7 @@ class _InstalledSkillDesc(BaseModel):
     source: str = ""
     files: dict[str, str] = {}
     commit: str | None = None
+    detached: bool = False
 
 
 class _SkillManifestConfig(BaseModel):
@@ -27,6 +28,7 @@ class InstalledSkill:
     source: str
     commit: str | None
     files: dict[str, str] = field(default_factory=dict)
+    detached: bool = False
 
 
 class SkillManifest:
@@ -44,11 +46,13 @@ class SkillManifest:
         source: str = "",
         commit: str | None = None,
         files: dict[str, str] | None = None,
+        detached: bool = False,
     ) -> None:
         self._entries[name] = InstalledSkill(
             source=source,
             commit=commit,
             files=files if files is not None else {},
+            detached=detached,
         )
 
     def unregister_skill(self, name: str) -> None:
@@ -68,6 +72,7 @@ def load_skill_manifest() -> SkillManifest:
             source=entry.source,
             commit=entry.commit,
             files=dict(entry.files),
+            detached=entry.detached,
         )
     return manifest
 
@@ -79,5 +84,6 @@ def save_skill_manifest(manifest: SkillManifest) -> None:
             source=skill.source,
             commit=skill.commit,
             files=dict(skill.files),
+            detached=skill.detached,
         )
     save_config(cfg, default_config_path(SKILL_MANIFEST_FILE))

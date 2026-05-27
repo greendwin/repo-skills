@@ -154,6 +154,46 @@ def test_verify_commit_content_matches(repo: Path) -> None:
     assert git.verify_commit_content(commit, "tdd") is True
 
 
+def test_is_ancestor_true_when_reachable(repo: Path) -> None:
+    (repo / "f.txt").write_text("change")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "second")
+    ancestor = _git(repo, "log", "-1", "--format=%H", "HEAD~1")
+
+    git = RealGitRepo(repo)
+    assert git.is_ancestor(ancestor, "main") is True
+
+
+def test_is_ancestor_false_when_unreachable(repo: Path) -> None:
+    _git(repo, "checkout", "-b", "other")
+    (repo / "other.txt").write_text("other")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "other branch")
+    other_commit = _git(repo, "log", "-1", "--format=%H")
+    _git(repo, "checkout", "main")
+
+    git = RealGitRepo(repo)
+    assert git.is_ancestor(other_commit, "main") is False
+
+
+def test_commit_exists_in_any_branch_true(repo: Path) -> None:
+    commit = _git(repo, "log", "-1", "--format=%H")
+
+    git = RealGitRepo(repo)
+    assert git.commit_exists_in_any_branch(commit) is True
+
+
+def test_commit_exists_in_any_branch_false_when_dangling(repo: Path) -> None:
+    (repo / "f.txt").write_text("extra")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "extra")
+    dangling = _git(repo, "log", "-1", "--format=%H")
+    _git(repo, "reset", "--hard", "HEAD~1")
+
+    git = RealGitRepo(repo)
+    assert git.commit_exists_in_any_branch(dangling) is False
+
+
 def test_verify_commit_content_mismatch(repo: Path) -> None:
     skills_dir = repo / "skills" / "tdd"
     skills_dir.mkdir(parents=True)

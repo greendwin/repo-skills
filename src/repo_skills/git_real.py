@@ -185,6 +185,20 @@ class RealGitRepo:
     def get_commit_message(self, commit: str) -> str:
         return self._run("log", "-1", "--format=%s", commit)
 
+    def is_ancestor(self, commit: str, branch: str) -> bool:
+        try:
+            self._run("merge-base", "--is-ancestor", commit, branch)
+        except AppError:
+            return False
+        return True
+
+    def commit_exists_in_any_branch(self, commit: str) -> bool:
+        try:
+            output = self._run("branch", "--contains", commit)
+        except AppError:
+            return False
+        return output != ""
+
     def _in_rebase(self) -> bool:
         try:
             self._run("rev-parse", "--verify", "REBASE_HEAD")

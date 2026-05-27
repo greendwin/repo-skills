@@ -1,7 +1,7 @@
 ---
 id: s07t0203
 slug: gitrepo-protocol-isancestor-and-commitexistsinanybranch
-status: pending
+status: done
 ---
 
 # GitRepo protocol: is_ancestor and commit_exists_in_any_branch

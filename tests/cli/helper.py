@@ -74,6 +74,8 @@ class FakeGitRepo:
     merged_branch: str | None = None
     merging: bool = False
     commit_messages: dict[str, str] = field(default_factory=dict)
+    ancestors: dict[tuple[str, str], bool] = field(default_factory=dict)
+    reachable_commits: set[str] = field(default_factory=set)
 
     def pull(self) -> None:
         self.pulled = True
@@ -150,6 +152,12 @@ class FakeGitRepo:
 
     def get_commit_message(self, commit: str) -> str:
         return self.commit_messages.get(commit, "")
+
+    def is_ancestor(self, commit: str, branch: str) -> bool:
+        return self.ancestors.get((commit, branch), False)
+
+    def commit_exists_in_any_branch(self, commit: str) -> bool:
+        return commit in self.reachable_commits
 
     def list_branches(self, pattern: str) -> list[str]:
         return [b for b in self.branches if pattern.rstrip("*") in b]

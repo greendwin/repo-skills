@@ -40,5 +40,5 @@ Skills can show as "synced" in `skills status` even though their stored commit i
 - [x] [s07t0203](s07t0203-gitrepo-protocol-isancestor-and-commitexistsinanybranch.md): GitRepo protocol: is_ancestor and commit_exists_in_any_branch
 - [x] [s07t0204](s07t0204-update-detached-detection-and-autorecovery.md): Update detached detection and auto-recovery
 - [x] [s07t0205](s07t0205-status-display-for-detached-skills.md): Status display for detached skills
-- [ ] [s07t0206](s07t0206-merge-threetier-commit-reachability.md): Merge three-tier commit reachability
+- [x] [s07t0206](s07t0206-merge-threetier-commit-reachability.md): Merge three-tier commit reachability
 - [ ] [s07t0207](s07t0207-merge-for-mergeable-skills-no.md): Merge for mergeable skills (no manifest entry)

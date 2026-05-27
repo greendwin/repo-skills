@@ -15,6 +15,7 @@ from repo_skills.config import (
     ProviderRegistry,
     Source,
     SourceRegistry,
+    SourceSkill,
     compute_file_hashes,
     load_provider_registry,
     load_skill_manifest,
@@ -186,25 +187,16 @@ def _merge_start(
     skill = source.get_skill(skill_name)
 
     base_commit = entry.commit
-    if base_commit is None or search_base:
-        # TODO: test it when skill undere category subfolder
-        r = _find_base_commit(git, skill.rel_path, entry, installed_path)
-        # TODO: in case of orphan branch we must tell this to
-        #       (i.e. that rebase will be performed)
-        if r is not None:
-            # TODO: rework this message
-            if r.distance == 0:
-                echo(
-                    f"Base commit: {fmt_ident(r.commit)} "
-                    f"(exact match, {escape(r.message)})"
-                )
-            else:
-                echo(
-                    f"Base commit: {fmt_ident(r.commit)}"
-                    f" (distance: {r.distance}, {r.message})"
-                )
-
-            base_commit = r.commit
+    if not search_base and base_commit is not None:
+        if not _check_reachability(git, base_commit, target_branch):
+            echo(
+                f"[yellow]Warning:[/yellow] Stored commit"
+                f" {fmt_ident(base_commit)} is dangling"
+                " — searching for base commit."
+            )
+            base_commit = _resolve_base_commit(git, skill, entry, installed_path)
+    elif base_commit is None or search_base:
+        base_commit = _resolve_base_commit(git, skill, entry, installed_path)
 
     branch_name = f"skill-merge/{provider_name}/{skill_name}"
     if base_commit is not None:
@@ -381,6 +373,47 @@ def _resolve_provider(
         )
 
     return diverged[0]
+
+
+def _resolve_base_commit(
+    git: GitRepo,
+    skill: SourceSkill,
+    entry: InstalledSkill,
+    installed_path: Path,
+) -> str | None:
+    # TODO: test it when skill under category subfolder
+    r = _find_base_commit(git, skill.rel_path, entry, installed_path)
+    # TODO: in case of orphan branch we must tell this to
+    #       (i.e. that rebase will be performed)
+    if r is None:
+        return None
+
+    # TODO: rework this message
+    if r.distance == 0:
+        echo(
+            f"Base commit: {fmt_ident(r.commit)} " f"(exact match, {escape(r.message)})"
+        )
+    else:
+        echo(
+            f"Base commit: {fmt_ident(r.commit)}"
+            f" (distance: {r.distance}, {r.message})"
+        )
+    return r.commit
+
+
+def _check_reachability(git: GitRepo, commit: str, target_branch: str) -> bool:
+    if git.is_ancestor(commit, target_branch):
+        return True
+
+    if git.commit_exists_in_any_branch(commit):
+        raise AppError(
+            f"Stored commit {fmt_ident(commit)} exists but is not on"
+            f" branch {fmt_ident(target_branch)}.",
+            hint=f"Use {fmt_command('--search-base')} to search for a base commit"
+            f" on {fmt_ident(target_branch)}.",
+        )
+
+    return False
 
 
 _MAX_SEARCH_COMMITS = 50

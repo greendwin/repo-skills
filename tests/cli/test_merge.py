@@ -35,7 +35,10 @@ CURSOR_DIR = Path("/home/user/.cursor/skills")
 
 @pytest.fixture(autouse=True)
 def _fake_git() -> Generator[FakeGitRepo]:
-    fake = FakeGitRepo(commits={"tdd": COMMIT})
+    fake = FakeGitRepo(
+        commits={"tdd": COMMIT},
+        ancestors={(COMMIT, "main"): True},
+    )
     install_fake_git(fake)
     yield fake
     uninstall_fake_git()
@@ -323,6 +326,72 @@ class TestBaseCommitSearch:
         assert "chore: tweak tdd" in result.output
 
 
+class TestCommitReachability:
+    def test_commit_on_other_branch_errors_with_search_base_hint(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        _fake_git.ancestors[(COMMIT, "main")] = False
+        _fake_git.reachable_commits.add(COMMIT)
+
+        result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
+
+        assert "--search-base" in result.exception.message
+
+    def test_dangling_commit_auto_searches(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        _fake_git.ancestors[(COMMIT, "main")] = False
+
+        _fake_git.commit_logs["skills/tdd"] = ["found111"]
+        _fake_git.files_at_commit[("found111", "skills/tdd/SKILL.md")] = b"# original"
+        _fake_git.commit_messages = {"found111": "feat: add tdd"}
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "found111"
+        assert "dangling" in result.output.lower()
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_search_base_bypasses_reachability(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        _fake_git.ancestors[(COMMIT, "main")] = False
+        _fake_git.reachable_commits.add(COMMIT)
+
+        _fake_git.commit_logs["skills/tdd"] = ["found111"]
+        _fake_git.files_at_commit[("found111", "skills/tdd/SKILL.md")] = b"# original"
+        _fake_git.commit_messages = {"found111": "feat: add tdd"}
+
+        result = assert_invoke("merge", "tdd", "--search-base", "--offline")
+
+        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "found111"
+        assert_words_in_message(result.output, "merge", "complete")
+
+
 class TestMergeUntracked:
     def test_merges_untracked_mergeable_skill(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -503,6 +572,7 @@ class TestMergeValidation:
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _fake_git.branch = "feature/xyz"
+        _fake_git.ancestors[(COMMIT, "develop")] = True
         _setup_diverged_skill(fs, git_repo, branch="develop")
 
         assert_invoke("merge", "tdd", "--offline")

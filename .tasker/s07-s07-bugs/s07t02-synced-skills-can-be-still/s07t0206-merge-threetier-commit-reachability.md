@@ -1,7 +1,7 @@
 ---
 id: s07t0206
 slug: merge-threetier-commit-reachability
-status: pending
+status: done
 ---
 
 # Merge three-tier commit reachability

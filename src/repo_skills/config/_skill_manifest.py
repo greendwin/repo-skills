@@ -43,17 +43,19 @@ class SkillManifest:
         self,
         name: str,
         *,
-        source: str = "",
+        source_name: str = "",
         commit: str | None = None,
         files: dict[str, str] | None = None,
         detached: bool = False,
-    ) -> None:
-        self._entries[name] = InstalledSkill(
-            source=source,
+    ) -> InstalledSkill:
+        entry = InstalledSkill(
+            source=source_name,
             commit=commit,
             files=files if files is not None else {},
             detached=detached,
         )
+        self._entries[name] = entry
+        return entry
 
     def unregister_skill(self, name: str) -> None:
         self._entries.pop(name, None)
@@ -69,7 +71,7 @@ def load_skill_manifest() -> SkillManifest:
     for name, entry in cfg.skills.items():
         manifest.register_skill(
             name,
-            source=entry.source,
+            source_name=entry.source,
             commit=entry.commit,
             files=dict(entry.files),
             detached=entry.detached,

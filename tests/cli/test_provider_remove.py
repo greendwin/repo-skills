@@ -15,13 +15,13 @@ from tests.cli.helper import (
 class TestProviderRemove:
     def test_removes_provider(self, git_repo: Path) -> None:
         reg = load_provider_registry()
-        reg.register_provider("cursor", "/home/user/.cursor/skills")
+        reg.register("cursor", "/home/user/.cursor/skills")
         save_provider_registry(reg)
 
         result = assert_invoke("provider", "remove", "cursor")
 
         updated = load_provider_registry()
-        assert "cursor" not in updated.providers
+        assert not updated.is_registered("cursor")
         assert_words_in_message(result.output, "removed", "cursor")
 
     def test_error_when_not_found(self, git_repo: Path) -> None:
@@ -33,5 +33,5 @@ class TestProviderRemove:
         result = assert_invoke("provider", "remove", "claude")
 
         updated = load_provider_registry()
-        assert "claude" not in updated.providers
+        assert not updated.is_registered("claude")
         assert_words_in_message(result.output, "removed", "claude")

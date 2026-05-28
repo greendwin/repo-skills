@@ -83,7 +83,7 @@ def update(
         updated_any = False
         skipped_any = False
 
-        for provider in providers.providers.values():
+        for provider in providers.providers:
             install_dir = provider.install_path
             dst = install_dir / skill_name
 
@@ -127,7 +127,7 @@ def update(
 
         manifest.register_skill(
             skill_name,
-            source=entry.source,
+            source_name=entry.source,
             commit=entry.commit,
             files=source_hashes,
             detached=detached,

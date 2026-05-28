@@ -20,7 +20,7 @@ class TestProviderList:
 
     def test_shows_all_providers(self, git_repo: Path) -> None:
         reg = load_provider_registry()
-        reg.register_provider("cursor", "/home/user/.cursor/skills")
+        reg.register("cursor", "/home/user/.cursor/skills")
         save_provider_registry(reg)
 
         result = assert_invoke("provider", "list")

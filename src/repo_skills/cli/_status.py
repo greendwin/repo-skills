@@ -76,17 +76,17 @@ def status(
         all_names.append(name)
 
     name_width = max((len(n) for n in all_names), default=0)
-    provider_width = max((len(n) for n in provider_registry.providers), default=0)
+    provider_width = max((len(p.name) for p in provider_registry.providers), default=0)
 
     has_output = _print_source_sections(
-        source_registry,
-        installed_by_source,
-        available_by_source,
-        manifest,
         provider_registry,
-        name_width,
-        provider_width,
-        untracked_lookup,
+        source_registry,
+        manifest,
+        installed_by_source=installed_by_source,
+        available_by_source=available_by_source,
+        name_width=name_width,
+        provider_width=provider_width,
+        untracked_lookup=untracked_lookup,
     )
 
     has_output |= _print_untracked_section(untracked, name_width, provider_width)
@@ -142,7 +142,7 @@ def _collect_untracked(
         all_known |= source_skills
 
     result: list[UntrackedEntry] = []
-    for pname, provider in providers.providers.items():
+    for provider in providers.providers:
         provider_dir = provider.install_path
         if not provider_dir.is_dir():
             continue
@@ -151,18 +151,18 @@ def _collect_untracked(
             if not child.is_dir():
                 continue
 
-            name = child.name
-            if name in installed_names:
+            skill_name = child.name
+            if skill_name in installed_names:
                 continue
 
-            if name not in all_known:
-                result.append(UntrackedEntry(name, pname, ""))
+            if skill_name not in all_known:
+                result.append(UntrackedEntry(skill_name, provider.name, ""))
                 continue
 
             source_match = next(
-                sn for sn, skills in all_source_skills.items() if name in skills
+                sn for sn, skills in all_source_skills.items() if skill_name in skills
             )
-            result.append(UntrackedEntry(name, pname, source_match))
+            result.append(UntrackedEntry(skill_name, provider.name, source_match))
 
     return result
 
@@ -175,11 +175,12 @@ def _untracked_hint(skill_name: str, lookup: UntrackedLookup) -> str:
 
 
 def _print_source_sections(
+    provider_registry: ProviderRegistry,
     source_registry: SourceRegistry,
+    manifest: SkillManifest,
+    *,
     installed_by_source: SkillsBySource,
     available_by_source: SkillsBySource,
-    manifest: SkillManifest,
-    providers: ProviderRegistry,
     name_width: int,
     provider_width: int,
     untracked_lookup: UntrackedLookup,
@@ -205,12 +206,12 @@ def _print_source_sections(
 
         for skill_name in sorted(installed_by_source.get(source_name, [])):
             entry = manifest.skills[skill_name]
-            for pname, provider in providers.providers.items():
+            for provider in provider_registry.providers:
                 installed_path = provider.install_path / skill_name
                 divergence = _check_divergence(installed_path, entry.files)
                 echo(
                     f"  {skill_name:<{name_width}}"
-                    f"  [dim]{pname:<{provider_width}}[/dim]"
+                    f"  [dim]{provider.name:<{provider_width}}[/dim]"
                     f"  {divergence}"
                 )
 

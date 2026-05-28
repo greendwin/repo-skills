@@ -27,13 +27,13 @@ def provider_add(
         ..., "--install-dir", help="Path to the provider's skills directory."
     ),
 ) -> None:
-    registry = load_provider_registry()
+    provider_registry = load_provider_registry()
 
-    if name in registry.providers:
+    if provider_registry.is_registered(name):
         raise AppError(f"Provider {fmt_ident(name)} already exists.")
 
-    registry.register_provider(name, install_dir)
-    save_provider_registry(registry)
+    provider_registry.register(name, install_dir)
+    save_provider_registry(provider_registry)
 
     echo(f"Added provider {fmt_ident(name)}.")
 
@@ -43,10 +43,10 @@ def provider_list() -> None:
     registry = load_provider_registry()
 
     echo("[yellow]Providers:[/yellow]")
-    width = max(len(n) for n in registry.providers)
+    width = max(len(p.name) for p in registry.providers)
     width = max(width, 16)
-    for name, provider in registry.providers.items():
-        label = fmt_ident(f"{name:<{width}}")
+    for provider in registry.providers:
+        label = fmt_ident(f"{provider.name:<{width}}")
         path = fmt_data(str(provider.install_path))
         echo(f"* {label}  {path}")
 
@@ -58,7 +58,7 @@ def provider_remove(
     registry = load_provider_registry()
 
     registry.require(name)
-    registry.unregister_provider(name)
+    registry.unregister(name)
     save_provider_registry(registry)
 
     echo(f"Removed provider {fmt_ident(name)}.")

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import ValuesView
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,16 +39,21 @@ class ProviderRegistry:
         self._entries: dict[str, Provider] = {}
 
     @property
-    def providers(self) -> Mapping[str, Provider]:
-        return self._entries
+    def providers(self) -> ValuesView[Provider]:
+        return self._entries.values()
 
-    def register_provider(self, name: str, install_dir: str) -> None:
-        self._entries[name] = Provider(
+    def is_registered(self, name: str) -> bool:
+        return name in self._entries
+
+    def register(self, name: str, install_dir: str) -> Provider:
+        provider = Provider(
             name=name,
             install_path=Path(install_dir).expanduser(),
         )
+        self._entries[name] = provider
+        return provider
 
-    def unregister_provider(self, name: str) -> None:
+    def unregister(self, name: str) -> None:
         self._entries.pop(name, None)
 
     def require(self, name: str) -> Provider:
@@ -79,13 +84,15 @@ def load_provider_registry() -> ProviderRegistry:
 
     reg = ProviderRegistry()
     for name, entry in cfg.providers.items():
-        reg.register_provider(name, entry.install_dir)
+        reg.register(name, entry.install_dir)
     return reg
 
 
 def save_provider_registry(reg: ProviderRegistry) -> None:
     cfg = _ProviderRegistryConfig(version=CURRENT_VERSION)
-    for name, provider in reg.providers.items():
-        cfg.providers[name] = _ProviderEntryDesc(install_dir=str(provider.install_path))
+    for provider in reg.providers:
+        cfg.providers[provider.name] = _ProviderEntryDesc(
+            install_dir=str(provider.install_path)
+        )
 
     save_config(cfg, default_config_path(PROVIDERS_REGISTRY_FILE))

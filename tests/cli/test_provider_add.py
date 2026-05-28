@@ -19,13 +19,13 @@ class TestProviderAdd:
         )
 
         reg = load_provider_registry()
-        assert "cursor" in reg.providers
-        assert reg.providers["cursor"].install_path == Path("/home/user/.cursor/skills")
+        assert reg.is_registered("cursor")
+        assert reg.require("cursor").install_path == Path("/home/user/.cursor/skills")
         assert_words_in_message(result.output, "added", "cursor")
 
     def test_error_when_duplicate_name(self, git_repo: Path) -> None:
         reg = load_provider_registry()
-        reg.register_provider("cursor", "/home/user/.cursor/skills")
+        reg.register("cursor", "/home/user/.cursor/skills")
         save_provider_registry(reg)
 
         result = assert_invoke(

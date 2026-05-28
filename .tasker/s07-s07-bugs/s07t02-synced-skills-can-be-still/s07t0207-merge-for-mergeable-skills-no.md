@@ -1,7 +1,7 @@
 ---
 id: s07t0207
 slug: merge-for-mergeable-skills-no
-status: pending
+status: done
 ---
 
 # Merge for mergeable skills (no manifest entry)

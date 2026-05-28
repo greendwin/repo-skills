@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, overload
+from typing import TYPE_CHECKING, Literal, overload
 
-from click.testing import Result
 from pyfakefs.fake_filesystem import FakeFilesystem
 from typer.testing import CliRunner
 
@@ -25,6 +24,10 @@ from repo_skills.config import (
 )
 from repo_skills.errors import AppError, NoopError
 from repo_skills.git import GitRepo
+
+if TYPE_CHECKING:
+    # TODO: rework `click.testing.Result` to protocol to get rid of click dependency
+    from click.testing import Result  # type: ignore
 
 
 @dataclass
@@ -268,7 +271,7 @@ def save_manifest(skills: dict[str, InstalledSkill]) -> None:
     for name, entry in skills.items():
         manifest.register_skill(
             name,
-            source=entry.source,
+            source_name=entry.source,
             commit=entry.commit,
             files=dict(entry.files),
             detached=entry.detached,
@@ -304,5 +307,5 @@ def create_source_skill(
 
 def register_provider(name: str, install_dir: str) -> None:
     reg = load_provider_registry()
-    reg.register_provider(name, install_dir)
+    reg.register(name, install_dir)
     save_provider_registry(reg)

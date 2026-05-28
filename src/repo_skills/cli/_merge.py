@@ -12,7 +12,9 @@ from rich.markup import escape
 
 from repo_skills.config import (
     InstalledSkill,
+    Provider,
     ProviderRegistry,
+    SkillManifest,
     Source,
     SourceRegistry,
     SourceSkill,
@@ -33,10 +35,17 @@ from ._utils import echo
 MERGE_BRANCH_PREFIX = "skill-merge/"
 
 
+@dataclass
+class _MergeContext:
+    provider_registry: ProviderRegistry
+    source_registry: SourceRegistry
+    manifest: SkillManifest
+
+
 @app.command(help="Merge provider edits back into a source repo.")
 def merge(
     *,
-    name: Annotated[
+    skill_name: Annotated[
         Optional[str],
         typer.Argument(help="Skill to merge."),
     ] = None,
@@ -46,7 +55,7 @@ def merge(
             "--from", help="Provider to merge from (required when ambiguous)."
         ),
     ] = None,
-    source: Annotated[
+    to_source: Annotated[
         Optional[str],
         typer.Option(
             "--source",
@@ -80,27 +89,35 @@ def merge(
 ) -> None:
     if abort and continue_merge:
         raise AppError(
-            "Cannot use [blue]--abort[/blue] and [blue]--continue[/blue] together."
+            f"Cannot use {fmt_command('--abort')} and"
+            f" {fmt_command('--continue')} together."
         )
 
+    ctx = _MergeContext(
+        provider_registry=load_provider_registry(),
+        source_registry=load_source_registry(),
+        manifest=load_skill_manifest(),
+    )
+
     if abort:
-        _merge_abort()
+        _merge_abort(ctx)
         return
 
     if continue_merge:
-        _merge_continue()
+        _merge_continue(ctx)
         return
 
-    if name is None:
+    if skill_name is None:
         raise AppError(
             "Skill name is required.",
-            hint="Use [blue]--continue[/blue] to finalize a merge in progress.",
+            hint=f"Use {fmt_command('--continue')} to finalize a merge in progress.",
         )
 
     _merge_start(
-        name,
+        ctx,
+        skill_name,
         from_provider=from_provider,
-        to_source=source,
+        to_source=to_source,
         offline=offline,
         no_commit=no_commit,
         rebase=rebase,
@@ -109,6 +126,7 @@ def merge(
 
 
 def _merge_start(
+    ctx: _MergeContext,
     skill_name: str,
     *,
     from_provider: str | None,
@@ -118,39 +136,42 @@ def _merge_start(
     rebase: bool = False,
     search_base: bool = False,
 ) -> None:
-    manifest = load_skill_manifest()
-    providers = load_provider_registry()
-    sources = load_source_registry()
+    provider: Provider | None = None
+    if from_provider:
+        provider = ctx.provider_registry.require(from_provider)
 
-    entry = manifest.skills.get(skill_name)
-    if entry is None:
-        entry = _resolve_untracked(
-            sources,
-            providers,
+    installed = ctx.manifest.skills.get(skill_name)
+    if installed is None:
+        untracked = _resolve_untracked(
+            ctx,
             skill_name=skill_name,
-            from_provider=from_provider,
+            provider=provider,
         )
-        if entry is None:
+        if untracked is None:
             _merge_orphan(
-                sources,
-                providers,
+                ctx,
                 skill_name,
-                from_provider=from_provider,
+                provider=provider,
                 to_source=to_source,
                 offline=offline,
                 no_commit=no_commit,
             )
             return
 
-        manifest.register_skill(
-            skill_name,
-            source=entry.source,
-            commit=entry.commit,
-            files=dict(entry.files),
-        )
-        save_skill_manifest(manifest)
+        provider = untracked.provider
 
-    source = sources.get_source(entry.source, load_skills=True)
+        # add untracked skill to manifest (aka detached skill)
+        installed = ctx.manifest.register_skill(
+            skill_name,
+            source_name=untracked.source.name,
+            commit=None,
+            files=compute_file_hashes(
+                untracked.source.repo_root / untracked.skill.rel_path
+            ),
+        )
+        save_skill_manifest(ctx.manifest)
+
+    source = ctx.source_registry.get_source(installed.source, load_skills=True)
     git = resolve_git_repo(source.repo_root)
 
     existing = git.list_branches(f"{MERGE_BRANCH_PREFIX}*")
@@ -162,10 +183,11 @@ def _merge_start(
         )
         raise AppError(
             f"Merge already in progress: {names}.",
-            hint="Run [blue]skills merge --continue[/blue] to finish active merge "
-            "or [blue]skills merge --abort[/blue] to start over.",
+            hint=f"Run {fmt_command('skills merge --continue')} to finish active merge "
+            f"or {fmt_command('skills merge --abort')} to start over.",
         )
 
+    # TODO: unify this switching logic with other commands
     if not git.is_clean():
         raise AppError(
             "Repo has uncommitted changes.",
@@ -179,26 +201,49 @@ def _merge_start(
     if not offline:
         git.pull()
 
-    provider_name = _resolve_provider(skill_name, entry, providers, from_provider)
+    # check whether skill is in sync already
+    if provider is not None:
+        current_hashes = compute_file_hashes(provider.install_path / skill_name)
+        if current_hashes == installed.files:
+            # skill can be not attached
+            _reattach_installed_skill(ctx.manifest, skill_name, installed, git)
 
-    provider = providers.require(provider_name)
-    installed_path = provider.install_path / skill_name
+            raise NoopError(
+                f"{fmt_ident(skill_name)} is already synced. Nothing to merge."
+            )
+
+    # if no provider, search for provider that has skill that not in sync
+    if provider is None:
+        provider = _resolve_diverged_provider(
+            ctx.provider_registry, skill_name, installed
+        )
+
+        # no diverged providers -- all in sync
+        if provider is None:
+            # TODO: this case is not covered, but we can possibly
+            #       have here 'detached' skill, need to test it
+            # _reattach_installed_skill(ctx.manifest, skill_name, installed, git)
+
+            raise NoopError(
+                f"{fmt_ident(skill_name)} is already synced. Nothing to merge."
+            )
 
     skill = source.get_skill(skill_name)
+    installed_path = provider.install_path / skill_name
 
-    base_commit = entry.commit
-    if not search_base and base_commit is not None:
-        if not _check_reachability(git, base_commit, target_branch):
-            echo(
-                f"[yellow]Warning:[/yellow] Stored commit"
-                f" {fmt_ident(base_commit)} is dangling"
-                " — searching for base commit."
-            )
-            base_commit = _resolve_base_commit(git, skill, entry, installed_path)
-    elif base_commit is None or search_base:
-        base_commit = _resolve_base_commit(git, skill, entry, installed_path)
+    base_commit = installed.commit
 
-    branch_name = f"skill-merge/{provider_name}/{skill_name}"
+    if search_base or base_commit is None:
+        base_commit = _resolve_base_commit(git, skill, installed, installed_path)
+    elif not _check_reachability(git, base_commit, target_branch):
+        echo(
+            f"[yellow]Warning:[/yellow] Stored commit"
+            f" {fmt_ident(base_commit)} is dangling"
+            " — searching for base commit."
+        )
+        base_commit = _resolve_base_commit(git, skill, installed, installed_path)
+
+    branch_name = f"skill-merge/{provider.name}/{skill_name}"
     if base_commit is not None:
         git.create_branch(branch_name, base_commit)
     else:
@@ -212,11 +257,11 @@ def _merge_start(
     if no_commit:
         echo(
             "Files copied to source repo. Review, commit, and run"
-            " [blue]skills merge --continue[/blue]."
+            f" {fmt_command('skills merge --continue')}."
         )
         return
 
-    git.commit_all(f"chore: merge `{skill_name}` from `{provider_name}`")
+    git.commit_all(f"chore: merge `{skill_name}` from `{provider.name}`")
 
     use_merge = False
     if base_commit is not None and not rebase:
@@ -228,33 +273,66 @@ def _merge_start(
     else:
         clean = git.rebase_root(target_branch)
 
-    if clean:
-        _finalize(git, provider_name, skill_name, already_merged=use_merge)
+    if not clean:
+        if use_merge:
+            echo("[yellow]Warning:[/yellow] Merge has conflicts.\n")
+        else:
+            echo("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
+
+        echo(f"Resolve them, then run {fmt_command('skills merge --continue')}.")
         return
 
-    if use_merge:
-        echo("[yellow]Warning:[/yellow] Merge has conflicts.\n")
-    else:
-        echo("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
+    _finalize(
+        ctx,
+        git,
+        provider,
+        skill_name,
+        already_merged=use_merge,
+    )
 
-    echo("Resolve them, then run [blue]skills merge --continue[/blue].")
+
+def _reattach_installed_skill(
+    manifest: SkillManifest,
+    skill_name: str,
+    installed: InstalledSkill,
+    git: GitRepo,
+) -> None:
+    if not installed.detached and installed.commit:
+        return
+
+    manifest.register_skill(
+        skill_name,
+        source_name=installed.source,
+        commit=git.get_skill_commit(skill_name),
+        files=dict(installed.files),
+    )
+    save_skill_manifest(manifest)
+
+
+@dataclass
+class _UntrackedSkill:
+    provider: Provider
+    source: Source
+    skill: SourceSkill
 
 
 def _resolve_untracked(
-    sources: SourceRegistry,
-    providers: ProviderRegistry,
+    ctx: _MergeContext,
     *,
-    from_provider: str | None,
+    provider: Provider | None,
     skill_name: str,
-) -> InstalledSkill | None:
-    installed_path = _find_in_provider(skill_name, providers, from_provider)
-    if installed_path is None:
+) -> _UntrackedSkill | None:
+    match = _find_in_provider(ctx.provider_registry, provider, skill_name)
+    if match is None:
         raise AppError(f"Skill {fmt_ident(skill_name)} is not installed.")
 
+    _, provider = match
+
+    # TODO: BUG: multiple sources can have the same skill
     source = None
     skill = None
-    for source_name in sources.sources:
-        source = sources.get_source(source_name, load_skills=True)
+    for source_name in ctx.source_registry.sources:
+        source = ctx.source_registry.get_source(source_name, load_skills=True)
         skill = source.skills.get(skill_name)
         if skill is not None:
             break
@@ -262,24 +340,19 @@ def _resolve_untracked(
     if source is None or skill is None:
         return None
 
-    return InstalledSkill(
-        source=source.name,
-        commit=None,
-        files=compute_file_hashes(source.repo_root / skill.rel_path),
-    )
+    return _UntrackedSkill(provider, source, skill)
 
 
 def _merge_orphan(
-    sources: SourceRegistry,
-    providers: ProviderRegistry,
+    ctx: _MergeContext,
     skill_name: str,
     *,
-    from_provider: str | None,
+    provider: Provider | None,
     to_source: str | None,
     offline: bool,
     no_commit: bool = False,
 ) -> None:
-    source = _resolve_orphan_source(sources, to_source)
+    source = _resolve_orphan_source(ctx.source_registry, to_source)
 
     git = resolve_git_repo(source.repo_root)
     if not git.is_clean():
@@ -295,10 +368,11 @@ def _merge_orphan(
     if not offline:
         git.pull()
 
-    installed_path = _find_in_provider(skill_name, providers, from_provider)
-    if installed_path is None:
+    match = _find_in_provider(ctx.provider_registry, provider, skill_name)
+    if match is None:
         raise AppError(f"Skill {fmt_ident(skill_name)} is not installed.")
 
+    installed_path, _ = match
     skill_dst = source.repo_root / source.config.skills_dir / skill_name
     _copy_skill_with_replace(src=installed_path, dst=skill_dst)
 
@@ -311,7 +385,7 @@ def _merge_orphan(
     manifest = load_skill_manifest()
     manifest.register_skill(
         skill_name,
-        source=source.name,
+        source_name=source.name,
         commit=git.get_skill_commit(skill_name),
         files=compute_file_hashes(installed_path),
     )
@@ -321,18 +395,20 @@ def _merge_orphan(
 
 
 def _find_in_provider(
-    skill_name: str, providers: ProviderRegistry, from_provider: str | None
-) -> Path | None:
-    if from_provider is not None:
-        pr = providers.require(from_provider)
-        skill_path = pr.install_path / skill_name
-        return skill_path if skill_path.is_dir() else None
-
-    for pr in providers.providers.values():
-        skill_path = pr.install_path / skill_name
+    provider_registry: ProviderRegistry, provider: Provider | None, skill_name: str
+) -> tuple[Path, Provider] | None:
+    if provider:
+        skill_path = provider.install_path / skill_name
         if skill_path.is_dir():
-            return skill_path
+            return skill_path, provider
+        return None
 
+    # TODO: BUG: multiple providers can have same skill, but we peak only the first one
+    #       need to detect ambiguity
+    for provider in provider_registry.providers:
+        skill_path = provider.install_path / skill_name
+        if skill_path.is_dir():
+            return skill_path, provider
     return None
 
 
@@ -342,31 +418,29 @@ def _copy_skill_with_replace(*, src: Path, dst: Path) -> None:
     shutil.copytree(src, dst)
 
 
-def _resolve_provider(
+def _resolve_diverged_provider(
+    provider_registry: ProviderRegistry,
     skill_name: str,
-    entry: InstalledSkill,
-    providers: ProviderRegistry,
-    from_provider: str | None,
-) -> str:
-    if from_provider is not None:
-        providers.require(from_provider)
-        return from_provider
-
-    diverged: list[str] = []
-    for pname, provider in providers.providers.items():
+    installed: InstalledSkill,
+) -> Provider | None:
+    # search providers for existing skills that installed but not synced
+    diverged: list[Provider] = []
+    for provider in provider_registry.providers:
         installed_path = provider.install_path / skill_name
         if not installed_path.exists():
             continue
 
         current_hashes = compute_file_hashes(installed_path)
-        if current_hashes != entry.files:
-            diverged.append(pname)
+        if current_hashes != installed.files:
+            diverged.append(provider)
 
     if not diverged:
-        raise NoopError(f"{fmt_ident(skill_name)} is already synced. Nothing to merge.")
+        return None
 
     if len(diverged) > 1:
-        names = ", ".join(fmt_ident(name) for name in sorted(diverged))
+        names = ", ".join(
+            fmt_ident(p.name) for p in sorted(diverged, key=lambda x: x.name)
+        )
         raise AppError(
             "Multiple providers have modified" f" {fmt_ident(skill_name)} ({names}).",
             hint=f"Use {fmt_command('--from')} to specify.",
@@ -378,11 +452,12 @@ def _resolve_provider(
 def _resolve_base_commit(
     git: GitRepo,
     skill: SourceSkill,
-    entry: InstalledSkill,
+    installed: InstalledSkill,
     installed_path: Path,
 ) -> str | None:
     # TODO: test it when skill under category subfolder
-    r = _find_base_commit(git, skill.rel_path, entry, installed_path)
+    r = _find_base_commit(git, skill.rel_path, installed, installed_path)
+
     # TODO: in case of orphan branch we must tell this to
     #       (i.e. that rebase will be performed)
     if r is None:
@@ -429,7 +504,7 @@ class _BestCommit:
 def _find_base_commit(
     git: GitRepo,
     skill_rel: str,
-    entry: InstalledSkill,
+    installed: InstalledSkill,
     installed_path: Path,
 ) -> _BestCommit | None:
     commits = git.log_commits(skill_rel, _MAX_SEARCH_COMMITS)
@@ -441,7 +516,7 @@ def _find_base_commit(
 
     for commit in commits:
         commit_hashes: dict[str, str] = {}
-        for rel_path in entry.files:
+        for rel_path in installed.files:
             # TODO: it's invalid to silently skip all exceptions
             #       we can wrongly match base commit
             try:
@@ -452,12 +527,12 @@ def _find_base_commit(
             sha = hashlib.sha256(data).hexdigest()
             commit_hashes[rel_path] = f"sha256:{sha}"
 
-        if commit_hashes == entry.files:
+        if commit_hashes == installed.files:
             best_commit = commit
             best_distance = 0
             break
 
-        distance = _compute_distance(git, commit, skill_rel, entry, installed_path)
+        distance = _compute_distance(git, commit, skill_rel, installed, installed_path)
         if best_distance is None or best_distance > distance:
             best_commit = commit
             best_distance = distance
@@ -469,9 +544,8 @@ def _find_base_commit(
     return _BestCommit(commit=best_commit, message=message, distance=best_distance)
 
 
-def _merge_continue() -> None:
-    sources = load_source_registry()
-    git = _detect_merge_repo(sources)
+def _merge_continue(ctx: _MergeContext) -> None:
+    git = _detect_merge_repo(ctx)
     branch = _detect_merge_branch(git)
     provider_name, skill_name = _parse_merge_branch(branch)
 
@@ -487,23 +561,22 @@ def _merge_continue() -> None:
             props={"repo": fmt_path(git.root)},
         )
 
-    _finalize(git, provider_name, skill_name)
+    provider = ctx.provider_registry.require(provider_name)
+    _finalize(ctx, git, provider, skill_name)
 
 
 def _finalize(
+    ctx: _MergeContext,
     git: GitRepo,
-    provider_name: str,
+    provider: Provider,
     skill_name: str,
     *,
     already_merged: bool = False,
 ) -> None:
-    merge_branch = f"{MERGE_BRANCH_PREFIX}{provider_name}/{skill_name}"
+    merge_branch = f"{MERGE_BRANCH_PREFIX}{provider.name}/{skill_name}"
 
-    manifest = load_skill_manifest()
-    entry = manifest.skills[skill_name]
-
-    sources = load_source_registry()
-    source = sources.get_source(entry.source, load_skills=True)
+    installed = ctx.manifest.skills[skill_name]
+    source = ctx.source_registry.get_source(installed.source, load_skills=True)
     skill = source.get_skill(skill_name)
 
     target_branch = source.get_branch(git)
@@ -511,8 +584,6 @@ def _finalize(
         git.checkout(target_branch)
         git.fast_forward(merge_branch)
 
-    providers = load_provider_registry()
-    provider = providers.require(provider_name)
     installed_path = provider.install_path / skill_name
 
     _copy_skill_with_replace(
@@ -523,15 +594,15 @@ def _finalize(
     new_hashes = compute_file_hashes(installed_path)
 
     # TODO: if equal, then why do we copy?
-    is_equal = new_hashes == entry.files
+    is_equal = new_hashes == installed.files
 
-    manifest.register_skill(
+    ctx.manifest.register_skill(
         skill_name,
-        source=entry.source,
+        source_name=installed.source,
         commit=git.get_skill_commit(skill_name),
         files=new_hashes,
     )
-    save_skill_manifest(manifest)
+    save_skill_manifest(ctx.manifest)
 
     git.delete_branch(merge_branch)
 
@@ -542,9 +613,8 @@ def _finalize(
     echo(f"Merge complete for {fmt_ident(skill_name)}.")
 
 
-def _merge_abort() -> None:
-    sources = load_source_registry()
-    git = _detect_merge_repo(sources)
+def _merge_abort(ctx: _MergeContext) -> None:
+    git = _detect_merge_repo(ctx)
     branch = _detect_merge_branch(git)
     _, skill_name = _parse_merge_branch(branch)
 
@@ -553,9 +623,8 @@ def _merge_abort() -> None:
     elif git.is_merging():
         git.merge_abort()
 
-    manifest = load_skill_manifest()
-    entry = manifest.skills[skill_name]
-    source = sources.get_source(entry.source, load_skills=False)
+    intalled = ctx.manifest.skills[skill_name]
+    source = ctx.source_registry.get_source(intalled.source, load_skills=False)
 
     target_branch = source.get_branch(git)
     if git.current_branch() != target_branch:
@@ -566,13 +635,11 @@ def _merge_abort() -> None:
     echo(f"Merge aborted for {fmt_ident(skill_name)}.")
 
 
-def _detect_merge_repo(sources: SourceRegistry) -> GitRepo:
+def _detect_merge_repo(ctx: _MergeContext) -> GitRepo:
     # TODO: BUG: this is just wrong, it peak first source
     # we need to check either '--source' field or cwd()
-
-    manifest = load_skill_manifest()
-    for entry in manifest.skills.values():
-        source_entry = sources.sources.get(entry.source)
+    for installed in ctx.manifest.skills.values():
+        source_entry = ctx.source_registry.sources.get(installed.source)
         if source_entry is not None:
             return resolve_git_repo(source_entry.repo_root)
 
@@ -605,6 +672,7 @@ def _parse_merge_branch(branch: str) -> tuple[str, str]:
     parts = branch.removeprefix(MERGE_BRANCH_PREFIX).split("/", 1)
     if len(parts) != 2:
         raise AppError(f"Invalid merge branch: {fmt_ident(branch)}")
+
     return parts[0], parts[1]
 
 
@@ -612,11 +680,11 @@ def _compute_distance(
     git: GitRepo,
     commit: str,
     skill_rel: str,
-    entry: InstalledSkill,
+    installed: InstalledSkill,
     installed_path: Path,
 ) -> int:
     total = 0
-    all_paths = set(entry.files.keys())
+    all_paths = set(installed.files.keys())
 
     for rel_path in all_paths:
         try:
@@ -652,19 +720,23 @@ def _compute_distance(
     return total
 
 
-def _resolve_orphan_source(sources: SourceRegistry, to_source: str | None) -> Source:
+def _resolve_orphan_source(
+    source_registry: SourceRegistry, to_source: str | None
+) -> Source:
     if to_source:
-        return sources.get_source(to_source, load_skills=False)
+        return source_registry.get_source(to_source, load_skills=False)
 
-    if not sources.sources:
+    if not source_registry.sources:
         raise AppError("No sources registered.")
 
-    if len(sources.sources) > 1:
-        names = ", ".join(fmt_ident(name) for name in sorted(sources.sources.keys()))
+    if len(source_registry.sources) > 1:
+        names = ", ".join(
+            fmt_ident(name) for name in sorted(source_registry.sources.keys())
+        )
         raise AppError(
             f"Multiple sources registered ({names}).",
-            hint="Use [blue]--source[/blue] to specify.",
+            hint=f"Use {fmt_command('--source')} to specify.",
         )
 
-    source_name = list(sources.sources)[0]
-    return sources.get_source(source_name, load_skills=False)
+    source_name = list(source_registry.sources)[0]
+    return source_registry.get_source(source_name, load_skills=False)

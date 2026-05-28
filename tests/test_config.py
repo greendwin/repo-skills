@@ -114,42 +114,42 @@ class TestProviderRegistry:
     ) -> None:
         monkeypatch.setenv("HOME", "/home/user")
         reg = load_provider_registry()
-        assert "claude" in reg.providers
-        assert reg.providers["claude"].install_path == Path("/home/user/.claude/skills")
+        assert reg.is_registered("claude")
+        assert reg.require("claude").install_path == Path("/home/user/.claude/skills")
 
     def test_load_existing_v1_does_not_reinject_defaults(
         self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("HOME", "/home/user")
         reg = load_provider_registry()
-        reg.unregister_provider("claude")
+        reg.unregister("claude")
         save_provider_registry(reg)
 
         reloaded = load_provider_registry()
-        assert "claude" not in reloaded.providers
+        assert not reloaded.is_registered("claude")
 
     def test_install_path_resolves_tilde(
         self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("HOME", "/home/user")
         reg = ProviderRegistry()
-        reg.register_provider("test", "~/my-skills")
-        assert reg.providers["test"].install_path == Path("/home/user/my-skills")
+        prov = reg.register("test", "~/my-skills")
+        assert prov.install_path == Path("/home/user/my-skills")
 
     def test_save_and_load_round_trip(
         self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("HOME", "/home/user")
         reg = load_provider_registry()
-        reg.register_provider("cursor", "/opt/cursor/skills")
+        reg.register("cursor", "/opt/cursor/skills")
         save_provider_registry(reg)
 
         reloaded = load_provider_registry()
         assert len(reloaded.providers) == 2
-        assert reloaded.providers["claude"].install_path == Path(
+        assert reloaded.require("claude").install_path == Path(
             "/home/user/.claude/skills"
         )
-        assert reloaded.providers["cursor"].install_path == Path("/opt/cursor/skills")
+        assert reloaded.require("cursor").install_path == Path("/opt/cursor/skills")
 
     def test_require_unknown_raises(self) -> None:
         reg = ProviderRegistry()
@@ -158,20 +158,20 @@ class TestProviderRegistry:
 
     def test_require_returns_registered_provider(self) -> None:
         reg = ProviderRegistry()
-        reg.register_provider("test", "/opt/test")
+        reg.register("test", "/opt/test")
         provider = reg.require("test")
         assert provider.name == "test"
         assert provider.install_path == Path("/opt/test")
 
     def test_unregister_removes_provider(self) -> None:
         reg = ProviderRegistry()
-        reg.register_provider("test", "/opt/test")
-        reg.unregister_provider("test")
-        assert "test" not in reg.providers
+        reg.register("test", "/opt/test")
+        reg.unregister("test")
+        assert not reg.is_registered("test")
 
     def test_unregister_missing_is_noop(self) -> None:
         reg = ProviderRegistry()
-        reg.unregister_provider("nonexistent")
+        reg.unregister("nonexistent")
 
     def test_load_unversioned_file_migrates_and_injects_defaults(
         self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
@@ -182,8 +182,8 @@ class TestProviderRegistry:
         fs.create_file(path, contents=json.dumps(data))
 
         reg = load_provider_registry()
-        assert "custom" in reg.providers
-        assert "claude" in reg.providers
+        assert reg.is_registered("custom")
+        assert reg.is_registered("claude")
 
 
 # -- SourceRegistry --
@@ -220,7 +220,7 @@ class TestSkillManifest:
         manifest = SkillManifest()
         manifest.register_skill(
             "tdd",
-            source="my-repo",
+            source_name="my-repo",
             commit="abc1234",
             files={"SKILL.md": "sha256:deadbeef"},
         )
@@ -235,14 +235,14 @@ class TestSkillManifest:
 
     def test_register_skill(self) -> None:
         manifest = SkillManifest()
-        manifest.register_skill("tdd", source="my-repo", commit="abc")
+        manifest.register_skill("tdd", source_name="my-repo", commit="abc")
         assert "tdd" in manifest.skills
         assert manifest.skills["tdd"].source == "my-repo"
         assert manifest.skills["tdd"].commit == "abc"
 
     def test_unregister_skill(self) -> None:
         manifest = SkillManifest()
-        manifest.register_skill("tdd", source="my-repo")
+        manifest.register_skill("tdd", source_name="my-repo")
         manifest.unregister_skill("tdd")
         assert "tdd" not in manifest.skills
 
@@ -250,7 +250,7 @@ class TestSkillManifest:
         from collections.abc import Mapping
 
         manifest = SkillManifest()
-        manifest.register_skill("tdd", source="my-repo")
+        manifest.register_skill("tdd", source_name="my-repo")
         assert isinstance(manifest.skills, Mapping)
 
 

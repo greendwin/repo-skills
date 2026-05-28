@@ -72,7 +72,7 @@ def uninstall(
         if name not in manifest.skills:
             raise AppError(f"Skill {fmt_ident(name)} is not installed.")
 
-        for provider in provider_registry.providers.values():
+        for provider in provider_registry.providers:
             dst = provider.install_path / name
             if dst.exists():
                 shutil.rmtree(dst)
@@ -112,12 +112,12 @@ def _install_one(
 
     provider_registry = load_provider_registry()
 
-    for prov_name, provider in provider_registry.providers.items():
+    for provider in provider_registry.providers:
         _copy_skill(
             src,
             skill_name,
             install_dir=provider.install_path,
-            provider_name=prov_name,
+            provider_name=provider.name,
             force=force,
         )
 
@@ -199,7 +199,7 @@ def _resolve_commit(git: GitRepo, skill_name: str) -> str:
 
 
 def _record_manifest(
-    name: str,
+    skill_name: str,
     *,
     source_name: str,
     commit: str,
@@ -207,8 +207,8 @@ def _record_manifest(
 ) -> None:
     manifest = load_skill_manifest()
     manifest.register_skill(
-        name,
-        source=source_name,
+        skill_name,
+        source_name=source_name,
         commit=commit,
         files=compute_file_hashes(skill_src),
     )

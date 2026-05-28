@@ -408,6 +408,68 @@ class TestMergeUntracked:
         assert "tdd" in manifest.skills
         assert manifest.skills["tdd"].source == "my-project"
 
+    def test_registers_non_diverged_mergeable_skill(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        install_skill(fs, "tdd", content="# original")
+        _fake_git.commits["tdd"] = "source-commit-abc"
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        assert_words_in_message(result.output, "synced")
+        manifest = load_manifest()
+        assert "tdd" in manifest.skills
+        entry = manifest.skills["tdd"]
+        assert entry.source == "my-project"
+        assert entry.commit == "source-commit-abc"
+        assert entry.files == compute_file_hashes(INSTALL_DIR / "tdd")
+
+    def test_diverged_mergeable_has_correct_manifest_after_merge(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        install_skill(fs, "tdd", content="# original")
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _fake_git.commits["tdd"] = "merged-commit-xyz"
+
+        assert_invoke("merge", "tdd", "--offline")
+
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert entry.source == "my-project"
+        assert entry.commit == "merged-commit-xyz"
+        assert entry.files == compute_file_hashes(INSTALL_DIR / "tdd")
+        assert not entry.detached
+
+    def test_diverged_mergeable_copies_to_source(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        install_skill(fs, "tdd", content="# original")
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        assert_invoke("merge", "tdd", "--offline")
+
+        source_skill = git_repo / "skills" / "tdd" / "SKILL.md"
+        assert source_skill.read_text() == "# edited by user"
+
+    def test_non_diverged_mergeable_does_not_create_merge_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        install_skill(fs, "tdd", content="# original")
+
+        assert_invoke("merge", "tdd", "--offline")
+
+        assert _fake_git.created_branches == {}
+        assert _fake_git.orphan_branches == []
+        assert _fake_git.committed_messages == []
+
     def test_merges_untracked_orphan_with_single_source(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:

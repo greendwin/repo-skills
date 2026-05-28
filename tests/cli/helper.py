@@ -22,7 +22,7 @@ from repo_skills.config import (
     save_source_config,
     save_source_registry,
 )
-from repo_skills.errors import AppError, NoopError
+from repo_skills.errors import AppError, FileNotInCommitError, NoopError
 from repo_skills.git import GitRepo
 
 
@@ -104,7 +104,10 @@ class FakeGitRepo:
         return self.commit_logs.get(path, [])[:max_count]
 
     def get_file_at_commit(self, commit: str, path: str) -> bytes:
-        return self.files_at_commit[(commit, path)]
+        try:
+            return self.files_at_commit[(commit, path)]
+        except KeyError:
+            raise FileNotInCommitError(commit, path) from None
 
     def create_branch(self, name: str, from_commit: str) -> None:
         self.created_branches[name] = from_commit

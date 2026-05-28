@@ -5,7 +5,7 @@ from pathlib import Path
 
 from rich.markup import escape
 
-from repo_skills.errors import AppError
+from repo_skills.errors import AppError, FileNotInCommitError
 from repo_skills.git import GitRepo
 from repo_skills.utils import fmt_command, fmt_ident, fmt_path
 
@@ -32,7 +32,7 @@ def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> AppError:
         props[""] = f"[dim]{escape(output)}[/dim]"
 
     return AppError(
-        f"git command failed: {fmt_command(cmd)}",
+        f"Git command failed: {fmt_command(cmd)}",
         props=props,
     )
 
@@ -106,7 +106,12 @@ class RealGitRepo:
         return output.splitlines()
 
     def get_file_at_commit(self, commit: str, path: str) -> bytes:
-        return self._run_bytes("show", f"{commit}:{path}")
+        try:
+            return self._run_bytes("show", f"{commit}:{path}")
+        except AppError as exc:
+            if "not exist" in exc.message:
+                raise FileNotInCommitError(commit, path) from exc
+            raise
 
     def create_branch(self, name: str, from_commit: str) -> None:
         self._run("checkout", "-b", name, from_commit)

@@ -1,7 +1,7 @@
 ---
 id: s08t02
 slug: fix-silent-exception-swallowing-in
-status: pending
+status: done
 ---
 
 # Fix silent exception swallowing in commit matching

@@ -24,7 +24,7 @@ from repo_skills.config import (
     load_source_registry,
     save_skill_manifest,
 )
-from repo_skills.errors import AppError, NoopError
+from repo_skills.errors import AppError, FileNotInCommitError, NoopError
 from repo_skills.git import GitRepo
 from repo_skills.utils import fmt_command, fmt_ident, fmt_path
 
@@ -517,25 +517,25 @@ def _find_base_commit(
     for commit in commits:
         commit_hashes: dict[str, str] = {}
         for rel_path in installed.files:
-            # TODO: it's invalid to silently skip all exceptions
-            #       we can wrongly match base commit
             try:
                 data = git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
-            except Exception:
-                continue
+            except FileNotInCommitError:
+                break  # missing file — disqualifies this commit
 
             sha = hashlib.sha256(data).hexdigest()
             commit_hashes[rel_path] = f"sha256:{sha}"
+        else:  # all files found — evaluate this commit
+            if commit_hashes == installed.files:
+                best_commit = commit
+                best_distance = 0
+                break
 
-        if commit_hashes == installed.files:
-            best_commit = commit
-            best_distance = 0
-            break
-
-        distance = _compute_distance(git, commit, skill_rel, installed, installed_path)
-        if best_distance is None or best_distance > distance:
-            best_commit = commit
-            best_distance = distance
+            distance = _compute_distance(
+                git, commit, skill_rel, installed, installed_path
+            )
+            if best_distance is None or best_distance > distance:
+                best_commit = commit
+                best_distance = distance
 
     if best_commit is None or best_distance is None:
         return None
@@ -715,11 +715,8 @@ def _compute_distance(
     all_paths = set(installed.files.keys())
 
     for rel_path in all_paths:
-        try:
-            commit_data = git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
-            commit_lines = commit_data.decode(errors="replace").splitlines(True)
-        except (KeyError, Exception):
-            commit_lines = []
+        commit_data = git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
+        commit_lines = commit_data.decode(errors="replace").splitlines(True)
 
         local_file = installed_path / rel_path
         if local_file.exists():

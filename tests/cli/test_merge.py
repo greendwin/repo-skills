@@ -16,6 +16,7 @@ from repo_skills.config import (
     save_source_config,
     save_source_registry,
 )
+from repo_skills.errors import AppError
 from tests.cli.helper import (
     INSTALL_DIR,
     SOURCE_REPO_ROOT,
@@ -328,6 +329,60 @@ class TestBaseCommitSearch:
         assert "aaa111" in result.output
         assert "distance:" in result.output
         assert "chore: tweak tdd" in result.output
+
+    def test_search_base_skips_commit_with_missing_file(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        # First commit is missing the file (no entry in files_at_commit),
+        # second commit has the exact match.
+        _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
+        # aaa111 has no file entry -> FileNotInCommitError
+        _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = b"# original"
+        _fake_git.commit_messages = {
+            "aaa111": "broken commit",
+            "bbb222": "feat: add tdd skill",
+        }
+
+        result = assert_invoke("merge", "tdd", "--search-base", "--offline")
+
+        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "bbb222"
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_search_base_propagates_unexpected_error(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        _fake_git.commit_logs["skills/tdd"] = ["aaa111"]
+        # Inject a generic AppError by using a custom side effect
+        _orig = _fake_git.get_file_at_commit
+
+        def _boom(commit: str, path: str) -> bytes:
+            if commit == "aaa111":
+                raise AppError("unexpected git failure")
+            return _orig(commit, path)
+
+        _fake_git.get_file_at_commit = _boom  # type: ignore[method-assign]
+
+        result = assert_invoke(
+            "merge", "tdd", "--search-base", "--offline", expect_error=True
+        )
+
+        assert "unexpected git failure" in result.exception.message
 
 
 class TestCommitReachability:

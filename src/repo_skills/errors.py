@@ -28,6 +28,16 @@ class AppError(Exception):
         super().__init__(self.message)
 
 
+class FileNotInCommitError(AppError):
+    def __init__(self, commit: str, path: str) -> None:
+        self.commit = commit
+        self.path = path
+        super().__init__(
+            "File not found at commit",
+            props={"commit": commit, "path": path},
+        )
+
+
 class NoopError(Exception):
     def __init__(self, message: str) -> None:
         self.message = message

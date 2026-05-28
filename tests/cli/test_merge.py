@@ -6,16 +6,19 @@ from pathlib import Path
 import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
+import repo_skills.cli._deps as deps_mod
 from repo_skills.config import (
     InstalledSkill,
     SourceConfig,
     SourceRegistry,
     compute_file_hashes,
+    save_skill_manifest,
     save_source_config,
     save_source_registry,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
+    SOURCE_REPO_ROOT,
     FakeGitRepo,
     assert_invoke,
     assert_words_in_message,
@@ -31,6 +34,7 @@ from tests.cli.helper import (
 
 COMMIT = "abc1234"
 CURSOR_DIR = Path("/home/user/.cursor/skills")
+OTHER_REPO_ROOT = Path("/repos/other-project")
 
 
 @pytest.fixture(autouse=True)
@@ -751,6 +755,7 @@ class TestMergeContinue:
         result = assert_invoke("merge", "--continue", expect_error=True)
 
         assert_words_in_message(result.exception.message, "no merge branch")
+        assert_words_in_message(result.exception.message, "skills merge")
 
     def test_errors_when_repo_dirty(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -972,3 +977,182 @@ class TestMergeAbort:
         assert _fake_git.branch == "main"
         assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
         assert_words_in_message(result.output, "aborted")
+
+
+def _install_multi_git(repos: dict[Path, FakeGitRepo]) -> None:
+    def factory(path: Path) -> FakeGitRepo:
+        path_str = str(path)
+        for root, fake in repos.items():
+            if path_str == str(root):
+                return fake
+        raise AssertionError(f"No fake git for {path}")
+
+    deps_mod._git_repo_factory = factory
+
+
+class TestDetectMergeRepo:
+    def test_continue_prefers_cwd_source_over_manifest_order(
+        self,
+        fs: FakeFilesystem,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fs.create_dir(SOURCE_REPO_ROOT / ".git")
+        fs.create_dir(OTHER_REPO_ROOT / ".git")
+
+        cwd_git = FakeGitRepo(
+            root=OTHER_REPO_ROOT,
+            branch="skill-merge/claude/review",
+            commits={"review": "merged-commit"},
+        )
+        other_git = FakeGitRepo(root=SOURCE_REPO_ROOT)
+        _install_multi_git({OTHER_REPO_ROOT: cwd_git, SOURCE_REPO_ROOT: other_git})
+
+        monkeypatch.chdir(OTHER_REPO_ROOT)
+
+        registry = SourceRegistry()
+        registry.register_source("my-project", SOURCE_REPO_ROOT)
+        registry.register_source("other-project", OTHER_REPO_ROOT)
+        save_source_registry(registry)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dir="skills"), SOURCE_REPO_ROOT
+        )
+        save_source_config(
+            SourceConfig(name="other-project", skills_dir="skills"), OTHER_REPO_ROOT
+        )
+
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes),
+            }
+        )
+        create_source_skill(
+            fs, "review", content="# merged", root=OTHER_REPO_ROOT / "skills"
+        )
+        hashes_review = install_skill(fs, "review", content="# original")
+        manifest = load_manifest()
+        manifest.register_skill(
+            "review",
+            source_name="other-project",
+            commit="rev123",
+            files=hashes_review,
+        )
+        save_skill_manifest(manifest)
+
+        result = assert_invoke("merge", "--continue")
+
+        assert cwd_git.ff_targets == ["skill-merge/claude/review"]
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_continue_scans_sources_when_cwd_outside(
+        self,
+        fs: FakeFilesystem,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fs.create_dir(SOURCE_REPO_ROOT / ".git")
+        fs.create_dir("/somewhere/else")
+
+        source_git = FakeGitRepo(
+            root=SOURCE_REPO_ROOT,
+            branch="skill-merge/claude/tdd",
+            commits={"tdd": "merged-commit"},
+        )
+        _install_multi_git({SOURCE_REPO_ROOT: source_git})
+
+        monkeypatch.chdir("/somewhere/else")
+
+        register_source(SOURCE_REPO_ROOT, name="my-project")
+        create_source_skill(fs, "tdd", content="# merged")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+        )
+
+        result = assert_invoke("merge", "--continue")
+
+        assert source_git.ff_targets == ["skill-merge/claude/tdd"]
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_continue_errors_when_multiple_sources_have_merge_branches(
+        self,
+        fs: FakeFilesystem,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fs.create_dir(SOURCE_REPO_ROOT / ".git")
+        fs.create_dir(OTHER_REPO_ROOT / ".git")
+        fs.create_dir("/somewhere/else")
+
+        git_a = FakeGitRepo(
+            root=SOURCE_REPO_ROOT,
+            branches=["skill-merge/claude/tdd"],
+        )
+        git_b = FakeGitRepo(
+            root=OTHER_REPO_ROOT,
+            branches=["skill-merge/claude/review"],
+        )
+        _install_multi_git({SOURCE_REPO_ROOT: git_a, OTHER_REPO_ROOT: git_b})
+
+        monkeypatch.chdir("/somewhere/else")
+
+        registry = SourceRegistry()
+        registry.register_source("my-project", SOURCE_REPO_ROOT)
+        registry.register_source("other-project", OTHER_REPO_ROOT)
+        save_source_registry(registry)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dir="skills"), SOURCE_REPO_ROOT
+        )
+        save_source_config(
+            SourceConfig(name="other-project", skills_dir="skills"), OTHER_REPO_ROOT
+        )
+
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+        )
+
+        result = assert_invoke("merge", "--continue", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "multiple source repos")
+
+    def test_continue_cwd_disambiguates_multiple_merge_repos(
+        self,
+        fs: FakeFilesystem,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fs.create_dir(SOURCE_REPO_ROOT / ".git")
+        fs.create_dir(OTHER_REPO_ROOT / ".git")
+
+        cwd_git = FakeGitRepo(
+            root=SOURCE_REPO_ROOT,
+            branch="skill-merge/claude/tdd",
+            commits={"tdd": "merged-commit"},
+        )
+        other_git = FakeGitRepo(
+            root=OTHER_REPO_ROOT,
+            branches=["skill-merge/claude/review"],
+        )
+        _install_multi_git({SOURCE_REPO_ROOT: cwd_git, OTHER_REPO_ROOT: other_git})
+
+        monkeypatch.chdir(SOURCE_REPO_ROOT)
+
+        registry = SourceRegistry()
+        registry.register_source("my-project", SOURCE_REPO_ROOT)
+        registry.register_source("other-project", OTHER_REPO_ROOT)
+        save_source_registry(registry)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dir="skills"), SOURCE_REPO_ROOT
+        )
+        save_source_config(
+            SourceConfig(name="other-project", skills_dir="skills"), OTHER_REPO_ROOT
+        )
+
+        create_source_skill(fs, "tdd", content="# merged")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+        )
+
+        result = assert_invoke("merge", "--continue")
+
+        assert cwd_git.ff_targets == ["skill-merge/claude/tdd"]
+        assert_words_in_message(result.output, "merge", "complete")

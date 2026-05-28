@@ -636,14 +636,42 @@ def _merge_abort(ctx: _MergeContext) -> None:
 
 
 def _detect_merge_repo(ctx: _MergeContext) -> GitRepo:
-    # TODO: BUG: this is just wrong, it peak first source
-    # we need to check either '--source' field or cwd()
-    for installed in ctx.manifest.skills.values():
-        source_entry = ctx.source_registry.sources.get(installed.source)
-        if source_entry is not None:
-            return resolve_git_repo(source_entry.repo_root)
+    cwd = Path.cwd()
+    candidates: list[GitRepo] = []
+    for source in ctx.source_registry.sources.values():
+        try:
+            git = resolve_git_repo(source.repo_root)
+        except AppError:
+            continue
 
-    raise AppError("No source repo found.")
+        if not _has_merge_branch(git):
+            continue
+
+        if cwd == source.repo_root or source.repo_root in cwd.parents:
+            return git
+
+        candidates.append(git)
+
+    if not candidates:
+        raise AppError(
+            "No merge branch found in any source repo.",
+            hint=f"Run {fmt_command('skills merge')} first.",
+        )
+
+    if len(candidates) > 1:
+        names = ", ".join(fmt_ident(str(g.root)) for g in candidates)
+        raise AppError(
+            f"Multiple source repos have merge branches ({names}).",
+            hint="Run from within the target source repo.",
+        )
+
+    return candidates[0]
+
+
+def _has_merge_branch(git: GitRepo) -> bool:
+    if git.current_branch().startswith(MERGE_BRANCH_PREFIX):
+        return True
+    return len(git.list_branches(f"{MERGE_BRANCH_PREFIX}*")) > 0
 
 
 def _detect_merge_branch(git: GitRepo) -> str:

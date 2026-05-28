@@ -10,7 +10,7 @@ Fix TODO-documented bugs and issues across the CLI.
 
 ## Subtasks
 
-- [ ] [s08t01](s08t01-fix-detectmergerepo-use-cwd-source.md): Fix _detect_merge_repo: use CWD source or scan all sources
+- [x] [s08t01](s08t01-fix-detectmergerepo-use-cwd-source.md): Fix _detect_merge_repo: use CWD source or scan all sources
 - [ ] [s08t02](s08t02-fix-silent-exception-swallowing-in.md): Fix silent exception swallowing in commit matching
 - [ ] [s08t03](s08t03-autoswitch-to-pinned-branch-extract.md): Auto-switch to pinned branch (extract ensure_on_branch helper)
 - [ ] [s08t04](s08t04-remove-mergeinprogress-blocking-check.md): Remove merge-in-progress blocking check

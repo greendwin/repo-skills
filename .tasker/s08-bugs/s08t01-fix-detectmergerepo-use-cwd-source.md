@@ -1,7 +1,7 @@
 ---
 id: s08t01
 slug: fix-detectmergerepo-use-cwd-source
-status: pending
+status: done
 ---
 
 # Fix _detect_merge_repo: use CWD source or scan all sources

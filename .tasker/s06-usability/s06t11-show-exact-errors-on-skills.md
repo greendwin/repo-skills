@@ -1,5 +1,5 @@
 ---
-id: s07t01
+id: s06t11
 slug: show-exact-errors-on-skills
 status: pending
 ---

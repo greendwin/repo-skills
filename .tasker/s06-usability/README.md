@@ -18,3 +18,4 @@ status: pending
 - [x] [s06t08](s06t08-use-merge-instead-of-rebase/): Use merge instead of rebase on 'skills merge'
 - [x] [s06t09](s06t09-skills-status-should-add-a/): 'skills status' should add a label near 'available' skills wwhen they have untracked counterpart
 - [x] [s06t10](s06t10-improve-source-init-reinit-feedback/): Improve `source init` re-init feedback & add hidden `skills init`
+- [ ] [s06t11](s06t11-show-exact-errors-on-skills.md): Show exact errors on skills update

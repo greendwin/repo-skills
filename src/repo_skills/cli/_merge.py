@@ -30,7 +30,7 @@ from repo_skills.utils import fmt_command, fmt_ident, fmt_path
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._utils import echo
+from ._utils import echo, ensure_on_branch
 
 MERGE_BRANCH_PREFIX = "skill-merge/"
 
@@ -187,19 +187,8 @@ def _merge_start(
             f"or {fmt_command('skills merge --abort')} to start over.",
         )
 
-    # TODO: unify this switching logic with other commands
-    if not git.is_clean():
-        raise AppError(
-            "Repo has uncommitted changes.",
-            props={"repo": fmt_path(git.root)},
-        )
-
     target_branch = source.get_branch(git)
-    if git.current_branch() != target_branch:
-        git.checkout(target_branch)
-
-    if not offline:
-        git.pull()
+    ensure_on_branch(git, target_branch, pull=not offline)
 
     # check whether skill is in sync already
     if provider is not None:
@@ -355,18 +344,8 @@ def _merge_orphan(
     source = _resolve_orphan_source(ctx.source_registry, to_source)
 
     git = resolve_git_repo(source.repo_root)
-    if not git.is_clean():
-        raise AppError(
-            "Repo has uncommitted changes.",
-            props={"repo": fmt_path(git.root)},
-        )
-
     target_branch = source.get_branch(git)
-    if git.current_branch() != target_branch:
-        git.checkout(target_branch)
-
-    if not offline:
-        git.pull()
+    ensure_on_branch(git, target_branch, pull=not offline)
 
     match = _find_in_provider(ctx.provider_registry, provider, skill_name)
     if match is None:

@@ -17,8 +17,7 @@ from repo_skills.utils import fmt_ident
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._install import validate_repo
-from ._utils import echo
+from ._utils import echo, ensure_on_branch
 
 _UPDATED = "[green]updated[/green]"
 _SKIPPED = "[yellow]skipped (modified)[/yellow]"
@@ -54,11 +53,8 @@ def update(
     for source_name in source_registry.sources:
         source = source_registry.get_source(source_name, load_skills=False)
         git = resolve_git_repo(source.repo_root)
-        if not offline:
-            git.pull()
-
         branch = source.get_branch(git)
-        validate_repo(git, branch=branch)
+        ensure_on_branch(git, branch, pull=not offline)
         source_branches[source_name] = branch
 
     skills_to_update = {name: manifest.skills[name]} if name else dict(manifest.skills)

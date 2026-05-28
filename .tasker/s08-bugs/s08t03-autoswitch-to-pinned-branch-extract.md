@@ -1,7 +1,7 @@
 ---
 id: s08t03
 slug: autoswitch-to-pinned-branch-extract
-status: pending
+status: done
 ---
 
 # Auto-switch to pinned branch (extract ensure_on_branch helper)

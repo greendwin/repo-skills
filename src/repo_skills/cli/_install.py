@@ -17,11 +17,11 @@ from repo_skills.config import (
 )
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
-from repo_skills.utils import fmt_command, fmt_ident, fmt_path
+from repo_skills.utils import fmt_command, fmt_ident
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._utils import echo
+from ._utils import echo, ensure_on_branch
 
 
 @app.command(help="Install a skill from a source.")
@@ -95,10 +95,12 @@ def _install_one(
     source = _resolve_source(source_registry, from_source, skill_name=skill_name)
 
     git = resolve_git_repo(source.repo_root)
-    if not offline and source.name not in pulled_sources:
-        git.pull()
-        pulled_sources.add(source.name)
-    validate_repo(git, branch=source.get_branch(git))
+    ensure_on_branch(
+        git,
+        source.get_branch(git),
+        pull=not offline and source.name not in pulled_sources,
+    )
+    pulled_sources.add(source.name)
 
     skill = source.skills.get(skill_name)
     if skill is None:
@@ -166,26 +168,6 @@ def _resolve_source(
         f"Multiple sources registered ({names}).",
         hint=f"Use {fmt_command('--source')} to specify.",
     )
-
-
-def validate_repo(git: GitRepo, *, branch: str) -> None:
-    if not git.is_clean():
-        raise AppError(
-            "Repo has uncommitted changes.",
-            props={"repo": fmt_path(git.root)},
-        )
-
-    # TODO: lets switch automatically if it's clean
-    # TODO: merge this code with others that check current_branch and
-    #       switches to it (in update/merge modules)
-    current = git.current_branch()
-    if current != branch:
-        raise AppError(
-            f"Not on the pinned branch (on {fmt_ident(current)},"
-            f" expected {fmt_ident(branch)}).",
-            hint=f"Use {fmt_command(f'source init --branch {current}')}"
-            " to change the pin.",
-        )
 
 
 def _resolve_commit(git: GitRepo, skill_name: str) -> str:

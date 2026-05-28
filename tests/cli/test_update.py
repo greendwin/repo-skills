@@ -125,7 +125,7 @@ class TestUpdatePull:
 
 
 class TestUpdateValidation:
-    def test_errors_when_not_on_pinned_branch(
+    def test_auto_switches_when_not_on_pinned_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _fake_git.branch = "feature/xyz"
@@ -136,10 +136,9 @@ class TestUpdateValidation:
             {"tdd": InstalledSkill(source="my-project", commit="abc", files=hashes)}
         )
 
-        result = assert_invoke("update", "--offline", expect_error=True)
+        assert_invoke("update", "--offline")
 
-        assert_words_in_message(result.exception.message, "not on the pinned branch")
-        assert_words_in_message(result.exception.message, "source init --branch")
+        assert _fake_git.branch == "main"
 
     def test_succeeds_on_pinned_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

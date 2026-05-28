@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, overload
+from typing import Literal, overload
 
 from pyfakefs.fake_filesystem import FakeFilesystem
 from typer.testing import CliRunner
@@ -25,9 +25,11 @@ from repo_skills.config import (
 from repo_skills.errors import AppError, NoopError
 from repo_skills.git import GitRepo
 
-if TYPE_CHECKING:
-    # TODO: rework `click.testing.Result` to protocol to get rid of click dependency
-    from click.testing import Result  # type: ignore
+
+@dataclass
+class InvokeResult:
+    output: str
+    exit_code: int = 0
 
 
 @dataclass
@@ -188,13 +190,13 @@ def assert_invoke(
 def assert_invoke(
     *args: str,
     expect_error: Literal[False] = ...,
-) -> Result | NoopResult: ...
+) -> InvokeResult | NoopResult: ...
 
 
 def assert_invoke(
     *args: str,
     expect_error: bool = False,
-) -> Result | ErrorResult | NoopResult:
+) -> InvokeResult | ErrorResult | NoopResult:
     runner = CliRunner(env={"NO_COLOR": "1"})
     result = runner.invoke(app, args)
 
@@ -215,7 +217,7 @@ def assert_invoke(
         f"Output: {result.output}\n"
         f"Exception: {result.exception}"
     )
-    return result
+    return InvokeResult(output=result.output, exit_code=result.exit_code)
 
 
 def assert_words_in_message(output: str, *words: str) -> None:

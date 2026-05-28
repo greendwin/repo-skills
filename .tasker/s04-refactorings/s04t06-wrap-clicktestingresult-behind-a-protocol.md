@@ -1,7 +1,7 @@
 ---
 id: s04t06
 slug: wrap-clicktestingresult-behind-a-protocol
-status: pending
+status: done
 ---
 
 # Wrap click.testing.Result behind a protocol in test helper

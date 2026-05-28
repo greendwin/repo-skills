@@ -2,7 +2,7 @@ from importlib.metadata import version
 
 from pytest_subtests import SubTests
 
-from tests.cli.helper import NoopResult, assert_invoke
+from tests.cli.helper import InvokeResult, NoopResult, assert_invoke
 
 
 def test_version_flag() -> None:
@@ -13,6 +13,7 @@ def test_version_flag() -> None:
 
 def test_help_lists_all_commands() -> None:
     result = assert_invoke("--help")
+    assert isinstance(result, InvokeResult)
     for cmd in ("install", "update", "uninstall", "source"):
         assert cmd in result.output
 

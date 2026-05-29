@@ -219,7 +219,7 @@ def _print_source_sections(
             if hint:
                 echo(f"  {skill_name:<{name_width}}  [cyan]mergeable[/cyan]{hint}")
             else:
-                echo(f"  {skill_name:<{name_width}}  [cyan]available[/cyan]{hint}")
+                echo(f"  {skill_name:<{name_width}}  [blue]available[/blue]{hint}")
 
     return has_output
 

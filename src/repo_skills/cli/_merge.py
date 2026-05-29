@@ -179,19 +179,6 @@ def _merge_start(
     source = ctx.source_registry.get_source(installed.source, load_skills=True)
     git = resolve_git_repo(source.repo_root)
 
-    existing = git.list_branches(f"{MERGE_BRANCH_PREFIX}*")
-    if existing:
-        # TODO: we can start multiple parallel merges
-        #       if they don't collide by provider+source
-        names = ", ".join(
-            fmt_ident(p.removeprefix(MERGE_BRANCH_PREFIX)) for p in sorted(existing)
-        )
-        raise AppError(
-            f"Merge already in progress: {names}.",
-            hint=f"Run {fmt_command('skills merge --continue')} to finish active merge "
-            f"or {fmt_command('skills merge --abort')} to start over.",
-        )
-
     target_branch = source.get_branch(git)
     ensure_on_branch(git, target_branch, pull=not offline)
 
@@ -220,6 +207,14 @@ def _merge_start(
                 f"{fmt_ident(skill_name)} is already synced. Nothing to merge."
             )
 
+    branch_name = f"skill-merge/{provider.name}/{skill_name}"
+    if git.list_branches(branch_name):
+        raise AppError(
+            f"Merge already in progress for {fmt_ident(skill_name)}.",
+            hint=f"Run {fmt_command('skills merge --continue')} to finish active merge "
+            f"or {fmt_command('skills merge --abort')} to start over.",
+        )
+
     skill = source.get_skill(skill_name)
     installed_path = provider.install_path / skill_name
 
@@ -232,7 +227,6 @@ def _merge_start(
         force=search_base,
     )
 
-    branch_name = f"skill-merge/{provider.name}/{skill_name}"
     if base_commit is not None:
         git.create_branch(branch_name, base_commit)
     else:

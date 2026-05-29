@@ -1,7 +1,7 @@
 ---
 id: s08t04
 slug: remove-mergeinprogress-blocking-check
-status: pending
+status: done
 ---
 
 # Remove merge-in-progress blocking check

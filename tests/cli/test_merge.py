@@ -862,7 +862,21 @@ class TestMergeOrphan:
 
 class TestMergeValidation:
 
-    def test_errors_when_merge_already_in_progress(
+    def test_errors_when_same_merge_already_in_progress(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_diverged_skill(fs, git_repo)
+        _fake_git.branches = ["skill-merge/claude/tdd"]
+
+        result = assert_invoke(
+            "merge", "tdd", "--offline", "--from", "claude", expect_error=True
+        )
+
+        assert_words_in_message(
+            result.exception.message, "merge already in progress", "--continue"
+        )
+
+    def test_errors_when_same_merge_in_progress_auto_provider(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _setup_diverged_skill(fs, git_repo)
@@ -873,6 +887,14 @@ class TestMergeValidation:
         assert_words_in_message(
             result.exception.message, "merge already in progress", "--continue"
         )
+
+    def test_allows_merge_when_different_merge_in_progress(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_diverged_skill(fs, git_repo)
+        _fake_git.branches = ["skill-merge/claude/other-skill"]
+
+        assert_invoke("merge", "tdd", "--offline")
 
     def test_errors_when_repo_dirty(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

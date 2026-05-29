@@ -1,7 +1,7 @@
 ---
 id: s06t1103
 slug: catch-unexpected-perskill-exceptions-with
-status: pending
+status: done
 ---
 
 # Catch unexpected per-skill exceptions with --debug traceback

@@ -46,6 +46,6 @@ Updating test3 ... up to date
 
 - [x] [s06t1101](s06t1101-add-pull-progress-lines.md): Add pull progress lines
 - [x] [s06t1102](s06t1102-stream-perskill-progress-with-specific.md): Stream per-skill progress with specific known-error messages
-- [ ] [s06t1103](s06t1103-catch-unexpected-perskill-exceptions-with.md): Catch unexpected per-skill exceptions with --debug traceback
+- [x] [s06t1103](s06t1103-catch-unexpected-perskill-exceptions-with.md): Catch unexpected per-skill exceptions with --debug traceback
 - [ ] [s06t1104](s06t1104-suppress-pyright-warnings-for-unused.md): Suppress Pyright warnings for unused _fake_git fixture params
 - [ ] [s06t1105](s06t1105-show-perprovider-status-when-update.md): Show per-provider status when update results differ across providers

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
+from repo_skills.debug import set_debug
 from tests.cli.helper import (
     SOURCE_REPO_ROOT,
     FakeGitRepo,
@@ -33,3 +34,9 @@ def _fake_git() -> Generator[FakeGitRepo]:
     install_fake_git(fake)
     yield fake
     uninstall_fake_git()
+
+
+@pytest.fixture(autouse=True)
+def _reset_debug() -> Generator[None]:
+    yield
+    set_debug(False)

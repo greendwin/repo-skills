@@ -3,24 +3,25 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
+from rich.markup import escape
 
 _T = TypeVar("_T", bound=BaseModel)
 
 
 def fmt_ident(text: str) -> str:
-    return f"[green]{text}[/green]"
+    return f"[green]{escape(text)}[/green]"
 
 
 def fmt_path(path: Path | str) -> str:
-    return f"[dim]{path}[/dim]"
+    return f"[dim]{escape(str(path))}[/dim]"
 
 
 def fmt_data(text: Any) -> str:
-    return f"[cyan]{text}[/cyan]"
+    return f"[cyan]{escape(str(text))}[/cyan]"
 
 
 def fmt_command(text: str) -> str:
-    return f"[blue]{text}[/blue]"
+    return f"[blue]{escape(text)}[/blue]"
 
 
 def fmt_message(

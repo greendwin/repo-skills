@@ -5,10 +5,12 @@ from pathlib import Path
 import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
+import repo_skills.cli._update as update_mod
 from repo_skills.config import (
     InstalledSkill,
     SourceConfig,
     SourceRegistry,
+    compute_file_hashes,
     save_source_config,
     save_source_registry,
 )
@@ -437,3 +439,86 @@ class TestUpdateBatchResilience:
 
         assert_words_in_message(result.output, "tdd", "skipped")
         assert_words_in_message(result.output, "review", "updated")
+
+
+class TestUpdateExceptionHandling:
+    def _setup_two_skills(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd v2")
+        create_source_skill(fs, "review", content="# review v2")
+        h1 = install_skill(fs, "tdd", content="# tdd v1")
+        h2 = install_skill(fs, "review", content="# review v1")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(source="my-project", commit="old", files=h1),
+                "review": InstalledSkill(source="my-project", commit="old", files=h2),
+            }
+        )
+
+        real_compute = compute_file_hashes
+
+        def _bomb(path: Path) -> dict[str, str]:
+            if "tdd" in str(path) and "skills/tdd" in str(path):
+                raise RuntimeError("disk exploded")
+            return real_compute(path)
+
+        monkeypatch.setattr(update_mod, "compute_file_hashes", _bomb)
+        return h1, h2
+
+    def test_unexpected_error_shows_message(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._setup_two_skills(fs, git_repo, monkeypatch)
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "error: disk exploded")
+        assert_words_in_message(result.output, "review", "updated")
+
+    def test_manifest_not_updated_for_failed_skill(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        h1, _h2 = self._setup_two_skills(fs, git_repo, monkeypatch)
+
+        assert_invoke("update", "--offline")
+
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].files == h1
+        assert manifest.skills["tdd"].commit == "old"
+        assert manifest.skills["review"].files != _h2
+
+    def test_debug_flag_shows_traceback(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._setup_two_skills(fs, git_repo, monkeypatch)
+
+        result = assert_invoke("--debug", "update", "--offline")
+
+        assert "Traceback" in result.output
+        assert_words_in_message(result.output, "error: disk exploded")
+
+    def test_no_traceback_without_debug(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._setup_two_skills(fs, git_repo, monkeypatch)
+
+        result = assert_invoke("update", "--offline")
+
+        assert "Traceback" not in result.output

@@ -12,6 +12,7 @@ from repo_skills.config import (
 from tests.cli.helper import (
     assert_invoke,
     assert_words_in_message,
+    load_manifest,
     register_source,
     save_manifest,
 )
@@ -52,3 +53,49 @@ class TestSourceRemove:
 
         updated = load_source_registry()
         assert "alpha" in updated.sources
+
+    def test_force_removes_source_and_clears_manifest(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo, name="alpha")
+
+        save_manifest(
+            {
+                "tdd": InstalledSkill(source="alpha", commit=None),
+                "review": InstalledSkill(source="alpha", commit=None),
+            }
+        )
+
+        assert_invoke("source", "remove", "alpha", "--force")
+
+        updated = load_source_registry()
+        assert "alpha" not in updated.sources
+
+        manifest = load_manifest()
+        assert "tdd" not in manifest.skills
+        assert "review" not in manifest.skills
+
+    def test_force_without_installed_skills(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo, name="alpha")
+
+        result = assert_invoke("source", "remove", "alpha", "--force")
+
+        updated = load_source_registry()
+        assert "alpha" not in updated.sources
+        assert_words_in_message(result.output, "removed", "alpha")
+
+    def test_force_output_message(self, fs: FakeFilesystem, git_repo: Path) -> None:
+        register_source(git_repo, name="alpha")
+
+        save_manifest(
+            {
+                "tdd": InstalledSkill(source="alpha", commit=None),
+            }
+        )
+
+        result = assert_invoke("source", "remove", "alpha", "--force")
+
+        assert_words_in_message(result.output, "unregistered", "tdd")
+        assert_words_in_message(result.output, "removed", "alpha")

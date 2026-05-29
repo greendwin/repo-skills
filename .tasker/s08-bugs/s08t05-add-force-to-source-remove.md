@@ -1,7 +1,7 @@
 ---
 id: s08t05
 slug: add-force-to-source-remove
-status: pending
+status: done
 ---
 
 # Add --force to `source remove` (orphan installed skills)

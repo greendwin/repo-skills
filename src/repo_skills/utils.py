@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -15,7 +15,7 @@ def fmt_path(path: Path | str) -> str:
     return f"[dim]{path}[/dim]"
 
 
-def fmt_data(text: str) -> str:
+def fmt_data(text: Any) -> str:
     return f"[cyan]{text}[/cyan]"
 
 

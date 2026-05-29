@@ -18,7 +18,7 @@ from repo_skills.config import (
 )
 from repo_skills.discovery import detect_skills_dir
 from repo_skills.errors import AppError, NoopError
-from repo_skills.utils import fmt_ident, fmt_path, write_text
+from repo_skills.utils import fmt_data, fmt_ident, fmt_path, write_text
 
 from ._app import app
 from ._deps import resolve_git_repo
@@ -149,11 +149,6 @@ def _rename_installed_skills(old_name: str, new_name: str) -> None:
         save_skill_manifest(manifest)
 
 
-def _has_installed_skills(source_name: str) -> bool:
-    manifest = load_skill_manifest()
-    return any(e.source == source_name for e in manifest.skills.values())
-
-
 @source_app.command(name="list", help="List all registered sources.")
 def source_list() -> None:
     registry = load_source_registry()
@@ -182,21 +177,38 @@ def source_list() -> None:
 
 @source_app.command(name="remove", help="Remove a source from registry.")
 def source_remove(
-    name: str = typer.Argument(help="Name of the source to remove."),
+    source_name: str = typer.Argument(help="Name of the source to remove."),
+    force: bool = typer.Option(
+        False, "--force", help="Remove even if skills are installed (unregisters them)."
+    ),
 ) -> None:
     source_registry = load_source_registry()
 
     try:
-        repo_root = source_registry.get_source(name, load_skills=False).repo_root
+        repo_root = source_registry.get_source(source_name, load_skills=False).repo_root
     except SourceBrokenError:
         # silently ignore broken sources, just remove them from the registry
-        repo_root = source_registry.sources[name].repo_root
+        repo_root = source_registry.sources[source_name].repo_root
 
-    if _has_installed_skills(name):
-        # TODO: support --force option to do this
-        raise AppError("Cannot remove a source with installed skills.")
+    manifest = load_skill_manifest()
+    matching = [
+        skill_name
+        for skill_name, entry in manifest.skills.items()
+        if entry.source == source_name
+    ]
 
-    source_registry.unregister_source(name)
+    if matching:
+        if not force:
+            raise AppError("Cannot remove a source with installed skills.")
+
+        for skill_name in matching:
+            manifest.unregister_skill(skill_name)
+        save_skill_manifest(manifest)
+
+        names = ", ".join(fmt_ident(n) for n in sorted(matching))
+        echo(f"Unregistered {fmt_data(len(matching))} skill(s): {names}.")
+
+    source_registry.unregister_source(source_name)
     save_source_registry(source_registry)
 
-    echo(f"Removed source {fmt_ident(name)} at {fmt_path(repo_root)}.")
+    echo(f"Removed source {fmt_ident(source_name)} at {fmt_path(repo_root)}.")

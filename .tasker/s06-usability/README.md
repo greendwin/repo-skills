@@ -19,4 +19,4 @@ status: pending
 - [x] [s06t09](s06t09-skills-status-should-add-a/): 'skills status' should add a label near 'available' skills wwhen they have untracked counterpart
 - [x] [s06t10](s06t10-improve-source-init-reinit-feedback/): Improve `source init` re-init feedback & add hidden `skills init`
 - [ ] [s06t11](s06t11-show-exact-errors-on-skills/): Show exact errors on skills update
-- [ ] [s06t12](s06t12-stream-gitsubprocess-invocations-under-debug.md): Stream git/subprocess invocations under --debug
+- [x] [s06t12](s06t12-stream-gitsubprocess-invocations-under-debug.md): Stream git/subprocess invocations under --debug

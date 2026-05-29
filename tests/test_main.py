@@ -6,13 +6,14 @@ from io import StringIO
 import pytest
 
 from repo_skills.cli._app import app
-from repo_skills.errors import AppError, set_print_callstack
+from repo_skills.debug import set_debug
+from repo_skills.errors import AppError
 from repo_skills.main import main
 
 
 @pytest.fixture(autouse=True)
 def _reset_debug() -> None:
-    set_print_callstack(False)
+    set_debug(False)
 
 
 @app.command(name="__test-raise-app-error", hidden=True)

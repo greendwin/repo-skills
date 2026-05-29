@@ -5,6 +5,7 @@ from pathlib import Path
 
 from rich.markup import escape
 
+from repo_skills.debug import debug_cmd, debug_output
 from repo_skills.errors import AppError, FileNotInCommitError
 from repo_skills.git import GitRepo
 from repo_skills.utils import fmt_command, fmt_ident, fmt_path
@@ -15,18 +16,22 @@ def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> AppError:
 
     props = {"repo": fmt_path(repo_path)}
 
+    branch_cmd = ["git", "branch", "--show-current"]
+    debug_cmd(branch_cmd, repo_path)
     try:
-        branch = subprocess.run(
-            ["git", "branch", "--show-current"],
+        result = subprocess.run(
+            branch_cmd,
             cwd=repo_path,
             capture_output=True,
             text=True,
             check=True,
-        ).stdout.strip()
+        )
+        branch = result.stdout.strip()
+        debug_output(result.stdout.strip(), result.stderr.strip())
         if branch:
             props["branch"] = fmt_ident(branch)
-    except subprocess.CalledProcessError:
-        pass
+    except subprocess.CalledProcessError as exc:
+        debug_output("", (exc.stderr or "").strip())
 
     if output:
         props[""] = f"[dim]{escape(output)}[/dim]"
@@ -46,9 +51,11 @@ class RealGitRepo:
         return self._path
 
     def _run(self, *args: str) -> str:
+        cmd = ["git", *args]
+        debug_cmd(cmd, self._path)
         try:
             result = subprocess.run(
-                ["git", *args],
+                cmd,
                 cwd=self._path,
                 capture_output=True,
                 text=True,
@@ -56,22 +63,29 @@ class RealGitRepo:
             )
         except subprocess.CalledProcessError as exc:
             output = (exc.stderr or exc.stdout or "").strip()
+            debug_output("", output)
             raise _git_error(args, output, self._path) from exc
 
+        debug_output(result.stdout.strip(), result.stderr.strip())
         return result.stdout.strip()
 
     def _run_bytes(self, *args: str) -> bytes:
+        cmd = ["git", *args]
+        debug_cmd(cmd, self._path)
         try:
             result = subprocess.run(
-                ["git", *args],
+                cmd,
                 cwd=self._path,
                 capture_output=True,
                 check=True,
             )
         except subprocess.CalledProcessError as exc:
             stderr = exc.stderr.decode(errors="replace").strip() if exc.stderr else ""
+            debug_output("", stderr)
             raise _git_error(args, stderr, self._path) from exc
 
+        stderr = result.stderr.decode(errors="replace").strip() if result.stderr else ""
+        debug_output("", stderr)
         return result.stdout
 
     def pull(self) -> None:

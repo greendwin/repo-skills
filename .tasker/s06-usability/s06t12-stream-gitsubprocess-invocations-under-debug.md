@@ -1,7 +1,7 @@
 ---
 id: s06t12
 slug: stream-gitsubprocess-invocations-under-debug
-status: pending
+status: done
 ---
 
 # Stream git/subprocess invocations under --debug

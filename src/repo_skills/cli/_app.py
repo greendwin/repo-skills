@@ -5,7 +5,8 @@ from importlib.metadata import version
 import typer
 from typer_di import TyperDI
 
-from repo_skills.errors import NoopError, set_print_callstack
+from repo_skills.debug import set_debug
+from repo_skills.errors import NoopError
 
 app = TyperDI(
     help="Manage agent skills.",
@@ -32,4 +33,4 @@ def _main_callback(
         help="Show version and exit.",
     ),
 ) -> None:
-    set_print_callstack(debug)
+    set_debug(debug)

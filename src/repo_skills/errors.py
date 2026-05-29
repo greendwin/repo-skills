@@ -8,12 +8,7 @@ from rich.markup import escape
 
 from repo_skills.utils import fmt_message
 
-_print_callstack = False
-
-
-def set_print_callstack(value: bool) -> None:
-    global _print_callstack
-    _print_callstack = value
+from .debug import is_debug
 
 
 class AppError(Exception):
@@ -52,14 +47,14 @@ def error_handler(console: Console) -> Generator[None]:
         console.print(ex.message)
         raise SystemExit(0)
     except AppError as ex:
-        if _print_callstack:
+        if is_debug():
             console.print_exception()
             raise SystemExit(1)
 
         console.print(f"[red]Error:[/red] {ex.message}")
         raise SystemExit(1)
     except Exception as ex:
-        if _print_callstack:
+        if is_debug():
             console.print_exception()
             raise SystemExit(1)
 

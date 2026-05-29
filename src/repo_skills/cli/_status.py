@@ -193,14 +193,12 @@ def _print_source_sections(
     for source_name in all_sources:
         try:
             _ = source_registry.get_source(source_name, load_skills=False)
+            echo(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
         except SourceBrokenError:
             echo(
-                f"[yellow]Source[/yellow] {fmt_ident(source_name)} - [red]broken[/red]"
+                f"[yellow]Source[/yellow] {fmt_ident(source_name)}  [red](broken)[/red]"
             )
-            has_output = True
-            continue
 
-        echo(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
         has_output = True
 
         for skill_name in sorted(installed_by_source.get(source_name, [])):

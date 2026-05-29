@@ -211,6 +211,40 @@ class TestStatusBrokenSource:
 
         assert_words_in_message(result.output, "broken-project", "broken")
 
+    def test_broken_source_label_uses_parentheses(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        broken_path = Path("/repos/broken-project")
+        fs.create_dir(broken_path / ".git")
+
+        registry = SourceRegistry()
+        registry.register_source("broken-project", broken_path)
+        save_source_registry(registry)
+
+        result = assert_invoke("status")
+
+        assert "(broken)" in result.output.lower()
+
+    def test_broken_source_shows_installed_skills(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        broken_path = Path("/repos/broken-project")
+        fs.create_dir(broken_path / ".git")
+
+        registry = SourceRegistry()
+        registry.register_source("broken-project", broken_path)
+        save_source_registry(registry)
+
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {"tdd": InstalledSkill(source="broken-project", commit="abc", files=hashes)}
+        )
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "broken-project", "broken")
+        assert_words_in_message(result.output, "tdd", "synced")
+
 
 class TestStatusOrphan:
     def test_shows_orphan_for_untracked_skill(

@@ -1,7 +1,7 @@
 ---
 id: s08t06
 slug: show-broken-sources-with-broken
-status: pending
+status: done
 ---
 
 # Show broken sources with (broken) label in status output

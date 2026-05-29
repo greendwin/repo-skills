@@ -54,8 +54,14 @@ def update(
         source = source_registry.get_source(source_name, load_skills=False)
         git = resolve_git_repo(source.repo_root)
         branch = source.get_branch(git)
+        
+        echo(f"Pulling {source_name} … ", end="")
         ensure_on_branch(git, branch, pull=not offline)
         source_branches[source_name] = branch
+        if offline:
+            echo("[dim]skipped[/dim]")
+        else:
+            echo("[green]done[/green]")
 
     skills_to_update = {name: manifest.skills[name]} if name else dict(manifest.skills)
 

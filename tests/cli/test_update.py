@@ -4,7 +4,13 @@ from pathlib import Path
 
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from repo_skills.config import InstalledSkill
+from repo_skills.config import (
+    InstalledSkill,
+    SourceConfig,
+    SourceRegistry,
+    save_source_config,
+    save_source_registry,
+)
 from tests.cli.helper import (
     INSTALL_DIR,
     SOURCE_REPO_ROOT,
@@ -122,6 +128,58 @@ class TestUpdatePull:
         assert_invoke("update", "--offline")
 
         assert _fake_git.pulled is False
+
+    def test_pull_done_message_on_normal_update(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd")
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit="abc", files=hashes)}
+        )
+
+        result = assert_invoke("update")
+
+        assert_words_in_message(result.output, "Pulling", "done")
+
+    def test_pull_skipped_message_when_offline(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd")
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit="abc", files=hashes)}
+        )
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "Pulling", "skipped")
+
+    def test_each_source_gets_own_pull_line(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        registry = SourceRegistry()
+        registry.register_source("my-project", git_repo)
+        registry.register_source("other-project", git_repo)
+        save_source_registry(registry)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dir="skills", branch=""), git_repo
+        )
+        save_source_config(
+            SourceConfig(name="other-project", skills_dir="skills", branch=""), git_repo
+        )
+        create_source_skill(fs, "tdd")
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit="abc", files=hashes)}
+        )
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "Pulling my-project")
+        assert_words_in_message(result.output, "Pulling other-project")
 
 
 class TestUpdateValidation:

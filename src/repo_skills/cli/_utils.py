@@ -9,8 +9,8 @@ from repo_skills.utils import fmt_path
 console = Console()
 
 
-def echo(message: str) -> None:
-    console.print(message)
+def echo(message: str, *, end: str = "\n") -> None:
+    console.print(message, end=end)
 
 
 def ensure_on_branch(git: GitRepo, branch: str, *, pull: bool = False) -> None:

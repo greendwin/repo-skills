@@ -1,7 +1,7 @@
 ---
 id: s06t11
 slug: show-exact-errors-on-skills
-status: pending
+status: in-progress
 ---
 
 # Show exact errors on skills update
@@ -44,6 +44,7 @@ Updating test3 ... up to date
 
 ## Subtasks
 
-- [ ] [s06t1101](s06t1101-add-pull-progress-lines.md): Add pull progress lines
+- [~] [s06t1101](s06t1101-add-pull-progress-lines.md): **review** Add pull progress lines
 - [ ] [s06t1102](s06t1102-stream-perskill-progress-with-specific.md): Stream per-skill progress with specific known-error messages
 - [ ] [s06t1103](s06t1103-catch-unexpected-perskill-exceptions-with.md): Catch unexpected per-skill exceptions with --debug traceback
+- [ ] [s06t1104](s06t1104-suppress-pyright-warnings-for-unused.md): Suppress Pyright warnings for unused _fake_git fixture params

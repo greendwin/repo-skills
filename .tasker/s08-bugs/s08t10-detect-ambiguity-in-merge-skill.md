@@ -1,7 +1,7 @@
 ---
 id: s08t10
 slug: detect-ambiguity-in-merge-skill
-status: pending
+status: done
 ---
 
 # Detect ambiguity in merge skill resolution (sources + providers)

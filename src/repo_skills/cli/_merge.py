@@ -136,9 +136,13 @@ def _merge_start(
     rebase: bool = False,
     search_base: bool = False,
 ) -> None:
-    provider: Provider | None = None
+    provider = None
     if from_provider:
         provider = ctx.provider_registry.require(from_provider)
+
+    source = None
+    if to_source:
+        source = ctx.source_registry.get_source(to_source, load_skills=True)
 
     installed = ctx.manifest.skills.get(skill_name)
     if installed is None:
@@ -146,13 +150,14 @@ def _merge_start(
             ctx,
             skill_name=skill_name,
             provider=provider,
+            source=source,
         )
         if untracked is None:
             _merge_orphan(
                 ctx,
                 skill_name,
                 provider=provider,
-                to_source=to_source,
+                source=source,
                 offline=offline,
                 no_commit=no_commit,
             )
@@ -310,25 +315,36 @@ def _resolve_untracked(
     *,
     provider: Provider | None,
     skill_name: str,
+    source: Source | None = None,
 ) -> _UntrackedSkill | None:
-    match = _find_in_provider(ctx.provider_registry, provider, skill_name)
-    if match is None:
-        raise AppError(f"Skill {fmt_ident(skill_name)} is not installed.")
+    provider = _find_skill_in_provider(ctx.provider_registry, provider, skill_name)
 
-    _, provider = match
+    if source is not None:
+        skill = source.skills.get(skill_name)
+        if skill is None:
+            return None
+        return _UntrackedSkill(provider, source, skill)
 
-    # TODO: BUG: multiple sources can have the same skill
-    source = None
-    skill = None
+    matches: list[tuple[Source, SourceSkill]] = []
     for source_name in ctx.source_registry.sources:
         source = ctx.source_registry.get_source(source_name, load_skills=True)
         skill = source.skills.get(skill_name)
         if skill is not None:
-            break
+            matches.append((source, skill))
 
-    if source is None or skill is None:
+    if len(matches) > 1:
+        names = ", ".join(
+            fmt_ident(s.name) for s, _ in sorted(matches, key=lambda x: x[0].name)
+        )
+        raise AppError(
+            f"Multiple sources have {fmt_ident(skill_name)} ({names}).",
+            hint=f"Use {fmt_command('--source')} to specify.",
+        )
+
+    if not matches:
         return None
 
+    source, skill = matches[0]
     return _UntrackedSkill(provider, source, skill)
 
 
@@ -337,21 +353,20 @@ def _merge_orphan(
     skill_name: str,
     *,
     provider: Provider | None,
-    to_source: str | None,
+    source: Source | None,
     offline: bool,
     no_commit: bool = False,
 ) -> None:
-    source = _resolve_orphan_source(ctx.source_registry, to_source)
+    if source is None:
+        source = _resolve_orphan_source(ctx.source_registry)
 
     git = resolve_git_repo(source.repo_root)
     target_branch = source.get_branch(git)
     ensure_on_branch(git, target_branch, pull=not offline)
 
-    match = _find_in_provider(ctx.provider_registry, provider, skill_name)
-    if match is None:
-        raise AppError(f"Skill {fmt_ident(skill_name)} is not installed.")
+    provider = _find_skill_in_provider(ctx.provider_registry, provider, skill_name)
 
-    installed_path, _ = match
+    installed_path = provider.install_path / skill_name
     skill_dst = source.repo_root / source.config.skills_dir / skill_name
     _copy_skill_with_replace(src=installed_path, dst=skill_dst)
 
@@ -373,22 +388,38 @@ def _merge_orphan(
     echo(f"Merge complete for {fmt_ident(skill_name)}.")
 
 
-def _find_in_provider(
+def _find_skill_in_provider(
     provider_registry: ProviderRegistry, provider: Provider | None, skill_name: str
-) -> tuple[Path, Provider] | None:
+) -> Provider:
     if provider:
         skill_path = provider.install_path / skill_name
-        if skill_path.is_dir():
-            return skill_path, provider
-        return None
+        if not skill_path.is_dir():
+            raise AppError(
+                f"Skill {fmt_ident(skill_name)} is not installed "
+                f"in {fmt_ident(provider.name)}."
+            )
 
-    # TODO: BUG: multiple providers can have same skill, but we peak only the first one
-    #       need to detect ambiguity
-    for provider in provider_registry.providers:
-        skill_path = provider.install_path / skill_name
+        return provider
+
+    matches = []
+    for prov in provider_registry.providers:
+        skill_path = prov.install_path / skill_name
         if skill_path.is_dir():
-            return skill_path, provider
-    return None
+            matches.append(prov)
+
+    if len(matches) > 1:
+        names = ", ".join(
+            fmt_ident(p.name) for p in sorted(matches, key=lambda x: x.name)
+        )
+        raise AppError(
+            f"Multiple providers have {fmt_ident(skill_name)} ({names}).",
+            hint=f"Use {fmt_command('--from')} to specify.",
+        )
+
+    if not matches:
+        raise AppError(f"Skill {fmt_ident(skill_name)} is not installed.")
+
+    return matches[0]
 
 
 def _copy_skill_with_replace(*, src: Path, dst: Path) -> None:
@@ -724,12 +755,7 @@ def _compute_distance(
     return total
 
 
-def _resolve_orphan_source(
-    source_registry: SourceRegistry, to_source: str | None
-) -> Source:
-    if to_source:
-        return source_registry.get_source(to_source, load_skills=False)
-
+def _resolve_orphan_source(source_registry: SourceRegistry) -> Source:
     if not source_registry.sources:
         raise AppError("No sources registered.")
 

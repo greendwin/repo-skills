@@ -176,6 +176,35 @@ class TestMergeProviderResolution:
 
         assert_words_in_message(result.output, "synced", "nothing to merge")
 
+    def test_errors_when_multiple_providers_have_untracked_skill(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        install_skill(fs, "tdd", content="# original")
+        install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
+        register_provider("cursor", str(CURSOR_DIR))
+
+        result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
+
+        assert_words_in_message(
+            result.exception.message, "multiple providers", "--from"
+        )
+
+    def test_from_flag_selects_provider_for_untracked_skill(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        install_skill(fs, "tdd", content="# original")
+        install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
+        register_provider("cursor", str(CURSOR_DIR))
+        (CURSOR_DIR / "tdd" / "SKILL.md").write_text("# edited in cursor")
+
+        result = assert_invoke("merge", "tdd", "--offline", "--from", "cursor")
+
+        assert_words_in_message(result.output, "merge", "complete")
+
 
 class TestBaseCommitSearch:
     def test_exact_hash_match(
@@ -542,6 +571,67 @@ class TestMergeUntracked:
         assert "unknown-skill" in manifest.skills
         assert manifest.skills["unknown-skill"].source == "my-project"
 
+    def test_untracked_errors_when_multiple_sources_without_flag(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        other_repo = OTHER_REPO_ROOT
+        fs.create_dir(other_repo / ".git")
+        registry = SourceRegistry()
+        registry.register_source("my-project", git_repo)
+        registry.register_source("other-project", other_repo)
+        save_source_registry(registry)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dir="skills"), git_repo
+        )
+        save_source_config(
+            SourceConfig(name="other-project", skills_dir="skills"), other_repo
+        )
+        create_source_skill(fs, "tdd", content="# original")
+        create_source_skill(fs, "tdd", content="# original", root=other_repo / "skills")
+        install_skill(fs, "tdd", content="# original")
+
+        result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
+
+        assert_words_in_message(
+            result.exception.message, "multiple sources", "--source"
+        )
+
+    def test_untracked_falls_through_to_orphan_when_source_lacks_skill(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        install_skill(fs, "tdd", content="# from provider")
+
+        result = assert_invoke("merge", "tdd", "--offline", "--source", "my-project")
+
+        assert_words_in_message(result.output, "merge", "complete")
+        source_skill = git_repo / "skills" / "tdd" / "SKILL.md"
+        assert source_skill.read_text() == "# from provider"
+
+    def test_untracked_selects_source_with_flag(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        other_repo = OTHER_REPO_ROOT
+        fs.create_dir(other_repo / ".git")
+        registry = SourceRegistry()
+        registry.register_source("my-project", git_repo)
+        registry.register_source("other-project", other_repo)
+        save_source_registry(registry)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dir="skills"), git_repo
+        )
+        save_source_config(
+            SourceConfig(name="other-project", skills_dir="skills"), other_repo
+        )
+        create_source_skill(fs, "tdd", content="# original")
+        create_source_skill(fs, "tdd", content="# original", root=other_repo / "skills")
+        install_skill(fs, "tdd", content="# original")
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        result = assert_invoke("merge", "tdd", "--offline", "--source", "my-project")
+
+        assert_words_in_message(result.output, "merge", "complete")
+
 
 class TestMergeOrphan:
     def test_single_source_auto_picks_and_merges(
@@ -645,6 +735,36 @@ class TestMergeOrphan:
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
         assert_words_in_message(result.exception.message, "not installed")
+
+    def test_errors_when_multiple_providers_have_orphan_skill(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        install_skill(fs, "my-new-skill", content="# brand new")
+        install_skill(fs, "my-new-skill", content="# brand new", install_dir=CURSOR_DIR)
+        register_provider("cursor", str(CURSOR_DIR))
+
+        result = assert_invoke("merge", "my-new-skill", "--offline", expect_error=True)
+
+        assert_words_in_message(
+            result.exception.message, "multiple providers", "--from"
+        )
+
+    def test_from_flag_selects_provider_for_orphan_skill(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        install_skill(fs, "my-new-skill", content="# from claude")
+        install_skill(
+            fs, "my-new-skill", content="# from cursor", install_dir=CURSOR_DIR
+        )
+        register_provider("cursor", str(CURSOR_DIR))
+
+        result = assert_invoke("merge", "my-new-skill", "--offline", "--from", "cursor")
+
+        assert_words_in_message(result.output, "merge", "complete")
+        source_skill = git_repo / "skills" / "my-new-skill" / "SKILL.md"
+        assert source_skill.read_text() == "# from cursor"
 
 
 class TestMergeValidation:

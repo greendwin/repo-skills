@@ -1,7 +1,7 @@
 ---
 id: s08t11
 slug: reattach-detached-skill-on-insync
-status: pending
+status: done
 ---
 
 # Reattach detached skill on in-sync, no-from merge path

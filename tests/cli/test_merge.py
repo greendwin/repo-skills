@@ -628,6 +628,29 @@ class TestMergeUntracked:
         assert _fake_git.orphan_branches == []
         assert _fake_git.committed_messages == []
 
+    def test_reattaches_detached_skill_when_all_in_sync(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", commit=COMMIT, files=hashes, detached=True
+                )
+            }
+        )
+        _fake_git.commits["tdd"] = "reattached-commit"
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        assert_words_in_message(result.output, "synced")
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert not entry.detached
+        assert entry.commit == "reattached-commit"
+
     def test_merges_untracked_orphan_with_single_source(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:

@@ -214,9 +214,7 @@ def _merge_start(
 
         # no diverged providers -- all in sync
         if provider is None:
-            # TODO: this case is not covered, but we can possibly
-            #       have here 'detached' skill, need to test it
-            # _reattach_installed_skill(ctx.manifest, skill_name, installed, git)
+            _reattach_installed_skill(ctx.manifest, skill_name, installed, git)
 
             raise NoopError(
                 f"{fmt_ident(skill_name)} is already synced. Nothing to merge."

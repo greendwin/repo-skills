@@ -1,7 +1,7 @@
 ---
 id: s06t1101
 slug: add-pull-progress-lines
-status: in-review
+status: done
 ---
 
 # Add pull progress lines

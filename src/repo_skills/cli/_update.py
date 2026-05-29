@@ -21,7 +21,6 @@ from ._utils import echo, ensure_on_branch
 
 _UPDATED = "[green]updated[/green]"
 _SKIPPED = "[yellow]skipped (modified)[/yellow]"
-_ERROR = "[red]error[/red]"
 _UP_TO_DATE = "[dim]up to date[/dim]"
 _DETACHED = "[yellow]detached (commit unreachable)[/yellow]"
 _RECOVERED = "[green]recovered[/green]"
@@ -54,7 +53,7 @@ def update(
         source = source_registry.get_source(source_name, load_skills=False)
         git = resolve_git_repo(source.repo_root)
         branch = source.get_branch(git)
-        
+
         echo(f"Pulling {source_name} … ", end="")
         ensure_on_branch(git, branch, pull=not offline)
         source_branches[source_name] = branch
@@ -65,18 +64,18 @@ def update(
 
     skills_to_update = {name: manifest.skills[name]} if name else dict(manifest.skills)
 
-    results: list[tuple[str, str]] = []
-
     for skill_name, entry in skills_to_update.items():
+        echo(f"Updating {skill_name} … ", end="")
+
         if entry.source not in source_registry.sources:
-            results.append((skill_name, _ERROR))
+            echo(f"[red]error: source '{entry.source}' not found[/red]")
             continue
 
         source = source_registry.get_source(entry.source, load_skills=True)
         skill = source.skills.get(skill_name)
 
         if skill is None:
-            results.append((skill_name, _ERROR))
+            echo("[red]error: skill removed from source[/red]")
             continue
 
         src = source.repo_root / skill.rel_path
@@ -109,11 +108,11 @@ def update(
             updated_any = True
 
         if skipped_any and not updated_any:
-            results.append((skill_name, _SKIPPED))
+            status = _SKIPPED
         elif updated_any:
-            results.append((skill_name, _UPDATED))
+            status = _UPDATED
         else:
-            results.append((skill_name, _UP_TO_DATE))
+            status = _UP_TO_DATE
 
         detached = entry.detached
         if entry.commit and entry.source in source_branches:
@@ -122,10 +121,12 @@ def update(
             reachable = git.is_ancestor(entry.commit, pinned)
             if reachable and entry.detached:
                 detached = False
-                results.append((skill_name, _RECOVERED))
+                status = f"{status}, {_RECOVERED}"
             elif not reachable and not entry.detached:
                 detached = True
-                results.append((skill_name, _DETACHED))
+                status = f"{status}, {_DETACHED}"
+
+        echo(status)
 
         manifest.register_skill(
             skill_name,
@@ -136,15 +137,3 @@ def update(
         )
 
     save_skill_manifest(manifest)
-    _print_report(results)
-
-
-def _print_report(results: list[tuple[str, str]]) -> None:
-    if not results:
-        return
-
-    name_width = max(len(name) for name, _ in results)
-
-    echo("[yellow]Update[/yellow]")
-    for skill_name, label in results:
-        echo(f"  {skill_name:<{name_width}}  {label}")

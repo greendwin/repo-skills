@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
@@ -130,7 +131,7 @@ class TestUpdatePull:
         assert _fake_git.pulled is False
 
     def test_pull_done_message_on_normal_update(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
         create_source_skill(fs, "tdd")
@@ -144,7 +145,7 @@ class TestUpdatePull:
         assert_words_in_message(result.output, "Pulling", "done")
 
     def test_pull_skipped_message_when_offline(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
         create_source_skill(fs, "tdd")
@@ -158,7 +159,7 @@ class TestUpdatePull:
         assert_words_in_message(result.output, "Pulling", "skipped")
 
     def test_each_source_gets_own_pull_line(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         registry = SourceRegistry()
         registry.register_source("my-project", git_repo)
@@ -242,9 +243,8 @@ class TestUpdateValidation:
 
         assert_words_in_message(result.exception.message, "not installed")
 
-    def test_shows_message_when_no_skills_installed(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    @pytest.mark.usefixtures("fs", "git_repo")
+    def test_shows_message_when_no_skills_installed(self) -> None:
         result = assert_invoke("update", "--offline")
 
         assert_words_in_message(result.output, "no skills installed")
@@ -274,7 +274,7 @@ class TestUpdateAll:
 
 class TestUpdateDetached:
     def test_unreachable_commit_marks_skill_detached(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
         create_source_skill(fs, "tdd")
@@ -311,7 +311,7 @@ class TestUpdateDetached:
         assert_words_in_message(result.output, "tdd", "recovered")
 
     def test_no_message_when_still_detached(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
         create_source_skill(fs, "tdd")
@@ -346,6 +346,74 @@ class TestUpdateDetached:
         manifest = load_manifest()
         assert manifest.skills["tdd"].detached is False
         assert "detached" not in result.output.lower()
+
+
+class TestUpdateErrorMessages:
+    def test_source_not_in_registry_shows_specific_error(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd")
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(source="my-project", commit="abc", files=hashes),
+                "orphan": InstalledSkill(
+                    source="unknown-source", commit="abc", files={}
+                ),
+            }
+        )
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(
+            result.output, "error: source 'unknown-source' not found"
+        )
+
+        manifest = load_manifest()
+        assert "orphan" in manifest.skills
+
+    def test_skill_removed_from_source_shows_specific_error(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd")
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(source="my-project", commit="abc", files=hashes),
+                "gone": InstalledSkill(source="my-project", commit="abc", files={}),
+            }
+        )
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "error: skill removed from source")
+
+        manifest = load_manifest()
+        assert "gone" in manifest.skills
+
+
+class TestUpdateProgressLines:
+    def test_progress_lines_appear_per_skill(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd v2")
+        create_source_skill(fs, "review", content="# review v2")
+        h1 = install_skill(fs, "tdd", content="# tdd v1")
+        h2 = install_skill(fs, "review", content="# review v1")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(source="my-project", commit="old", files=h1),
+                "review": InstalledSkill(source="my-project", commit="old", files=h2),
+            }
+        )
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "Updating tdd")
+        assert_words_in_message(result.output, "Updating review")
 
 
 class TestUpdateBatchResilience:

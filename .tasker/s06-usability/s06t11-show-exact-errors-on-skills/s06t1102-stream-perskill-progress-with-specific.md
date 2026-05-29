@@ -1,7 +1,7 @@
 ---
 id: s06t1102
 slug: stream-perskill-progress-with-specific
-status: pending
+status: done
 ---
 
 # Stream per-skill progress with specific known-error messages

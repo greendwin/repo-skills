@@ -16,3 +16,4 @@ build/
 # local configs
 .env
 *.local.json
+.worktrees

@@ -1,7 +1,7 @@
 ---
 id: s08t09
 slug: add-tests-for-broken-source
-status: pending
+status: done
 ---
 
 # Add tests for broken source display in status output

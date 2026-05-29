@@ -1,7 +1,7 @@
 ---
 id: s08t08
 slug: add-tests-for-source-list
-status: pending
+status: done
 ---
 
 # Add tests for `source list` edge cases: (missing) and (not-inited)

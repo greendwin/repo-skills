@@ -46,3 +46,30 @@ class TestSourceListBranch:
         result = assert_invoke("source", "list")
 
         assert "branch" not in result.output.lower()
+
+
+class TestSourceListMissing:
+    def test_shows_missing_for_nonexistent_path(self, git_repo: Path) -> None:
+        registry = SourceRegistry()
+        registry.register_source("gone", Path("/repos/gone"))
+        save_source_registry(registry)
+
+        result = assert_invoke("source", "list")
+
+        assert_words_in_message(result.output, "gone", "(missing)")
+
+
+class TestSourceListNotInited:
+    def test_shows_not_inited_when_no_config(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        source_path = Path("/repos/no-config")
+        fs.create_dir(source_path)
+
+        registry = SourceRegistry()
+        registry.register_source("no-config", source_path)
+        save_source_registry(registry)
+
+        result = assert_invoke("source", "list")
+
+        assert_words_in_message(result.output, "no-config", "(not-inited)")

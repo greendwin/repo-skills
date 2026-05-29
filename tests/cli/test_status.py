@@ -196,6 +196,22 @@ class TestStatusSourceNotFound:
         assert_words_in_message(result.output, "gone-project", "broken")
 
 
+class TestStatusBrokenSource:
+    def test_shows_broken_for_source_without_config(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        broken_path = Path("/repos/broken-project")
+        fs.create_dir(broken_path / ".git")
+
+        registry = SourceRegistry()
+        registry.register_source("broken-project", broken_path)
+        save_source_registry(registry)
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "broken-project", "broken")
+
+
 class TestStatusOrphan:
     def test_shows_orphan_for_untracked_skill(
         self, fs: FakeFilesystem, git_repo: Path

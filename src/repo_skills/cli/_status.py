@@ -111,8 +111,7 @@ def _scan_sources(
     available_by_source: SkillsBySource = {}
     all_source_skills: SourceSkillIndex = {}
 
-    for source_name, source_entry in source_registry.sources.items():
-        # TODO: show corresponding source as broken in status list
+    for source_name in source_registry.sources:
         try:
             source = source_registry.get_source(source_name, load_skills=True)
         except SourceBrokenError:

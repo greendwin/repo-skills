@@ -167,7 +167,6 @@ def source_list() -> None:
     for name, entry in registry.sources.items():
         message = f"  [white]{name:<{width}}[/white]  [cyan]{entry.repo_root}[/cyan]"
 
-        # TODO: test these branches on (missing) aand (not-inited)
         if not entry.repo_root.exists():
             message += "  [red](missing)[/red]"
             echo(message)

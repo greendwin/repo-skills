@@ -1,7 +1,7 @@
 ---
 id: s08t07
 slug: delete-resolvedstale-todo-comments
-status: pending
+status: cancelled
 ---
 
 # Delete resolved/stale TODO comments

@@ -26,7 +26,7 @@ from repo_skills.config import (
 )
 from repo_skills.errors import AppError, FileNotInCommitError, NoopError
 from repo_skills.git import GitRepo
-from repo_skills.utils import fmt_command, fmt_ident, fmt_path
+from repo_skills.utils import fmt_command, fmt_data, fmt_ident, fmt_path
 
 from ._app import app
 from ._deps import resolve_git_repo
@@ -225,17 +225,14 @@ def _merge_start(
     skill = source.get_skill(skill_name)
     installed_path = provider.install_path / skill_name
 
-    base_commit = installed.commit
-
-    if search_base or base_commit is None:
-        base_commit = _resolve_base_commit(git, skill, installed, installed_path)
-    elif not _check_reachability(git, base_commit, target_branch):
-        echo(
-            f"[yellow]Warning:[/yellow] Stored commit"
-            f" {fmt_ident(base_commit)} is dangling"
-            " — searching for base commit."
-        )
-        base_commit = _resolve_base_commit(git, skill, installed, installed_path)
+    base_commit = _resolve_base_commit(
+        git,
+        skill,
+        installed,
+        installed_path,
+        target_branch=target_branch,
+        force=search_base,
+    )
 
     branch_name = f"skill-merge/{provider.name}/{skill_name}"
     if base_commit is not None:
@@ -464,25 +461,37 @@ def _resolve_base_commit(
     skill: SourceSkill,
     installed: InstalledSkill,
     installed_path: Path,
+    *,
+    target_branch: str,
+    force: bool,
 ) -> str | None:
-    # TODO: test it when skill under category subfolder
+    if installed.commit and not force:
+        if _check_reachability(git, installed.commit, target_branch):
+            return installed.commit
+
+        echo(
+            f"[yellow]Warning:[/yellow] Stored commit"
+            f" {fmt_ident(installed.commit[:8])} is dangling"
+            " — searching for base commit."
+        )
+
     r = _find_base_commit(git, skill.rel_path, installed, installed_path)
 
-    # TODO: in case of orphan branch we must tell this to
-    #       (i.e. that rebase will be performed)
     if r is None:
+        echo("No base commit found — rebase will be performed.")
         return None
 
-    # TODO: rework this message
     if r.distance == 0:
         echo(
-            f"Base commit: {fmt_ident(r.commit)} " f"(exact match, {escape(r.message)})"
+            f"Base commit: {fmt_ident(r.commit[:8])} [dim](exact match)[/dim]\n"
+            f"Message: {fmt_data(escape(r.message))}"
         )
-    else:
-        echo(
-            f"Base commit: {fmt_ident(r.commit)}"
-            f" (distance: {r.distance}, {r.message})"
-        )
+        return r.commit
+
+    echo(
+        f"Base commit: {fmt_ident(r.commit[:8])} [dim](distance: {r.distance})[/dim]\n"
+        f"Message: {fmt_data(escape(r.message))}"
+    )
     return r.commit
 
 
@@ -602,8 +611,6 @@ def _finalize(
     )
 
     new_hashes = compute_file_hashes(installed_path)
-
-    # TODO: if equal, then why do we copy?
     is_equal = new_hashes == installed.files
 
     ctx.manifest.register_skill(

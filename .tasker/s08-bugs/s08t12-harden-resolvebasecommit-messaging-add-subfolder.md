@@ -1,7 +1,7 @@
 ---
 id: s08t12
 slug: harden-resolvebasecommit-messaging-add-subfolder
-status: pending
+status: done
 ---
 
 # Harden _resolve_base_commit messaging + add subfolder test

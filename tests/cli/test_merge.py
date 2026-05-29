@@ -19,6 +19,7 @@ from repo_skills.config import (
 from repo_skills.errors import AppError
 from tests.cli.helper import (
     INSTALL_DIR,
+    SKILLS_DIR,
     SOURCE_REPO_ROOT,
     FakeGitRepo,
     assert_invoke,
@@ -478,6 +479,75 @@ class TestCommitReachability:
 
         assert _fake_git.created_branches["skill-merge/claude/tdd"] == "found111"
         assert_words_in_message(result.output, "merge", "complete")
+
+
+class TestResolveBaseCommit:
+    def test_search_base_orphan_announces_rebase(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        """When --search-base finds no base commit, output mentions rebase."""
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        # No commit_logs -> _find_base_commit returns None
+        result = assert_invoke("merge", "tdd", "--search-base", "--offline")
+
+        assert "skill-merge/claude/tdd" in _fake_git.orphan_branches
+        assert_words_in_message(result.output, "no", "base", "commit", "rebase")
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_search_base_distance_escapes_markup(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        """Distance message must escape rich markup in commit messages."""
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        _fake_git.commit_logs["skills/tdd"] = ["aaa111"]
+        _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = b"# original-ish"
+        _fake_git.commit_messages = {"aaa111": "fix [red]broken[/red] thing"}
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        # Markup tags must appear literally, not be interpreted by rich
+        assert "[red]" in result.output
+        assert "[/red]" in result.output
+
+    def test_search_base_with_category_subfolder(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        """Base-commit search works when skill is under a category subfolder."""
+        register_source(git_repo)
+        create_source_skill(
+            fs, "tdd", content="# original", root=SKILLS_DIR / "testing"
+        )
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        _fake_git.commit_logs["skills/testing/tdd"] = ["cat111"]
+        _fake_git.files_at_commit[("cat111", "skills/testing/tdd/SKILL.md")] = (
+            b"# original"
+        )
+        _fake_git.commit_messages = {"cat111": "feat: add tdd skill"}
+
+        result = assert_invoke("merge", "tdd", "--search-base", "--offline")
+
+        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "cat111"
+        assert "cat111" in result.output
+        assert "exact match" in result.output
 
 
 class TestMergeUntracked:

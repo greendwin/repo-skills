@@ -16,9 +16,10 @@ Fix TODO-documented bugs and issues across the CLI.
 - [ ] [s08t04](s08t04-remove-mergeinprogress-blocking-check.md): Remove merge-in-progress blocking check
 - [ ] [s08t05](s08t05-add-force-to-source-remove.md): Add --force to `source remove` (orphan installed skills)
 - [ ] [s08t06](s08t06-show-broken-sources-with-broken.md): Show broken sources with (broken) label in status output
-- [ ] [s08t07](s08t07-delete-resolvedstale-todo-comments.md): Delete resolved/stale TODO comments
+- [x] ~~[s08t07](s08t07-delete-resolvedstale-todo-comments.md): Delete resolved/stale TODO comments~~
 - [x] [s08t08](s08t08-add-tests-for-source-list.md): Add tests for `source list` edge cases: (missing) and (not-inited)
 - [x] [s08t09](s08t09-add-tests-for-broken-source.md): Add tests for broken source display in status output
 - [x] [s08t10](s08t10-detect-ambiguity-in-merge-skill.md): Detect ambiguity in merge skill resolution (sources + providers)
 - [ ] [s08t11](s08t11-reattach-detached-skill-on-insync.md): Reattach detached skill on in-sync, no-from merge path
-- [ ] [s08t12](s08t12-harden-resolvebasecommit-messaging-add-subfolder.md): Harden _resolve_base_commit messaging + add subfolder test
+- [x] [s08t12](s08t12-harden-resolvebasecommit-messaging-add-subfolder.md): Harden _resolve_base_commit messaging + add subfolder test
+- [ ] [s08t13](s08t13-extract-shared-setup-in-testresolvebasecommit.md): Extract shared setup in TestResolveBaseCommit

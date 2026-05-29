@@ -197,7 +197,7 @@ class TestMergeProviderResolution:
         )
 
     def test_from_flag_selects_provider_for_untracked_skill(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
@@ -478,7 +478,7 @@ class TestResolveBaseCommit:
 
 class TestMergeUntracked:
     def test_merges_untracked_mergeable_skill(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
@@ -529,7 +529,7 @@ class TestMergeUntracked:
         assert not entry.detached
 
     def test_diverged_mergeable_copies_to_source(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
@@ -578,7 +578,7 @@ class TestMergeUntracked:
         assert entry.commit == "reattached-commit"
 
     def test_merges_untracked_orphan_with_single_source(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
         install_skill(fs, "unknown-skill", content="# something")
@@ -616,7 +616,7 @@ class TestMergeUntracked:
         )
 
     def test_untracked_falls_through_to_orphan_when_source_lacks_skill(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
         install_skill(fs, "tdd", content="# from provider")
@@ -628,7 +628,7 @@ class TestMergeUntracked:
         assert source_skill.read_text() == "# from provider"
 
     def test_untracked_selects_source_with_flag(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         other_repo = OTHER_REPO_ROOT
         fs.create_dir(other_repo / ".git")
@@ -654,7 +654,7 @@ class TestMergeUntracked:
 
 class TestMergeOrphan:
     def test_single_source_auto_picks_and_merges(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
         install_skill(fs, "my-new-skill", content="# brand new")
@@ -692,7 +692,7 @@ class TestMergeOrphan:
         )
 
     def test_source_flag_selects_target(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         other_repo = Path("/repos/other-project")
         fs.create_dir(other_repo / ".git")
@@ -770,7 +770,7 @@ class TestMergeOrphan:
         )
 
     def test_from_flag_selects_provider_for_orphan_skill(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
         install_skill(fs, "my-new-skill", content="# from claude")
@@ -884,7 +884,7 @@ class TestMergeValidation:
         )
 
     def test_copies_provider_files_to_source(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         _setup_diverged_skill(fs, git_repo)
 

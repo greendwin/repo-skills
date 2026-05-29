@@ -1,7 +1,7 @@
 ---
 id: s06t1104
 slug: suppress-pyright-warnings-for-unused
-status: pending
+status: done
 ---
 
 # Suppress Pyright warnings for unused _fake_git fixture params

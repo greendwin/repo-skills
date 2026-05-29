@@ -1,7 +1,7 @@
 ---
 id: s08
 slug: bugs
-status: pending
+status: done
 ---
 
 # Bugs
@@ -22,4 +22,4 @@ Fix TODO-documented bugs and issues across the CLI.
 - [x] [s08t10](s08t10-detect-ambiguity-in-merge-skill.md): Detect ambiguity in merge skill resolution (sources + providers)
 - [x] [s08t11](s08t11-reattach-detached-skill-on-insync.md): Reattach detached skill on in-sync, no-from merge path
 - [x] [s08t12](s08t12-harden-resolvebasecommit-messaging-add-subfolder.md): Harden _resolve_base_commit messaging + add subfolder test
-- [ ] [s08t13](s08t13-extract-shared-setup-in-testresolvebasecommit.md): Extract shared setup in TestResolveBaseCommit
+- [x] [s08t13](s08t13-extract-shared-setup-in-testresolvebasecommit.md): Extract shared setup in TestResolveBaseCommit

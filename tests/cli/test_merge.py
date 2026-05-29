@@ -51,13 +51,17 @@ def _fake_git() -> Generator[FakeGitRepo]:
 
 
 def _setup_diverged_skill(
-    fs: FakeFilesystem, git_repo: Path, *, branch: str = ""
+    fs: FakeFilesystem,
+    git_repo: Path,
+    *,
+    branch: str = "",
+    commit: str | None = COMMIT,
 ) -> None:
     register_source(git_repo, branch=branch)
     create_source_skill(fs, "tdd", content="# original")
     hashes = install_skill(fs, "tdd", content="# original")
     save_manifest(
-        {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+        {"tdd": InstalledSkill(source="my-project", commit=commit, files=hashes)}
     )
     (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -211,13 +215,7 @@ class TestBaseCommitSearch:
     def test_exact_hash_match(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo, commit=None)
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
         _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = b"# wrong"
@@ -231,13 +229,7 @@ class TestBaseCommitSearch:
     def test_closest_match_when_no_exact(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo, commit=None)
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
         _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = (
@@ -278,13 +270,7 @@ class TestBaseCommitSearch:
     def test_orphan_branch_when_no_commits(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo, commit=None)
 
         result = assert_invoke("merge", "tdd", "--offline")
 
@@ -295,13 +281,7 @@ class TestBaseCommitSearch:
     def test_search_base_ignores_stored_commit(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo)
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
         _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = b"# original"
@@ -315,13 +295,7 @@ class TestBaseCommitSearch:
     def test_search_base_reports_found_commit(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo)
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
         _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = (
@@ -342,13 +316,7 @@ class TestBaseCommitSearch:
     def test_search_base_reports_distance_for_closest(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo, commit=None)
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111"]
         _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = b"# original-ish"
@@ -363,13 +331,7 @@ class TestBaseCommitSearch:
     def test_search_base_skips_commit_with_missing_file(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo, commit=None)
 
         # First commit is missing the file (no entry in files_at_commit),
         # second commit has the exact match.
@@ -389,13 +351,7 @@ class TestBaseCommitSearch:
     def test_search_base_propagates_unexpected_error(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo, commit=None)
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111"]
         # Inject a generic AppError by using a custom side effect
@@ -419,13 +375,7 @@ class TestCommitReachability:
     def test_commit_on_other_branch_errors_with_search_base_hint(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo)
 
         _fake_git.ancestors[(COMMIT, "main")] = False
         _fake_git.reachable_commits.add(COMMIT)
@@ -437,13 +387,7 @@ class TestCommitReachability:
     def test_dangling_commit_auto_searches(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo)
 
         _fake_git.ancestors[(COMMIT, "main")] = False
 
@@ -460,13 +404,7 @@ class TestCommitReachability:
     def test_search_base_bypasses_reachability(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo)
 
         _fake_git.ancestors[(COMMIT, "main")] = False
         _fake_git.reachable_commits.add(COMMIT)
@@ -486,13 +424,7 @@ class TestResolveBaseCommit:
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         """When --search-base finds no base commit, output mentions rebase."""
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo, commit=None)
 
         # No commit_logs -> _find_base_commit returns None
         result = assert_invoke("merge", "tdd", "--search-base", "--offline")
@@ -505,13 +437,7 @@ class TestResolveBaseCommit:
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         """Distance message must escape rich markup in commit messages."""
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo, commit=None)
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111"]
         _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = b"# original-ish"
@@ -1176,13 +1102,7 @@ class TestMergeRebase:
     def test_rebase_orphan_ignores_flag(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
-        register_source(git_repo)
-        create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
-        )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        _setup_diverged_skill(fs, git_repo, commit=None)
 
         result = assert_invoke("merge", "tdd", "--offline", "--rebase")
 

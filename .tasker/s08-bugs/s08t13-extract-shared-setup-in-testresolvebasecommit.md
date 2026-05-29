@@ -1,7 +1,7 @@
 ---
 id: s08t13
 slug: extract-shared-setup-in-testresolvebasecommit
-status: pending
+status: done
 ---
 
 # Extract shared setup in TestResolveBaseCommit

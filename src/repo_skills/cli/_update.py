@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import shutil
+from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Annotated, Optional
 
 import typer
 from rich.markup import escape
 
 from repo_skills.config import (
+    InstalledSkill,
+    ProviderRegistry,
+    SourceRegistry,
     compute_file_hashes,
     load_provider_registry,
     load_skill_manifest,
@@ -21,11 +26,101 @@ from ._app import app
 from ._deps import resolve_git_repo
 from ._utils import console, echo, ensure_on_branch
 
-_UPDATED = "[green]updated[/green]"
-_SKIPPED = "[yellow]skipped (modified)[/yellow]"
-_UP_TO_DATE = "[dim]up to date[/dim]"
+
+class _Status(Enum):
+    UPDATED = auto()
+    SKIPPED = auto()
+    UP_TO_DATE = auto()
+
+
+_STATUS_LABEL: dict[_Status, str] = {
+    _Status.UPDATED: "[green]updated[/green]",
+    _Status.SKIPPED: "[yellow]skipped (modified)[/yellow]",
+    _Status.UP_TO_DATE: "[dim]up to date[/dim]",
+}
 _DETACHED = "[yellow]detached (commit unreachable)[/yellow]"
 _RECOVERED = "[green]recovered[/green]"
+
+
+class _SkillError(Exception):
+    pass
+
+
+@dataclass
+class _SkillReport:
+    provider_statuses: dict[str, _Status]
+    source_hashes: dict[str, str]
+    detached: bool
+    recovered: bool = False
+    newly_detached: bool = False
+
+
+def _update_skill(
+    skill_name: str,
+    entry: InstalledSkill,
+    source_registry: SourceRegistry,
+    providers: ProviderRegistry,
+    source_branches: dict[str, str],
+) -> _SkillReport:
+    if entry.source not in source_registry.sources:
+        raise _SkillError(f"source '{entry.source}' not found")
+
+    source = source_registry.get_source(entry.source, load_skills=True)
+    skill = source.skills.get(skill_name)
+
+    if skill is None:
+        raise _SkillError("skill removed from source")
+
+    src = source.repo_root / skill.rel_path
+    source_hashes = compute_file_hashes(src)
+    provider_statuses: dict[str, _Status] = {}
+
+    for provider in providers.providers:
+        install_dir = provider.install_path
+        dst = install_dir / skill_name
+
+        if not dst.exists():
+            install_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(src, dst)
+            provider_statuses[provider.name] = _Status.UPDATED
+            continue
+
+        current_hashes = compute_file_hashes(dst)
+
+        if current_hashes == source_hashes:
+            provider_statuses[provider.name] = _Status.UP_TO_DATE
+            continue
+
+        if current_hashes != entry.files:
+            provider_statuses[provider.name] = _Status.SKIPPED
+            continue
+
+        shutil.rmtree(dst)
+        shutil.copytree(src, dst)
+        provider_statuses[provider.name] = _Status.UPDATED
+
+    detached = entry.detached
+    recovered = False
+    newly_detached = False
+
+    if entry.commit and entry.source in source_branches:
+        git = resolve_git_repo(source.repo_root)
+        pinned = source_branches[entry.source]
+        reachable = git.is_ancestor(entry.commit, pinned)
+        if reachable and entry.detached:
+            detached = False
+            recovered = True
+        elif not reachable and not entry.detached:
+            detached = True
+            newly_detached = True
+
+    return _SkillReport(
+        provider_statuses=provider_statuses,
+        source_hashes=source_hashes,
+        detached=detached,
+        recovered=recovered,
+        newly_detached=newly_detached,
+    )
 
 
 @app.command(help="Update installed skills from sources.")
@@ -70,79 +165,59 @@ def update(
     for skill_name, entry in skills_to_update.items():
         echo(f"Updating {fmt_data(skill_name)} … ", end="")
 
-        if entry.source not in source_registry.sources:
-            echo(f"[red]error: source '{escape(entry.source)}' not found[/red]")
-            continue
-
-        source = source_registry.get_source(entry.source, load_skills=True)
-        skill = source.skills.get(skill_name)
-
-        if skill is None:
-            echo("[red]error: skill removed from source[/red]")
-            continue
-
         try:
-            src = source.repo_root / skill.rel_path
-
-            source_hashes = compute_file_hashes(src)
-            updated_any = False
-            skipped_any = False
-
-            for provider in providers.providers:
-                install_dir = provider.install_path
-                dst = install_dir / skill_name
-
-                if not dst.exists():
-                    install_dir.mkdir(parents=True, exist_ok=True)
-                    shutil.copytree(src, dst)
-                    updated_any = True
-                    continue
-
-                current_hashes = compute_file_hashes(dst)
-
-                if current_hashes == source_hashes:
-                    continue
-
-                if current_hashes != entry.files:
-                    skipped_any = True
-                    continue
-
-                shutil.rmtree(dst)
-                shutil.copytree(src, dst)
-                updated_any = True
-
-            if skipped_any and not updated_any:
-                status = _SKIPPED
-            elif updated_any:
-                status = _UPDATED
-            else:
-                status = _UP_TO_DATE
-
-            detached = entry.detached
-            if entry.commit and entry.source in source_branches:
-                git = resolve_git_repo(source.repo_root)
-                pinned = source_branches[entry.source]
-                reachable = git.is_ancestor(entry.commit, pinned)
-                if reachable and entry.detached:
-                    detached = False
-                    status = f"{status}, {_RECOVERED}"
-                elif not reachable and not entry.detached:
-                    detached = True
-                    status = f"{status}, {_DETACHED}"
-
-            echo(status)
-
-            manifest.register_skill(
-                skill_name,
-                source_name=entry.source,
-                commit=entry.commit,
-                files=source_hashes,
-                detached=detached,
+            report = _update_skill(
+                skill_name, entry, source_registry, providers, source_branches
             )
+        except _SkillError as ex:
+            echo(f"[red]error: {escape(str(ex))}[/red]")
+            continue
         except Exception as ex:
             echo(f"[red]error: {escape(str(ex))}[/red]")
             if is_debug():
                 console.print_exception()
             continue
 
+        _print_skill_report(skill_name, report)
+
+        manifest.register_skill(
+            skill_name,
+            source_name=entry.source,
+            commit=entry.commit,
+            files=report.source_hashes,
+            detached=report.detached,
+        )
+
     save_skill_manifest(manifest)
+
+
+def _print_skill_report(skill_name: str, report: _SkillReport) -> None:
+    unique = set(report.provider_statuses.values())
+
+    if len(report.provider_statuses) > 1 and len(unique) > 1:
+        # TODO: this looks ugly, need to rework this update-status code
+        echo("")
+        for pname, pstatus in report.provider_statuses.items():
+            echo(
+                f"  Updating {fmt_data(skill_name)} ({pname}) … "
+                f"{_STATUS_LABEL[pstatus]}"
+            )
+        if report.recovered:
+            echo(f"  Updating {fmt_data(skill_name)} … {_RECOVERED}")
+        elif report.newly_detached:
+            echo(f"  Updating {fmt_data(skill_name)} … {_DETACHED}")
+        return
+
+    if _Status.SKIPPED in unique and _Status.UPDATED not in unique:
+        status = _STATUS_LABEL[_Status.SKIPPED]
+    elif _Status.UPDATED in unique:
+        status = _STATUS_LABEL[_Status.UPDATED]
+    else:
+        status = _STATUS_LABEL[_Status.UP_TO_DATE]
+
+    if report.recovered:
+        status = f"{status}, {_RECOVERED}"
+    elif report.newly_detached:
+        status = f"{status}, {_DETACHED}"
+
+    echo(status)

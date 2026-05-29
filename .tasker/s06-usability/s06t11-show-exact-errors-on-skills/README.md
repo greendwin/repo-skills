@@ -1,7 +1,7 @@
 ---
 id: s06t11
 slug: show-exact-errors-on-skills
-status: pending
+status: done
 ---
 
 # Show exact errors on skills update
@@ -48,4 +48,4 @@ Updating test3 ... up to date
 - [x] [s06t1102](s06t1102-stream-perskill-progress-with-specific.md): Stream per-skill progress with specific known-error messages
 - [x] [s06t1103](s06t1103-catch-unexpected-perskill-exceptions-with.md): Catch unexpected per-skill exceptions with --debug traceback
 - [x] [s06t1104](s06t1104-suppress-pyright-warnings-for-unused.md): Suppress Pyright warnings for unused _fake_git fixture params
-- [ ] [s06t1105](s06t1105-show-perprovider-status-when-update.md): Show per-provider status when update results differ across providers
+- [x] [s06t1105](s06t1105-show-perprovider-status-when-update.md): Show per-provider status when update results differ across providers

@@ -1,7 +1,7 @@
 ---
 id: s06t1105
 slug: show-perprovider-status-when-update
-status: pending
+status: done
 ---
 
 # Show per-provider status when update results differ across providers

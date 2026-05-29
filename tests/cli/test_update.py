@@ -522,3 +522,136 @@ class TestUpdateExceptionHandling:
         result = assert_invoke("update", "--offline")
 
         assert "Traceback" not in result.output
+
+
+class TestUpdatePerProviderOutput:
+    def test_mixed_status_shows_per_provider_lines(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd v2")
+        hashes = install_skill(fs, "tdd", content="# tdd v1")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit="old", files=hashes)}
+        )
+
+        cursor_dir = Path("/home/user/.cursor/skills")
+        register_provider("cursor", str(cursor_dir))
+        install_skill(fs, "tdd", content="# user edit", install_dir=cursor_dir)
+
+        result = assert_invoke("update", "--offline")
+
+        lines = result.output.splitlines()
+        claude_lines = [line for line in lines if "claude" in line]
+        cursor_lines = [line for line in lines if "cursor" in line]
+        assert len(claude_lines) == 1
+        assert len(cursor_lines) == 1
+        assert_words_in_message(claude_lines[0], "tdd (claude)", "updated")
+        assert_words_in_message(cursor_lines[0], "tdd (cursor)", "skipped")
+
+    def test_all_providers_updated_shows_single_line(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd v2")
+        hashes = install_skill(fs, "tdd", content="# tdd v1")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit="old", files=hashes)}
+        )
+
+        cursor_dir = Path("/home/user/.cursor/skills")
+        register_provider("cursor", str(cursor_dir))
+        install_skill(fs, "tdd", content="# tdd v1", install_dir=cursor_dir)
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "Updating tdd")
+        assert "claude" not in result.output.lower()
+        assert "cursor" not in result.output.lower()
+
+    def test_all_providers_skipped_shows_single_line(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd v2")
+        baseline = install_skill(fs, "tdd", content="# tdd v1")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit="old", files=baseline)}
+        )
+        # Simulate user edits on both providers so both diverge from baseline
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# user edit")
+        cursor_dir = Path("/home/user/.cursor/skills")
+        register_provider("cursor", str(cursor_dir))
+        install_skill(fs, "tdd", content="# user edit", install_dir=cursor_dir)
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "Updating tdd", "skipped")
+        assert "claude" not in result.output.lower()
+        assert "cursor" not in result.output.lower()
+
+    def test_all_providers_up_to_date_shows_single_line(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd")
+        hashes = install_skill(fs, "tdd", content="# tdd")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit="abc", files=hashes)}
+        )
+
+        cursor_dir = Path("/home/user/.cursor/skills")
+        register_provider("cursor", str(cursor_dir))
+        install_skill(fs, "tdd", content="# tdd", install_dir=cursor_dir)
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "Updating tdd", "up to date")
+        assert "claude" not in result.output.lower()
+        assert "cursor" not in result.output.lower()
+
+    def test_single_provider_shows_single_line(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd v2")
+        hashes = install_skill(fs, "tdd", content="# tdd v1")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit="old", files=hashes)}
+        )
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "Updating tdd", "updated")
+        assert "claude" not in result.output.lower()
+
+    def test_per_provider_lines_with_recovered(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd v2")
+        hashes = install_skill(fs, "tdd", content="# tdd v1")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", commit="abc123", files=hashes, detached=True
+                )
+            }
+        )
+
+        cursor_dir = Path("/home/user/.cursor/skills")
+        register_provider("cursor", str(cursor_dir))
+        install_skill(fs, "tdd", content="# user edit", install_dir=cursor_dir)
+
+        _fake_git.ancestors[("abc123", "main")] = True
+
+        result = assert_invoke("update", "--offline")
+
+        lines = result.output.splitlines()
+        claude_lines = [line for line in lines if "claude" in line]
+        cursor_lines = [line for line in lines if "cursor" in line]
+        assert len(claude_lines) == 1
+        assert len(cursor_lines) == 1
+        assert_words_in_message(claude_lines[0], "tdd (claude)", "updated")
+        assert_words_in_message(cursor_lines[0], "tdd (cursor)", "skipped")
+        assert_words_in_message(result.output, "recovered")

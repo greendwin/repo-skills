@@ -26,11 +26,10 @@ from repo_skills.config import (
 )
 from repo_skills.console import console, fmt_command, fmt_data, fmt_ident, fmt_path
 from repo_skills.errors import AppError, FileNotInCommitError, NoopError
-from repo_skills.git import GitRepo
+from repo_skills.git import GitRepo, ensure_on_branch
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._utils import ensure_on_branch
 
 MERGE_BRANCH_PREFIX = "skill-merge/"
 

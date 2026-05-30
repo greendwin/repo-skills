@@ -20,10 +20,10 @@ from repo_skills.config import (
 )
 from repo_skills.console import console, fmt_data, fmt_ident
 from repo_skills.errors import AppError, NoopError
+from repo_skills.git import ensure_on_branch
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._utils import ensure_on_branch
 
 
 class _Status(Enum):
@@ -34,11 +34,12 @@ class _Status(Enum):
 
 _STATUS_LABEL: dict[_Status, str] = {
     _Status.UPDATED: "[green]updated[/green]",
-    _Status.SKIPPED: "[yellow]skipped (modified)[/yellow]",
-    _Status.UP_TO_DATE: "[dim]up to date[/dim]",
+    _Status.UP_TO_DATE: "[blue]up-to-date[/blue]",
+    _Status.SKIPPED: "[yellow]skipped[/yellow] [dim](modified)[/dim]",
 }
-_DETACHED = "[yellow]detached (commit unreachable)[/yellow]"
+_DETACHED = "[yellow]detached[/yellow] [dim](commit unreachable)[/dim]"
 _RECOVERED = "[green]recovered[/green]"
+_UNTRACKED = "[yellow]untracked[/yellow] [dim](need merge)[/dim]"
 
 
 class _SkillError(Exception):
@@ -155,9 +156,9 @@ def update(
             ensure_on_branch(git, branch, pull=not offline)
             source_branches[source_name] = branch
             if offline:
-                console.print("[dim]skipped[/dim]")
+                console.finish("[dim]skipped[/dim]")
             else:
-                console.print("[green]done[/green]")
+                console.finish("[green]done[/green]")
 
     skills_to_update = {name: manifest.skills[name]} if name else dict(manifest.skills)
 
@@ -197,10 +198,11 @@ def _print_skill_report(skill_name: str, report: _SkillReport) -> None:
             console.finish(_RECOVERED)
         elif report.newly_detached:
             console.finish(_DETACHED)
+        elif report.detached:
+            console.finish(_UNTRACKED)
 
-        # we should print several distinct statuses for same skill based on provider
-        for prov_name, pstatus in report.provider_statuses.items():
-            console.print(f"  {fmt_data(prov_name)}: {_STATUS_LABEL[pstatus]}")
+        for prov_name, prov_status in report.provider_statuses.items():
+            console.print(f"  {fmt_data(prov_name)}: {_STATUS_LABEL[prov_status]}")
         return
 
     if _Status.SKIPPED in unique and _Status.UPDATED not in unique:
@@ -214,5 +216,7 @@ def _print_skill_report(skill_name: str, report: _SkillReport) -> None:
         status = f"{status}, {_RECOVERED}"
     elif report.newly_detached:
         status = f"{status}, {_DETACHED}"
+    elif report.detached:
+        status = _UNTRACKED
 
     console.finish(status)

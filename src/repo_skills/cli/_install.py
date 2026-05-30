@@ -17,11 +17,10 @@ from repo_skills.config import (
 )
 from repo_skills.console import console, fmt_command, fmt_ident
 from repo_skills.errors import AppError
-from repo_skills.git import GitRepo
+from repo_skills.git import GitRepo, ensure_on_branch
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._utils import ensure_on_branch
 
 
 @app.command(help="Install a skill from a source.")
@@ -99,6 +98,7 @@ def _install_one(
         git,
         source.get_branch(git),
         pull=not offline and source.name not in pulled_sources,
+        require_clean=False,  # if pull is not needed, it's ok to have dirty repo
     )
     pulled_sources.add(source.name)
 

@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from .console import fmt_path
+from .errors import AppError
+
 
 class GitRepo(Protocol):
     @property
@@ -33,3 +36,25 @@ class GitRepo(Protocol):
     def get_commit_message(self, commit: str) -> str: ...
     def is_ancestor(self, commit: str, branch: str) -> bool: ...
     def commit_exists_in_any_branch(self, commit: str) -> bool: ...
+
+
+def ensure_on_branch(
+    git: GitRepo,
+    branch: str,
+    *,
+    pull: bool = False,
+    require_clean: bool = True,
+) -> None:
+    needs_checkout = git.current_branch() != branch
+    if require_clean or needs_checkout or pull:
+        if not git.is_clean():
+            raise AppError(
+                "Repo has uncommitted changes.",
+                props={"repo": fmt_path(git.root)},
+            )
+
+    if needs_checkout:
+        git.checkout(branch)
+
+    if pull:
+        git.pull()

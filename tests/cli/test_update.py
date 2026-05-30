@@ -82,7 +82,7 @@ class TestUpdateUpToDate:
 
         result = assert_invoke("update", "--offline")
 
-        assert_words_in_message(result.output, "tdd", "up to date")
+        assert_words_in_message(result.output, "tdd", "up-to-date")
 
 
 class TestUpdateAutoInstallsNewProvider:
@@ -214,9 +214,9 @@ class TestUpdateValidation:
 
         result = assert_invoke("update", "--offline")
 
-        assert_words_in_message(result.output, "tdd", "up to date")
+        assert_words_in_message(result.output, "tdd", "up-to-date")
 
-    def test_errors_when_repo_is_dirty(
+    def test_deny_dirty_repo_on_correct_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _fake_git.clean = False
@@ -228,7 +228,21 @@ class TestUpdateValidation:
         )
 
         result = assert_invoke("update", "--offline", expect_error=True)
+        assert_words_in_message(result.exception.message, "uncommitted changes")
 
+    def test_errors_when_dirty_and_wrong_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _fake_git.clean = False
+        _fake_git.branch = "other"
+        register_source(git_repo)
+        create_source_skill(fs, "tdd")
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {"tdd": InstalledSkill(source="my-project", commit="abc", files=hashes)}
+        )
+
+        result = assert_invoke("update", "--offline", expect_error=True)
         assert_words_in_message(result.exception.message, "uncommitted changes")
 
     def test_errors_when_skill_not_installed(
@@ -312,7 +326,7 @@ class TestUpdateDetached:
         assert manifest.skills["tdd"].detached is False
         assert_words_in_message(result.output, "tdd", "recovered")
 
-    def test_no_message_when_still_detached(
+    def test_still_detached_shows_untracked(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
@@ -330,7 +344,7 @@ class TestUpdateDetached:
 
         manifest = load_manifest()
         assert manifest.skills["tdd"].detached is True
-        assert "detached" not in result.output.lower()
+        assert_words_in_message(result.output, "tdd", "untracked")
         assert "recovered" not in result.output.lower()
 
     def test_no_detached_check_when_commit_is_none(
@@ -606,7 +620,7 @@ class TestUpdatePerProviderOutput:
 
         result = assert_invoke("update", "--offline")
 
-        assert_words_in_message(result.output, "Updating tdd", "up to date")
+        assert_words_in_message(result.output, "Updating tdd", "up-to-date")
         assert "claude" not in result.output.lower()
         assert "cursor" not in result.output.lower()
 

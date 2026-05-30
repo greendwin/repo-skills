@@ -18,13 +18,12 @@ from repo_skills.config import (
     load_source_registry,
     save_skill_manifest,
 )
-from repo_skills.debug import is_debug
+from repo_skills.console import console, fmt_data, fmt_ident
 from repo_skills.errors import AppError, NoopError
-from repo_skills.utils import fmt_data, fmt_ident
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._utils import console, echo, ensure_on_branch
+from ._utils import ensure_on_branch
 
 
 class _Status(Enum):
@@ -152,41 +151,40 @@ def update(
         git = resolve_git_repo(source.repo_root)
         branch = source.get_branch(git)
 
-        echo(f"Pulling {fmt_data(source_name)} … ", end="")
-        ensure_on_branch(git, branch, pull=not offline)
-        source_branches[source_name] = branch
-        if offline:
-            echo("[dim]skipped[/dim]")
-        else:
-            echo("[green]done[/green]")
+        with console.running(f"Pulling {fmt_data(source_name)}"):
+            ensure_on_branch(git, branch, pull=not offline)
+            source_branches[source_name] = branch
+            if offline:
+                console.print("[dim]skipped[/dim]")
+            else:
+                console.print("[green]done[/green]")
 
     skills_to_update = {name: manifest.skills[name]} if name else dict(manifest.skills)
 
     for skill_name, entry in skills_to_update.items():
-        echo(f"Updating {fmt_data(skill_name)} … ", end="")
+        with console.running(f"Updating {fmt_data(skill_name)}"):
+            try:
+                report = _update_skill(
+                    skill_name, entry, source_registry, providers, source_branches
+                )
+            except _SkillError as ex:
+                console.print(f"[red]error: {escape(str(ex))}[/red]")
+                continue
+            except Exception as ex:
+                console.print(f"[red]error: {escape(str(ex))}[/red]")
+                if console.debug:
+                    console.print_exception()
+                continue
 
-        try:
-            report = _update_skill(
-                skill_name, entry, source_registry, providers, source_branches
+            _print_skill_report(skill_name, report)
+
+            manifest.register_skill(
+                skill_name,
+                source_name=entry.source,
+                commit=entry.commit,
+                files=report.source_hashes,
+                detached=report.detached,
             )
-        except _SkillError as ex:
-            echo(f"[red]error: {escape(str(ex))}[/red]")
-            continue
-        except Exception as ex:
-            echo(f"[red]error: {escape(str(ex))}[/red]")
-            if is_debug():
-                console.print_exception()
-            continue
-
-        _print_skill_report(skill_name, report)
-
-        manifest.register_skill(
-            skill_name,
-            source_name=entry.source,
-            commit=entry.commit,
-            files=report.source_hashes,
-            detached=report.detached,
-        )
 
     save_skill_manifest(manifest)
 
@@ -196,16 +194,16 @@ def _print_skill_report(skill_name: str, report: _SkillReport) -> None:
 
     if len(report.provider_statuses) > 1 and len(unique) > 1:
         # TODO: this looks ugly, need to rework this update-status code
-        echo("")
+        console.print("")
         for pname, pstatus in report.provider_statuses.items():
-            echo(
+            console.print(
                 f"  Updating {fmt_data(skill_name)} ({pname}) … "
                 f"{_STATUS_LABEL[pstatus]}"
             )
         if report.recovered:
-            echo(f"  Updating {fmt_data(skill_name)} … {_RECOVERED}")
+            console.print(f"  Updating {fmt_data(skill_name)} … {_RECOVERED}")
         elif report.newly_detached:
-            echo(f"  Updating {fmt_data(skill_name)} … {_DETACHED}")
+            console.print(f"  Updating {fmt_data(skill_name)} … {_DETACHED}")
         return
 
     if _Status.SKIPPED in unique and _Status.UPDATED not in unique:
@@ -220,4 +218,4 @@ def _print_skill_report(skill_name: str, report: _SkillReport) -> None:
     elif report.newly_detached:
         status = f"{status}, {_DETACHED}"
 
-    echo(status)
+    console.print(status)

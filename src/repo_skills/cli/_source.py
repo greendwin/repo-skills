@@ -16,13 +16,13 @@ from repo_skills.config import (
     save_source_config,
     save_source_registry,
 )
+from repo_skills.console import console, fmt_data, fmt_ident, fmt_path
 from repo_skills.discovery import detect_skills_dir
 from repo_skills.errors import AppError, NoopError
-from repo_skills.utils import fmt_data, fmt_ident, fmt_path, write_text
+from repo_skills.utils import write_text
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._utils import echo
 
 DEFAULT_SKILLS_DIR = "skills"
 GIT_KEEP_FILE = ".gitkeep"
@@ -80,7 +80,7 @@ def source_init(
     registry.register_source(source_name, git.root)
     save_source_registry(registry)
 
-    echo(f"Initialized source {fmt_ident(source_name)}.")
+    console.print(f"Initialized source {fmt_ident(source_name)}.")
 
 
 def _handle_reinit(
@@ -120,15 +120,15 @@ def _handle_reinit(
     source_label = fmt_ident(effective_name)
     if changes:
         if was_registered:
-            echo(f"Updated source {source_label}.")
+            console.print(f"Updated source {source_label}.")
         else:
-            echo(f"Registered source {source_label}.")
+            console.print(f"Registered source {source_label}.")
         for change in changes:
-            echo(change)
+            console.print(change)
     elif not was_registered:
-        echo(f"Registered source {source_label}.")
+        console.print(f"Registered source {source_label}.")
     else:
-        echo(f"Source {source_label} already initialized.")
+        console.print(f"Source {source_label} already initialized.")
 
 
 def _rename_installed_skills(old_name: str, new_name: str) -> None:
@@ -156,7 +156,7 @@ def source_list() -> None:
     if not registry.sources:
         raise NoopError("[dim]No sources registered.[/dim]")
 
-    echo("[yellow]Skill sources[/yellow]")
+    console.print("[yellow]Skill sources[/yellow]")
     width = max(len(n) for n in registry.sources)
     width = max(width, 16)
     for name, entry in registry.sources.items():
@@ -164,7 +164,7 @@ def source_list() -> None:
 
         if not entry.repo_root.exists():
             message += "  [red](missing)[/red]"
-            echo(message)
+            console.print(message)
             continue
 
         config = load_source_config(entry.repo_root)
@@ -172,7 +172,7 @@ def source_list() -> None:
             message += "  [red](not-inited)[/red]"
         elif config.branch:
             message += f"  [dim](branch: {config.branch})[/dim]"
-        echo(message)
+        console.print(message)
 
 
 @source_app.command(name="remove", help="Remove a source from registry.")
@@ -206,9 +206,9 @@ def source_remove(
         save_skill_manifest(manifest)
 
         names = ", ".join(fmt_ident(n) for n in sorted(matching))
-        echo(f"Unregistered {fmt_data(len(matching))} skill(s): {names}.")
+        console.print(f"Unregistered {fmt_data(len(matching))} skill(s): {names}.")
 
     source_registry.unregister_source(source_name)
     save_source_registry(source_registry)
 
-    echo(f"Removed source {fmt_ident(source_name)} at {fmt_path(repo_root)}.")
+    console.print(f"Removed source {fmt_ident(source_name)} at {fmt_path(repo_root)}.")

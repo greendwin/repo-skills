@@ -4,9 +4,10 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from repo_skills.console import fmt_ident, fmt_path
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
-from repo_skills.utils import fmt_ident, fmt_path, load_config, save_config
+from repo_skills.utils import load_config, save_config
 
 REPO_SKILLS_DIR = ".repo-skills"
 SOURCE_CONFIG_PATH = f"{REPO_SKILLS_DIR}/source.json"

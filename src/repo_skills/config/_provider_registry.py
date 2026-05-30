@@ -6,8 +6,9 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from repo_skills.console import fmt_ident
 from repo_skills.errors import AppError
-from repo_skills.utils import fmt_ident, load_config, save_config
+from repo_skills.utils import load_config, save_config
 
 from ._utils import default_config_path
 

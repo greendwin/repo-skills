@@ -6,14 +6,14 @@ from io import StringIO
 import pytest
 
 from repo_skills.cli._app import app
-from repo_skills.debug import set_debug
+from repo_skills.console import console
 from repo_skills.errors import AppError
 from repo_skills.main import main
 
 
 @pytest.fixture(autouse=True)
 def _reset_debug() -> None:
-    set_debug(False)
+    console.debug = False
 
 
 @app.command(name="__test-raise-app-error", hidden=True)
@@ -39,15 +39,17 @@ class RunMain:
         self.monkeypatch = monkeypatch
 
     def __call__(self, *args: str) -> tuple[str, int]:
-        buf = StringIO()
+        out = StringIO()
+        err = StringIO()
         self.monkeypatch.setattr(sys, "argv", ["skills", *args])
-        self.monkeypatch.setattr(sys, "stdout", buf)
+        self.monkeypatch.setattr(sys, "stdout", out)
+        self.monkeypatch.setattr(sys, "stderr", err)
 
         try:
             main()
-            return buf.getvalue(), 0
+            return out.getvalue() + err.getvalue(), 0
         except SystemExit as ex:
-            return buf.getvalue(), int(ex.code or 0)
+            return out.getvalue() + err.getvalue(), int(ex.code or 0)
 
 
 @pytest.fixture

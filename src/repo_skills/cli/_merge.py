@@ -24,13 +24,13 @@ from repo_skills.config import (
     load_source_registry,
     save_skill_manifest,
 )
+from repo_skills.console import console, fmt_command, fmt_data, fmt_ident, fmt_path
 from repo_skills.errors import AppError, FileNotInCommitError, NoopError
 from repo_skills.git import GitRepo
-from repo_skills.utils import fmt_command, fmt_data, fmt_ident, fmt_path
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._utils import echo, ensure_on_branch
+from ._utils import ensure_on_branch
 
 MERGE_BRANCH_PREFIX = "skill-merge/"
 
@@ -238,7 +238,7 @@ def _merge_start(
     )
 
     if no_commit:
-        echo(
+        console.print(
             "Files copied to source repo. Review, commit, and run"
             f" {fmt_command('skills merge --continue')}."
         )
@@ -258,11 +258,13 @@ def _merge_start(
 
     if not clean:
         if use_merge:
-            echo("[yellow]Warning:[/yellow] Merge has conflicts.\n")
+            console.print("[yellow]Warning:[/yellow] Merge has conflicts.\n")
         else:
-            echo("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
+            console.print("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
 
-        echo(f"Resolve them, then run {fmt_command('skills merge --continue')}.")
+        console.print(
+            f"Resolve them, then run " f"{fmt_command('skills merge --continue')}."
+        )
         return
 
     _finalize(
@@ -360,7 +362,7 @@ def _merge_orphan(
     _copy_skill_with_replace(src=installed_path, dst=skill_dst)
 
     if no_commit:
-        echo("Files copied to source repo. Review and commit manually.")
+        console.print("Files copied to source repo. Review and commit manually.")
         return
 
     git.commit_all(f"chore: add `{skill_name}` from provider")
@@ -374,7 +376,7 @@ def _merge_orphan(
     )
     save_skill_manifest(manifest)
 
-    echo(f"Merge complete for {fmt_ident(skill_name)}.")
+    console.print(f"Merge complete for {fmt_ident(skill_name)}.")
 
 
 def _find_skill_in_provider(
@@ -461,7 +463,7 @@ def _resolve_base_commit(
         if _check_reachability(git, installed.commit, target_branch):
             return installed.commit
 
-        echo(
+        console.print(
             f"[yellow]Warning:[/yellow] Stored commit"
             f" {fmt_ident(installed.commit[:8])} is dangling"
             " — searching for base commit."
@@ -470,17 +472,17 @@ def _resolve_base_commit(
     r = _find_base_commit(git, skill.rel_path, installed, installed_path)
 
     if r is None:
-        echo("No base commit found — rebase will be performed.")
+        console.print("No base commit found — rebase will be performed.")
         return None
 
     if r.distance == 0:
-        echo(
+        console.print(
             f"Base commit: {fmt_ident(r.commit[:8])} [dim](exact match)[/dim]\n"
             f"Message: {fmt_data(escape(r.message))}"
         )
         return r.commit
 
-    echo(
+    console.print(
         f"Base commit: {fmt_ident(r.commit[:8])} [dim](distance: {r.distance})[/dim]\n"
         f"Message: {fmt_data(escape(r.message))}"
     )
@@ -616,10 +618,12 @@ def _finalize(
     git.delete_branch(merge_branch)
 
     if is_equal:
-        echo(f"Nothing to merge for {fmt_ident(skill_name)} — already up to date.")
+        console.print(
+            f"Nothing to merge for {fmt_ident(skill_name)} — already up to date."
+        )
         return
 
-    echo(f"Merge complete for {fmt_ident(skill_name)}.")
+    console.print(f"Merge complete for {fmt_ident(skill_name)}.")
 
 
 def _merge_abort(ctx: _MergeContext) -> None:
@@ -641,7 +645,7 @@ def _merge_abort(ctx: _MergeContext) -> None:
 
     git.delete_branch(branch)
 
-    echo(f"Merge aborted for {fmt_ident(skill_name)}.")
+    console.print(f"Merge aborted for {fmt_ident(skill_name)}.")
 
 
 def _detect_merge_repo(ctx: _MergeContext) -> GitRepo:

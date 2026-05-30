@@ -15,13 +15,13 @@ from repo_skills.config import (
     load_source_registry,
     save_skill_manifest,
 )
+from repo_skills.console import console, fmt_command, fmt_ident
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
-from repo_skills.utils import fmt_command, fmt_ident
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._utils import echo, ensure_on_branch
+from ._utils import ensure_on_branch
 
 
 @app.command(help="Install a skill from a source.")
@@ -80,7 +80,7 @@ def uninstall(
         manifest.unregister_skill(name)
         save_skill_manifest(manifest)
 
-        echo(f"Uninstalled {fmt_ident(name)}.")
+        console.print(f"Uninstalled {fmt_ident(name)}.")
 
 
 def _install_one(
@@ -130,7 +130,7 @@ def _install_one(
         skill_src=src,
     )
 
-    echo(f"Installed {fmt_ident(skill_name)} from {fmt_ident(source.name)}.")
+    console.print(f"Installed {fmt_ident(skill_name)} from {fmt_ident(source.name)}.")
 
 
 def _resolve_source(

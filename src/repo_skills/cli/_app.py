@@ -5,7 +5,7 @@ from importlib.metadata import version
 import typer
 from typer_di import TyperDI
 
-from repo_skills.debug import set_debug
+from repo_skills.console import console
 from repo_skills.errors import NoopError
 
 app = TyperDI(
@@ -33,4 +33,4 @@ def _main_callback(
         help="Show version and exit.",
     ),
 ) -> None:
-    set_debug(debug)
+    console.debug = debug

@@ -5,42 +5,42 @@ from pathlib import Path
 
 import pytest
 
-from repo_skills.debug import debug_cmd, debug_output, is_debug, set_debug
+from repo_skills.console import console
 from repo_skills.errors import AppError
 from repo_skills.git_real import RealGitRepo
 
 
 @pytest.fixture(autouse=True)
 def _reset_debug() -> None:
-    set_debug(False)
+    console.debug = False
 
 
-class TestSetDebug:
+class TestDebugFlag:
     def test_disabled_by_default(self) -> None:
-        assert is_debug() is False
+        assert console.debug is False
 
     def test_enable(self) -> None:
-        set_debug(True)
-        assert is_debug() is True
+        console.debug = True
+        assert console.debug is True
 
     def test_disable_after_enable(self) -> None:
-        set_debug(True)
-        set_debug(False)
-        assert is_debug() is False
+        console.debug = True
+        console.debug = False
+        assert console.debug is False
 
 
 class TestDebugCmd:
     def test_prints_command_when_enabled(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        set_debug(True)
-        debug_cmd(["git", "status"], Path("/repo"))
+        console.debug = True
+        console.debug_cmd(["git", "status"], Path("/repo"))
         captured = capsys.readouterr()
-        assert "[debug] git status" in captured.err
+        assert "COMMAND: git status" in captured.err
         assert "cwd: /repo" in captured.err
 
     def test_silent_when_disabled(self, capsys: pytest.CaptureFixture[str]) -> None:
-        debug_cmd(["git", "status"], Path("/repo"))
+        console.debug_cmd(["git", "status"], Path("/repo"))
         captured = capsys.readouterr()
         assert captured.err == ""
 
@@ -49,8 +49,8 @@ class TestDebugOutput:
     def test_prints_stdout_when_enabled(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        set_debug(True)
-        debug_output("main\ndev", "")
+        console.debug = True
+        console.debug_output("main\ndev", "")
         captured = capsys.readouterr()
         assert "stdout: main" in captured.err
         assert "stdout: dev" in captured.err
@@ -58,19 +58,19 @@ class TestDebugOutput:
     def test_prints_stderr_when_enabled(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        set_debug(True)
-        debug_output("", "warning: something")
+        console.debug = True
+        console.debug_output("", "warning: something")
         captured = capsys.readouterr()
         assert "stderr: warning: something" in captured.err
 
     def test_silent_when_disabled(self, capsys: pytest.CaptureFixture[str]) -> None:
-        debug_output("output", "error")
+        console.debug_output("output", "error")
         captured = capsys.readouterr()
         assert captured.err == ""
 
     def test_skips_empty_stdout(self, capsys: pytest.CaptureFixture[str]) -> None:
-        set_debug(True)
-        debug_output("", "")
+        console.debug = True
+        console.debug_output("", "")
         captured = capsys.readouterr()
         assert captured.err == ""
 
@@ -91,11 +91,11 @@ class TestGitRealDebugIntegration:
             check=True,
         )
 
-        set_debug(True)
+        console.debug = True
         git = RealGitRepo(tmp_path)
         git.current_branch()
         captured = capsys.readouterr()
-        assert "[debug] git branch --show-current" in captured.err
+        assert "COMMAND: git branch --show-current" in captured.err
         assert "stdout: main" in captured.err
 
     def test_run_silent_when_disabled(
@@ -127,9 +127,9 @@ class TestGitRealDebugIntegration:
             check=True,
         )
 
-        set_debug(True)
+        console.debug = True
         git = RealGitRepo(tmp_path)
         with pytest.raises(AppError):
             git._run("log", "--bad-flag")
         captured = capsys.readouterr()
-        assert "[debug] git log --bad-flag" in captured.err
+        assert "COMMAND: git log --bad-flag" in captured.err

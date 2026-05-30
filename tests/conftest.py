@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from repo_skills.cli._utils import console
+from repo_skills.console import console
 
 
 @pytest.fixture(autouse=True)

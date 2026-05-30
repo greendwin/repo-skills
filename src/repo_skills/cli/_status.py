@@ -15,12 +15,11 @@ from repo_skills.config import (
     load_skill_manifest,
     load_source_registry,
 )
+from repo_skills.console import console, fmt_ident
 from repo_skills.errors import NoopError
-from repo_skills.utils import fmt_ident
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._utils import echo
 
 SkillsBySource: TypeAlias = dict[str, list[str]]
 SourceSkillIndex: TypeAlias = dict[str, set[str]]
@@ -193,9 +192,9 @@ def _print_source_sections(
     for source_name in all_sources:
         try:
             _ = source_registry.get_source(source_name, load_skills=False)
-            echo(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
+            console.print(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
         except SourceBrokenError:
-            echo(
+            console.print(
                 f"[yellow]Source[/yellow] {fmt_ident(source_name)}  [red](broken)[/red]"
             )
 
@@ -206,7 +205,7 @@ def _print_source_sections(
             for provider in provider_registry.providers:
                 installed_path = provider.install_path / skill_name
                 divergence = _check_divergence(installed_path, entry.files)
-                echo(
+                console.print(
                     f"  {skill_name:<{name_width}}"
                     f"  [dim]{provider.name:<{provider_width}}[/dim]"
                     f"  {divergence}"
@@ -215,9 +214,13 @@ def _print_source_sections(
         for skill_name in sorted(available_by_source.get(source_name, [])):
             hint = _untracked_hint(skill_name, untracked_lookup)
             if hint:
-                echo(f"  {skill_name:<{name_width}}  [cyan]mergeable[/cyan]{hint}")
+                console.print(
+                    f"  {skill_name:<{name_width}}  [cyan]mergeable[/cyan]{hint}"
+                )
             else:
-                echo(f"  {skill_name:<{name_width}}  [blue]available[/blue]{hint}")
+                console.print(
+                    f"  {skill_name:<{name_width}}  [blue]available[/blue]{hint}"
+                )
 
     return has_output
 
@@ -231,10 +234,10 @@ def _print_untracked_section(
     if not orphans:
         return False
 
-    echo("")
-    echo("[yellow]Untracked[/yellow]")
+    console.print("")
+    console.print("[yellow]Untracked[/yellow]")
     for skill in orphans:
-        echo(
+        console.print(
             f"  {skill.name:<{name_width}}"
             f"  [dim]{skill.provider:<{provider_width}}[/dim]"
             f"  [dim magenta]orphan[/dim magenta]"

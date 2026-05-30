@@ -3,12 +3,9 @@ from __future__ import annotations
 from collections.abc import Generator
 from contextlib import contextmanager
 
-from rich.console import Console
 from rich.markup import escape
 
-from repo_skills.utils import fmt_message
-
-from .debug import is_debug
+from .console import console, fmt_message
 
 
 class AppError(Exception):
@@ -40,21 +37,21 @@ class NoopError(Exception):
 
 
 @contextmanager
-def error_handler(console: Console) -> Generator[None]:
+def error_handler() -> Generator[None]:
     try:
         yield
     except NoopError as ex:
         console.print(ex.message)
         raise SystemExit(0)
     except AppError as ex:
-        if is_debug():
+        if console.debug:
             console.print_exception()
             raise SystemExit(1)
 
         console.print(f"[red]Error:[/red] {ex.message}")
         raise SystemExit(1)
     except Exception as ex:
-        if is_debug():
+        if console.debug:
             console.print_exception()
             raise SystemExit(1)
 

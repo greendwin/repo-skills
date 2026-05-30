@@ -169,6 +169,7 @@ def _merge_start(
             skill_name,
             source_name=untracked.source.name,
             commit=None,
+            # TODO: why we take latest hashes as base hashes?
             files=compute_file_hashes(
                 untracked.source.repo_root / untracked.skill.rel_path
             ),
@@ -468,7 +469,7 @@ def _resolve_base_commit(
             " — searching for base commit."
         )
 
-    r = _find_base_commit(git, skill.rel_path, installed, installed_path)
+    r = _find_base_commit(git, skill.rel_path, installed_path)
 
     if r is None:
         console.print("No base commit found — rebase will be performed.")
@@ -516,9 +517,12 @@ class _BestCommit:
 def _find_base_commit(
     git: GitRepo,
     skill_rel: str,
-    installed: InstalledSkill,
     installed_path: Path,
 ) -> _BestCommit | None:
+    installed_hashes = compute_file_hashes(installed_path)
+    if not installed_hashes:
+        return None
+
     commits = git.log_commits(skill_rel, _MAX_SEARCH_COMMITS)
     if not commits:
         return None
@@ -528,7 +532,7 @@ def _find_base_commit(
 
     for commit in commits:
         commit_hashes: dict[str, str] = {}
-        for rel_path in installed.files:
+        for rel_path in installed_hashes:
             try:
                 data = git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
             except FileNotInCommitError:
@@ -537,13 +541,13 @@ def _find_base_commit(
             sha = hashlib.sha256(data).hexdigest()
             commit_hashes[rel_path] = f"sha256:{sha}"
         else:  # all files found — evaluate this commit
-            if commit_hashes == installed.files:
+            if commit_hashes == installed_hashes:
                 best_commit = commit
                 best_distance = 0
                 break
 
             distance = _compute_distance(
-                git, commit, skill_rel, installed, installed_path
+                git, commit, skill_rel, installed_path, set(installed_hashes.keys())
             )
             if best_distance is None or best_distance > distance:
                 best_commit = commit
@@ -720,11 +724,11 @@ def _compute_distance(
     git: GitRepo,
     commit: str,
     skill_rel: str,
-    installed: InstalledSkill,
     installed_path: Path,
+    file_paths: set[str],
 ) -> int:
     total = 0
-    all_paths = set(installed.files.keys())
+    all_paths = file_paths
 
     for rel_path in all_paths:
         commit_data = git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")

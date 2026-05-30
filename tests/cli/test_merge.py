@@ -219,7 +219,9 @@ class TestBaseCommitSearch:
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
         _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = b"# wrong"
-        _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = b"# original"
+        _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = (
+            b"# edited by user"
+        )
 
         result = assert_invoke("merge", "tdd", "--offline")
 
@@ -284,7 +286,9 @@ class TestBaseCommitSearch:
         _setup_diverged_skill(fs, git_repo)
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
-        _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = b"# original"
+        _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = (
+            b"# edited by user"
+        )
         _fake_git.commit_messages = {"bbb222": "feat: add tdd skill"}
 
         result = assert_invoke("merge", "tdd", "--search-base", "--offline")
@@ -301,7 +305,9 @@ class TestBaseCommitSearch:
         _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = (
             b"# totally different\nline2\nline3"
         )
-        _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = b"# original"
+        _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = (
+            b"# edited by user"
+        )
         _fake_git.commit_messages = {
             "aaa111": "fix: update tdd",
             "bbb222": "feat: add tdd skill",
@@ -392,7 +398,9 @@ class TestCommitReachability:
         _fake_git.ancestors[(COMMIT, "main")] = False
 
         _fake_git.commit_logs["skills/tdd"] = ["found111"]
-        _fake_git.files_at_commit[("found111", "skills/tdd/SKILL.md")] = b"# original"
+        _fake_git.files_at_commit[("found111", "skills/tdd/SKILL.md")] = (
+            b"# edited by user"
+        )
         _fake_git.commit_messages = {"found111": "feat: add tdd"}
 
         result = assert_invoke("merge", "tdd", "--offline")
@@ -410,7 +418,9 @@ class TestCommitReachability:
         _fake_git.reachable_commits.add(COMMIT)
 
         _fake_git.commit_logs["skills/tdd"] = ["found111"]
-        _fake_git.files_at_commit[("found111", "skills/tdd/SKILL.md")] = b"# original"
+        _fake_git.files_at_commit[("found111", "skills/tdd/SKILL.md")] = (
+            b"# edited by user"
+        )
         _fake_git.commit_messages = {"found111": "feat: add tdd"}
 
         result = assert_invoke("merge", "tdd", "--search-base", "--offline")
@@ -465,7 +475,7 @@ class TestResolveBaseCommit:
 
         _fake_git.commit_logs["skills/testing/tdd"] = ["cat111"]
         _fake_git.files_at_commit[("cat111", "skills/testing/tdd/SKILL.md")] = (
-            b"# original"
+            b"# edited by user"
         )
         _fake_git.commit_messages = {"cat111": "feat: add tdd skill"}
 

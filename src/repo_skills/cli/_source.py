@@ -98,10 +98,10 @@ def _handle_reinit(
         _rename_installed_skills(old_name, effective_name)
         config.name = effective_name
         cfg_changed = True
-        changes.append(f"  name: {fmt_ident(old_name)} → {fmt_ident(effective_name)}")
+        changes.append(f"  name: {fmt_data(old_name)} → {fmt_data(effective_name)}")
 
     if branch is not None and branch != config.branch:
-        changes.append(f"  branch: {fmt_ident(old_branch)} → {fmt_ident(branch)}")
+        changes.append(f"  branch: {fmt_data(old_branch)} → {fmt_data(branch)}")
         config.branch = branch
         cfg_changed = True
 

@@ -16,8 +16,9 @@ from repo_skills.config import (
     load_skill_manifest,
     load_source_registry,
 )
-from repo_skills.console import console, fmt_ident
-from repo_skills.errors import NoopError
+from repo_skills.console import console, fmt_data, fmt_ident
+from repo_skills.errors import AppError, NoopError
+from repo_skills.git import ensure_on_branch
 
 from ._app import app
 from ._deps import resolve_git_repo
@@ -55,14 +56,9 @@ def status(
     source_registry = load_source_registry()
     provider_registry = load_provider_registry()
 
-    if sync:
-        for source_entry in source_registry.sources.values():
-            git = resolve_git_repo(source_entry.repo_root)
-            git.pull()
-
     installed_by_source = _group_installed_by_source(manifest)
     available_by_source, all_source_skills = _scan_sources(
-        source_registry, installed_by_source
+        source_registry, installed_by_source, sync=sync
     )
     untracked = _collect_untracked(manifest, provider_registry, all_source_skills)
     untracked_lookup = _build_untracked_lookup(untracked)
@@ -107,17 +103,38 @@ def _group_installed_by_source(manifest: SkillManifest) -> SkillsBySource:
 def _scan_sources(
     source_registry: SourceRegistry,
     installed_by_source: SkillsBySource,
+    *,
+    sync: bool = False,
 ) -> tuple[SkillsBySource, SourceSkillIndex]:
     available_by_source: SkillsBySource = {}
     all_source_skills: SourceSkillIndex = {}
 
     for source_name in source_registry.sources:
         try:
-            source = source_registry.get_source(source_name, load_skills=True)
+            # try to load source without skills parsing,
+            # to make sure it's not broken
+            source = source_registry.get_source(source_name, load_skills=False)
         except SourceBrokenError:
             available_by_source[source_name] = []
             all_source_skills[source_name] = set()
             continue
+
+        git = resolve_git_repo(source.repo_root)
+        target_branch = source.get_branch(git)
+        try:
+            ensure_on_branch(git, target_branch, pull=sync, require_clean=False)
+        except AppError:
+            if console.debug:
+                console.print_exception()
+
+            console.print(
+                f"[yellow]Warning[/yellow]: {fmt_ident(source_name)} repo is dirty\n"
+                f"Showing skills from {fmt_data(git.current_branch())}"
+                f" instead of {fmt_data(target_branch)}"
+            )
+
+        # load skills on correct branch
+        source = source_registry.get_source(source_name, load_skills=True)
 
         all_source_skills[source_name] = set(source.skills)
         already_installed = set(installed_by_source.get(source_name, []))

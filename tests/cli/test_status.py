@@ -479,6 +479,66 @@ class TestStatusDetached:
         assert_words_in_message(result.output, "untracked", "tdd", "orphan")
 
 
+class TestStatusBranchSwitch:
+    def test_switches_to_pinned_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo, branch="release")
+        _fake_git.branch = "feature-x"
+        _create_source_skill(fs, "review", git_repo)
+
+        assert_invoke("status")
+
+        assert _fake_git.branch == "release"
+
+    def test_stays_on_correct_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo, branch="main")
+        _fake_git.branch = "main"
+        _create_source_skill(fs, "review", git_repo)
+
+        assert_invoke("status")
+
+        assert _fake_git.branch == "main"
+
+    def test_dirty_repo_on_correct_branch_does_not_block_status(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo, branch="main")
+        _fake_git.branch = "main"
+        _fake_git.clean = False
+        _create_source_skill(fs, "review", git_repo)
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "review", "available")
+
+    def test_dirty_repo_needing_branch_switch_does_not_crash(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo, branch="release")
+        _fake_git.branch = "feature-x"
+        _fake_git.clean = False
+        _create_source_skill(fs, "review", git_repo)
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "review", "available")
+        assert_words_in_message(result.output, "dirty", "feature-x", "release")
+
+    def test_dirty_repo_wrong_branch_missing_skill_not_shown(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo, branch="release")
+        _fake_git.branch = "feature-x"
+        _fake_git.clean = False
+
+        result = assert_invoke("status")
+
+        assert "available" not in result.output.lower()
+
+
 class TestStatusSync:
     def test_sync_pulls_source_repos(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -495,6 +555,25 @@ class TestStatusSync:
 
         assert_invoke("status", "--sync")
 
+        assert _fake_git.pulled is True
+
+    def test_sync_switches_branch_and_pulls(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo, branch="release")
+        _fake_git.branch = "feature-x"
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="abc", files=hashes)
+                )
+            }
+        )
+
+        assert_invoke("status", "--sync")
+
+        assert _fake_git.branch == "release"
         assert _fake_git.pulled is True
 
     def test_no_pull_by_default(

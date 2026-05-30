@@ -1,7 +1,7 @@
 ---
 id: s08t1602
 slug: have-status-switch-to-pinned
-status: pending
+status: done
 ---
 
 # Have status switch to pinned branch per source

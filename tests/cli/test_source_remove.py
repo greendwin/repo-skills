@@ -45,7 +45,7 @@ class TestSourceRemove:
     ) -> None:
         register_source(git_repo, name="alpha")
 
-        save_manifest({"tdd": InstalledSkill(source="alpha", commit=None)})
+        save_manifest({"tdd": InstalledSkill(source="alpha")})
 
         result = assert_invoke("source", "remove", "alpha", expect_error=True)
 
@@ -61,8 +61,8 @@ class TestSourceRemove:
 
         save_manifest(
             {
-                "tdd": InstalledSkill(source="alpha", commit=None),
-                "review": InstalledSkill(source="alpha", commit=None),
+                "tdd": InstalledSkill(source="alpha"),
+                "review": InstalledSkill(source="alpha"),
             }
         )
 
@@ -91,7 +91,7 @@ class TestSourceRemove:
 
         save_manifest(
             {
-                "tdd": InstalledSkill(source="alpha", commit=None),
+                "tdd": InstalledSkill(source="alpha"),
             }
         )
 

@@ -1,6 +1,7 @@
 __all__ = [
     "REPO_SKILLS_DIR",
     "SOURCES_REGISTRY_FILE",
+    "Baseline",
     "InstalledSkill",
     "Provider",
     "ProviderRegistry",
@@ -31,6 +32,7 @@ from ._provider_registry import (
     save_provider_registry,
 )
 from ._skill_manifest import (
+    Baseline,
     InstalledSkill,
     SkillManifest,
     load_skill_manifest,

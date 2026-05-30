@@ -8,6 +8,7 @@ import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
+    Baseline,
     ProviderRegistry,
     SkillManifest,
     Source,
@@ -221,8 +222,10 @@ class TestSkillManifest:
         manifest.register_skill(
             "tdd",
             source_name="my-repo",
-            commit="abc1234",
-            files={"SKILL.md": "sha256:deadbeef"},
+            baseline=Baseline(
+                commit="abc1234",
+                files={"SKILL.md": "sha256:deadbeef"},
+            ),
         )
         save_skill_manifest(manifest)
 
@@ -230,15 +233,49 @@ class TestSkillManifest:
         assert "tdd" in loaded.skills
         entry = loaded.skills["tdd"]
         assert entry.source == "my-repo"
-        assert entry.commit == "abc1234"
-        assert entry.files == {"SKILL.md": "sha256:deadbeef"}
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "abc1234"
+        assert entry.baseline.files == {"SKILL.md": "sha256:deadbeef"}
+
+    def test_save_and_load_round_trip_with_none_baseline(
+        self, fs: FakeFilesystem
+    ) -> None:
+        manifest = SkillManifest()
+        manifest.register_skill("tdd", source_name="my-repo", baseline=None)
+        save_skill_manifest(manifest)
+
+        loaded = load_skill_manifest()
+        assert "tdd" in loaded.skills
+        entry = loaded.skills["tdd"]
+        assert entry.source == "my-repo"
+        assert entry.baseline is None
+
+    def test_version_gating_returns_empty_for_missing_version(
+        self, fs: FakeFilesystem
+    ) -> None:
+        from repo_skills.config._skill_manifest import SKILL_MANIFEST_FILE
+        from repo_skills.config._utils import default_config_path
+
+        path = default_config_path(SKILL_MANIFEST_FILE)
+        import json
+
+        data = {"skills": {"tdd": {"source": "my-repo", "commit": "abc"}}}
+        fs.create_file(path, contents=json.dumps(data))
+
+        loaded = load_skill_manifest()
+        assert dict(loaded.skills) == {}
 
     def test_register_skill(self) -> None:
         manifest = SkillManifest()
-        manifest.register_skill("tdd", source_name="my-repo", commit="abc")
+        manifest.register_skill(
+            "tdd",
+            source_name="my-repo",
+            baseline=Baseline(commit="abc"),
+        )
         assert "tdd" in manifest.skills
         assert manifest.skills["tdd"].source == "my-repo"
-        assert manifest.skills["tdd"].commit == "abc"
+        assert manifest.skills["tdd"].baseline is not None
+        assert manifest.skills["tdd"].baseline.commit == "abc"
 
     def test_unregister_skill(self) -> None:
         manifest = SkillManifest()

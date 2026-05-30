@@ -142,8 +142,8 @@ def _rename_installed_skills(old_name: str, new_name: str) -> None:
         manifest.register_skill(
             name,
             source_name=new_name,
-            commit=entry.commit,
-            files=dict(entry.files),
+            baseline=entry.baseline,
+            detached=entry.detached,
         )
     if to_update:
         save_skill_manifest(manifest)

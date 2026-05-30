@@ -7,6 +7,7 @@ from typing import Annotated, Optional
 import typer
 
 from repo_skills.config import (
+    Baseline,
     Source,
     SourceRegistry,
     compute_file_hashes,
@@ -15,7 +16,7 @@ from repo_skills.config import (
     load_source_registry,
     save_skill_manifest,
 )
-from repo_skills.console import console, fmt_command, fmt_ident
+from repo_skills.console import console, fmt_command, fmt_data, fmt_ident
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo, ensure_on_branch
 
@@ -123,12 +124,11 @@ def _install_one(
             force=force,
         )
 
-    _record_manifest(
-        skill_name,
-        source_name=source.name,
+    baseline = Baseline(
         commit=commit,
-        skill_src=src,
+        files=compute_file_hashes(src),
     )
+    _record_manifest(skill_name, source_name=source.name, baseline=baseline)
 
     console.print(f"Installed {fmt_ident(skill_name)} from {fmt_ident(source.name)}.")
 
@@ -172,27 +172,21 @@ def _resolve_source(
 
 def _resolve_commit(git: GitRepo, skill_name: str) -> str:
     commit = git.get_skill_commit(skill_name)
-    if git.verify_commit_content(commit, skill_name):
-        return commit
+    if not git.verify_commit_content(commit, skill_name):
+        raise AppError(
+            f"Skill {fmt_ident(skill_name)} content does not match "
+            f"commit {fmt_data(commit[:8])}."
+        )
 
-    raise AppError(
-        f"Skill {fmt_ident(skill_name)} content does not match commit {commit}."
-    )
+    return commit
 
 
-def _record_manifest(
-    skill_name: str,
-    *,
-    source_name: str,
-    commit: str,
-    skill_src: Path,
-) -> None:
+def _record_manifest(skill_name: str, *, source_name: str, baseline: Baseline) -> None:
     manifest = load_skill_manifest()
     manifest.register_skill(
         skill_name,
         source_name=source_name,
-        commit=commit,
-        files=compute_file_hashes(skill_src),
+        baseline=baseline,
     )
     save_skill_manifest(manifest)
 

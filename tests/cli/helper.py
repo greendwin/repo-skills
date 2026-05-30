@@ -277,8 +277,7 @@ def save_manifest(skills: dict[str, InstalledSkill]) -> None:
         manifest.register_skill(
             name,
             source_name=entry.source,
-            commit=entry.commit,
-            files=dict(entry.files),
+            baseline=entry.baseline,
             detached=entry.detached,
         )
     save_skill_manifest(manifest)

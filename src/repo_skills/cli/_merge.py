@@ -11,6 +11,7 @@ import typer
 from rich.markup import escape
 
 from repo_skills.config import (
+    Baseline,
     InstalledSkill,
     Provider,
     ProviderRegistry,
@@ -168,15 +169,13 @@ def _merge_start(
         installed = ctx.manifest.register_skill(
             skill_name,
             source_name=untracked.source.name,
-            commit=None,
-            # TODO: why we take latest hashes as base hashes?
-            files=compute_file_hashes(
-                untracked.source.repo_root / untracked.skill.rel_path
-            ),
+            baseline=None,
         )
         save_skill_manifest(ctx.manifest)
 
     source = ctx.source_registry.get_source(installed.source, load_skills=True)
+    skill = source.get_skill(skill_name)
+
     git = resolve_git_repo(source.repo_root)
 
     target_branch = source.get_branch(git)
@@ -185,9 +184,9 @@ def _merge_start(
     # check whether skill is in sync already
     if provider is not None:
         current_hashes = compute_file_hashes(provider.install_path / skill_name)
-        if current_hashes == installed.files:
-            # skill can be not attached
-            _reattach_installed_skill(ctx.manifest, skill_name, installed, git)
+        if installed.match_files(current_hashes):
+            if installed.detached:
+                _reattach_installed_skill(ctx.manifest, source, skill, git)
 
             raise NoopError(
                 f"{fmt_ident(skill_name)} is already synced. Nothing to merge."
@@ -201,7 +200,8 @@ def _merge_start(
 
         # no diverged providers -- all in sync
         if provider is None:
-            _reattach_installed_skill(ctx.manifest, skill_name, installed, git)
+            if installed.detached or not installed.baseline:
+                _reattach_installed_skill(ctx.manifest, source, skill, git)
 
             raise NoopError(
                 f"{fmt_ident(skill_name)} is already synced. Nothing to merge."
@@ -215,7 +215,6 @@ def _merge_start(
             f"or {fmt_command('skills merge --abort')} to start over.",
         )
 
-    skill = source.get_skill(skill_name)
     installed_path = provider.install_path / skill_name
 
     base_commit = _resolve_base_commit(
@@ -278,18 +277,18 @@ def _merge_start(
 
 def _reattach_installed_skill(
     manifest: SkillManifest,
-    skill_name: str,
-    installed: InstalledSkill,
+    source: Source,
+    skill: SourceSkill,
     git: GitRepo,
 ) -> None:
-    if not installed.detached and installed.commit:
-        return
-
+    baseline = Baseline(
+        commit=git.get_skill_commit(skill.name),
+        files=compute_file_hashes(source.repo_root / skill.rel_path),
+    )
     manifest.register_skill(
-        skill_name,
-        source_name=installed.source,
-        commit=git.get_skill_commit(skill_name),
-        files=dict(installed.files),
+        skill.name,
+        source_name=source.name,
+        baseline=baseline,
     )
     save_skill_manifest(manifest)
 
@@ -371,8 +370,10 @@ def _merge_orphan(
     manifest.register_skill(
         skill_name,
         source_name=source.name,
-        commit=git.get_skill_commit(skill_name),
-        files=compute_file_hashes(installed_path),
+        baseline=Baseline(
+            commit=git.get_skill_commit(skill_name),
+            files=compute_file_hashes(skill_dst),
+        ),
     )
     save_skill_manifest(manifest)
 
@@ -431,8 +432,12 @@ def _resolve_diverged_provider(
         if not installed_path.exists():
             continue
 
+        if installed.baseline is None:
+            diverged.append(provider)
+            continue
+
         current_hashes = compute_file_hashes(installed_path)
-        if current_hashes != installed.files:
+        if current_hashes != installed.baseline.files:
             diverged.append(provider)
 
     if not diverged:
@@ -459,13 +464,13 @@ def _resolve_base_commit(
     target_branch: str,
     force: bool,
 ) -> str | None:
-    if installed.commit and not force:
-        if _check_reachability(git, installed.commit, target_branch):
-            return installed.commit
+    if installed.baseline and not force:
+        if _check_reachability(git, installed.baseline.commit, target_branch):
+            return installed.baseline.commit
 
         console.print(
             f"[yellow]Warning:[/yellow] Stored commit"
-            f" {fmt_ident(installed.commit[:8])} is dangling"
+            f" {fmt_ident(installed.baseline.commit[:8])} is dangling"
             " — searching for base commit."
         )
 
@@ -608,13 +613,17 @@ def _finalize(
     )
 
     new_hashes = compute_file_hashes(installed_path)
-    is_equal = new_hashes == installed.files
+    is_equal = installed.baseline and new_hashes == installed.baseline.files
 
     ctx.manifest.register_skill(
         skill_name,
         source_name=installed.source,
-        commit=git.get_skill_commit(skill_name),
-        files=new_hashes,
+        baseline=Baseline(
+            # note: take latest commit for code, since we just finished
+            #       merging and must be in sync
+            commit=git.get_skill_commit(skill_name),
+            files=new_hashes,
+        ),
     )
     save_skill_manifest(ctx.manifest)
 

@@ -8,6 +8,7 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 
 import repo_skills.cli._deps as deps_mod
 from repo_skills.config import (
+    Baseline,
     InstalledSkill,
     SourceConfig,
     SourceRegistry,
@@ -61,7 +62,12 @@ def _setup_diverged_skill(
     create_source_skill(fs, "tdd", content="# original")
     hashes = install_skill(fs, "tdd", content="# original")
     save_manifest(
-        {"tdd": InstalledSkill(source="my-project", commit=commit, files=hashes)}
+        {
+            "tdd": InstalledSkill(
+                source="my-project",
+                baseline=Baseline(commit=commit, files=hashes) if commit else None,
+            )
+        }
     )
     (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
@@ -85,7 +91,11 @@ class TestMergeStart:
         hashes = install_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
         save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+                )
+            }
         )
         register_provider("cursor", str(CURSOR_DIR))
 
@@ -109,7 +119,10 @@ class TestMergeStart:
         installed = (INSTALL_DIR / "tdd" / "SKILL.md").read_text()
         assert installed == "# edited by user"
         manifest = load_manifest()
-        assert manifest.skills["tdd"].files == compute_file_hashes(INSTALL_DIR / "tdd")
+        assert manifest.skills["tdd"].baseline is not None
+        assert manifest.skills["tdd"].baseline.files == compute_file_hashes(
+            INSTALL_DIR / "tdd"
+        )
         assert_words_in_message(result.output, "merge", "complete")
 
     def test_prompts_continue_on_conflict(
@@ -134,7 +147,11 @@ class TestMergeProviderResolution:
         hashes = install_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
         save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+                )
+            }
         )
         register_provider("cursor", str(CURSOR_DIR))
 
@@ -155,7 +172,11 @@ class TestMergeProviderResolution:
         hashes = install_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
         save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+                )
+            }
         )
         register_provider("cursor", str(CURSOR_DIR))
 
@@ -174,7 +195,11 @@ class TestMergeProviderResolution:
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+                )
+            }
         )
 
         result = assert_invoke("merge", "tdd", "--offline")
@@ -249,12 +274,9 @@ class TestBaseCommitSearch:
     ) -> None:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original")
+        install_skill(fs, "tdd", content="# original")
         fs.create_file(INSTALL_DIR / "tdd" / "extra.md", contents="line1\nline2\nline3")
-        hashes = compute_file_hashes(INSTALL_DIR / "tdd")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
-        )
+        save_manifest({"tdd": InstalledSkill(source="my-project", baseline=None)})
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
@@ -467,10 +489,8 @@ class TestResolveBaseCommit:
         create_source_skill(
             fs, "tdd", content="# original", root=SKILLS_DIR / "testing"
         )
-        hashes = install_skill(fs, "tdd", content="# original")
-        save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=None, files=hashes)}
-        )
+        install_skill(fs, "tdd", content="# original")
+        save_manifest({"tdd": InstalledSkill(source="my-project", baseline=None)})
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
 
         _fake_git.commit_logs["skills/testing/tdd"] = ["cat111"]
@@ -512,13 +532,14 @@ class TestMergeUntracked:
 
         result = assert_invoke("merge", "tdd", "--offline")
 
-        assert_words_in_message(result.output, "synced")
+        assert_words_in_message(result.output, "merge", "complete")
         manifest = load_manifest()
         assert "tdd" in manifest.skills
         entry = manifest.skills["tdd"]
         assert entry.source == "my-project"
-        assert entry.commit == "source-commit-abc"
-        assert entry.files == compute_file_hashes(INSTALL_DIR / "tdd")
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "source-commit-abc"
+        assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "tdd")
 
     def test_diverged_mergeable_has_correct_manifest_after_merge(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -534,8 +555,9 @@ class TestMergeUntracked:
         manifest = load_manifest()
         entry = manifest.skills["tdd"]
         assert entry.source == "my-project"
-        assert entry.commit == "merged-commit-xyz"
-        assert entry.files == compute_file_hashes(INSTALL_DIR / "tdd")
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "merged-commit-xyz"
+        assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "tdd")
         assert not entry.detached
 
     def test_diverged_mergeable_copies_to_source(
@@ -551,18 +573,18 @@ class TestMergeUntracked:
         source_skill = git_repo / "skills" / "tdd" / "SKILL.md"
         assert source_skill.read_text() == "# edited by user"
 
-    def test_non_diverged_mergeable_does_not_create_merge_branch(
+    def test_non_diverged_mergeable_creates_orphan_merge(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original")
 
-        assert_invoke("merge", "tdd", "--offline")
+        result = assert_invoke("merge", "tdd", "--offline")
 
-        assert _fake_git.created_branches == {}
-        assert _fake_git.orphan_branches == []
-        assert _fake_git.committed_messages == []
+        assert "skill-merge/claude/tdd" in _fake_git.orphan_branches
+        assert len(_fake_git.committed_messages) == 1
+        assert_words_in_message(result.output, "merge", "complete")
 
     def test_reattaches_detached_skill_when_all_in_sync(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -573,7 +595,9 @@ class TestMergeUntracked:
         save_manifest(
             {
                 "tdd": InstalledSkill(
-                    source="my-project", commit=COMMIT, files=hashes, detached=True
+                    source="my-project",
+                    baseline=Baseline(commit=COMMIT, files=hashes),
+                    detached=True,
                 )
             }
         )
@@ -585,7 +609,8 @@ class TestMergeUntracked:
         manifest = load_manifest()
         entry = manifest.skills["tdd"]
         assert not entry.detached
-        assert entry.commit == "reattached-commit"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "reattached-commit"
 
     def test_merges_untracked_orphan_with_single_source(
         self, fs: FakeFilesystem, git_repo: Path
@@ -753,8 +778,9 @@ class TestMergeOrphan:
 
         manifest = load_manifest()
         entry = manifest.skills["my-new-skill"]
-        assert entry.commit == "orphan-commit-123"
-        assert entry.files == compute_file_hashes(INSTALL_DIR / "my-new-skill")
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "orphan-commit-123"
+        assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "my-new-skill")
 
     def test_errors_when_not_in_any_provider(
         self, fs: FakeFilesystem, git_repo: Path
@@ -916,7 +942,11 @@ def _setup_merge_branch(
     register_source(git_repo, branch=source_branch)
     hashes = install_skill(fs, "tdd", content="# original")
     save_manifest(
-        {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+        {
+            "tdd": InstalledSkill(
+                source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+            )
+        }
     )
     create_source_skill(fs, "tdd", content=content)
     fake_git.branch = branch
@@ -936,7 +966,10 @@ class TestMergeContinue:
         installed = (INSTALL_DIR / "tdd" / "SKILL.md").read_text()
         assert installed == "# merged"
         manifest = load_manifest()
-        assert manifest.skills["tdd"].files == compute_file_hashes(INSTALL_DIR / "tdd")
+        assert manifest.skills["tdd"].baseline is not None
+        assert manifest.skills["tdd"].baseline.files == compute_file_hashes(
+            INSTALL_DIR / "tdd"
+        )
         assert_words_in_message(result.output, "merge", "complete")
 
     def test_continues_rebase_when_in_progress(
@@ -1012,7 +1045,8 @@ class TestMergeContinue:
         assert_invoke("merge", "--continue")
 
         manifest = load_manifest()
-        assert manifest.skills["tdd"].commit == "newcommit789"
+        assert manifest.skills["tdd"].baseline is not None
+        assert manifest.skills["tdd"].baseline.commit == "newcommit789"
 
     def test_dirty_allowed_during_rebase(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1243,7 +1277,9 @@ class TestDetectMergeRepo:
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
             {
-                "tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes),
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+                ),
             }
         )
         create_source_skill(
@@ -1254,8 +1290,7 @@ class TestDetectMergeRepo:
         manifest.register_skill(
             "review",
             source_name="other-project",
-            commit="rev123",
-            files=hashes_review,
+            baseline=Baseline(commit="rev123", files=hashes_review),
         )
         save_skill_manifest(manifest)
 
@@ -1285,7 +1320,11 @@ class TestDetectMergeRepo:
         create_source_skill(fs, "tdd", content="# merged")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+                )
+            }
         )
 
         result = assert_invoke("merge", "--continue")
@@ -1327,7 +1366,11 @@ class TestDetectMergeRepo:
 
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+                )
+            }
         )
 
         result = assert_invoke("merge", "--continue", expect_error=True)
@@ -1369,7 +1412,11 @@ class TestDetectMergeRepo:
         create_source_skill(fs, "tdd", content="# merged")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
-            {"tdd": InstalledSkill(source="my-project", commit=COMMIT, files=hashes)}
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+                )
+            }
         )
 
         result = assert_invoke("merge", "--continue")

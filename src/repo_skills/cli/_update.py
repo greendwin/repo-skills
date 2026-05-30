@@ -9,6 +9,7 @@ import typer
 from rich.markup import escape
 
 from repo_skills.config import (
+    Baseline,
     InstalledSkill,
     ProviderRegistry,
     SourceRegistry,
@@ -91,7 +92,8 @@ def _update_skill(
             provider_statuses[provider.name] = _Status.UP_TO_DATE
             continue
 
-        if current_hashes != entry.files:
+        baseline_files = entry.baseline.files if entry.baseline else {}
+        if current_hashes != baseline_files:
             provider_statuses[provider.name] = _Status.SKIPPED
             continue
 
@@ -103,10 +105,10 @@ def _update_skill(
     recovered = False
     newly_detached = False
 
-    if entry.commit and entry.source in source_branches:
+    if entry.baseline and entry.baseline.commit and entry.source in source_branches:
         git = resolve_git_repo(source.repo_root)
         pinned = source_branches[entry.source]
-        reachable = git.is_ancestor(entry.commit, pinned)
+        reachable = git.is_ancestor(entry.baseline.commit, pinned)
         if reachable and entry.detached:
             detached = False
             recovered = True
@@ -179,11 +181,17 @@ def update(
 
             _print_skill_report(skill_name, report)
 
+            baseline = None
+            if entry.baseline:
+                baseline = Baseline(
+                    commit=entry.baseline.commit,
+                    files=report.source_hashes,
+                )
+
             manifest.register_skill(
                 skill_name,
                 source_name=entry.source,
-                commit=entry.commit,
-                files=report.source_hashes,
+                baseline=baseline,
                 detached=report.detached,
             )
 

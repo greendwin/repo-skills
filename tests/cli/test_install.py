@@ -71,9 +71,10 @@ class TestInstall:
         assert "tdd" in manifest.skills
         entry = manifest.skills["tdd"]
         assert entry.source == "my-project"
-        assert entry.commit == "abc1234"
-        assert len(entry.files) > 0
-        assert all(v.startswith("sha256:") for v in entry.files.values())
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "abc1234"
+        assert len(entry.baseline.files) > 0
+        assert all(v.startswith("sha256:") for v in entry.baseline.files.values())
 
     def test_auto_selects_single_source(
         self, fs: FakeFilesystem, git_repo: Path

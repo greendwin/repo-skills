@@ -210,9 +210,9 @@ class TestSourceInitRename:
 
         save_manifest(
             {
-                "tdd": InstalledSkill(source="old-name", commit=None),
-                "review": InstalledSkill(source="old-name", commit=None),
-                "deploy": InstalledSkill(source="other-source", commit=None),
+                "tdd": InstalledSkill(source="old-name"),
+                "review": InstalledSkill(source="old-name"),
+                "deploy": InstalledSkill(source="other-source"),
             }
         )
 

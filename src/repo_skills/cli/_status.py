@@ -204,7 +204,10 @@ def _print_source_sections(
             entry = manifest.skills[skill_name]
             for provider in provider_registry.providers:
                 installed_path = provider.install_path / skill_name
-                divergence = _check_divergence(installed_path, entry.files)
+                divergence = _check_divergence(
+                    installed_path,
+                    entry.baseline.files if entry.baseline else None,
+                )
                 console.print(
                     f"  {skill_name:<{name_width}}"
                     f"  [dim]{provider.name:<{provider_width}}[/dim]"
@@ -246,9 +249,12 @@ def _print_untracked_section(
     return True
 
 
-def _check_divergence(installed_path: Path, baseline: dict[str, str]) -> str:
+def _check_divergence(installed_path: Path, baseline: dict[str, str] | None) -> str:
     if not installed_path.exists():
         return "[red]missing[/red]"
+
+    if baseline is None:
+        return "[dim]untracked[/dim]"
 
     current = compute_file_hashes(installed_path)
     if current == baseline:

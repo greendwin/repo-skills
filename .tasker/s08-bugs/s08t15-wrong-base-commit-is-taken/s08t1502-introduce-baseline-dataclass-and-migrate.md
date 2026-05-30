@@ -1,7 +1,7 @@
 ---
 id: s08t1502
 slug: introduce-baseline-dataclass-and-migrate
-status: pending
+status: done
 ---
 
 # Introduce Baseline dataclass and migrate all access sites

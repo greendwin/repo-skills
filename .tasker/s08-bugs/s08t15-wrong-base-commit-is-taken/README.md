@@ -1,7 +1,7 @@
 ---
 id: s08t15
 slug: wrong-base-commit-is-taken
-status: pending
+status: done
 ---
 
 # Wrong base commit is taken
@@ -37,4 +37,4 @@ None — all branches resolved.
 ## Subtasks
 
 - [x] [s08t1501](s08t1501-fix-findbasecommit-to-use-real.md): Fix _find_base_commit to use real files from disk
-- [ ] [s08t1502](s08t1502-introduce-baseline-dataclass-and-migrate.md): Introduce Baseline dataclass and migrate all access sites
+- [x] [s08t1502](s08t1502-introduce-baseline-dataclass-and-migrate.md): Introduce Baseline dataclass and migrate all access sites

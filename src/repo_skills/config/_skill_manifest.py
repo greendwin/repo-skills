@@ -7,9 +7,11 @@ from pydantic import BaseModel
 
 from repo_skills.utils import load_config, save_config
 
-from ._utils import default_config_path
+from ._utils import RelPathHashes, default_config_path
 
 SKILL_MANIFEST_FILE = "skill-manifest.json"
+
+CURRENT_VERSION = 1
 
 
 class _InstalledSkillDesc(BaseModel):
@@ -20,15 +22,24 @@ class _InstalledSkillDesc(BaseModel):
 
 
 class _SkillManifestConfig(BaseModel):
+    version: int = 0
     skills: dict[str, _InstalledSkillDesc] = {}
+
+
+@dataclass
+class Baseline:
+    commit: str
+    files: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
 class InstalledSkill:
     source: str
-    commit: str | None
-    files: dict[str, str] = field(default_factory=dict)
+    baseline: Baseline | None = None
     detached: bool = False
+
+    def match_files(self, files: RelPathHashes) -> bool:
+        return self.baseline is not None and self.baseline.files == files
 
 
 class SkillManifest:
@@ -44,14 +55,12 @@ class SkillManifest:
         name: str,
         *,
         source_name: str = "",
-        commit: str | None = None,
-        files: dict[str, str] | None = None,
+        baseline: Baseline | None = None,
         detached: bool = False,
     ) -> InstalledSkill:
         entry = InstalledSkill(
             source=source_name,
-            commit=commit,
-            files=files if files is not None else {},
+            baseline=baseline,
             detached=detached,
         )
         self._entries[name] = entry
@@ -67,25 +76,31 @@ def load_skill_manifest() -> SkillManifest:
     if cfg is None:
         cfg = _SkillManifestConfig()
 
+    if cfg.version != CURRENT_VERSION:
+        return SkillManifest()
+
     manifest = SkillManifest()
     for name, entry in cfg.skills.items():
+        baseline: Baseline | None = None
+        if entry.commit is not None:
+            baseline = Baseline(commit=entry.commit, files=dict(entry.files))
+
         manifest.register_skill(
             name,
             source_name=entry.source,
-            commit=entry.commit,
-            files=dict(entry.files),
+            baseline=baseline,
             detached=entry.detached,
         )
     return manifest
 
 
 def save_skill_manifest(manifest: SkillManifest) -> None:
-    cfg = _SkillManifestConfig()
+    cfg = _SkillManifestConfig(version=CURRENT_VERSION)
     for name, skill in manifest.skills.items():
         cfg.skills[name] = _InstalledSkillDesc(
             source=skill.source,
-            commit=skill.commit,
-            files=dict(skill.files),
+            commit=skill.baseline.commit if skill.baseline else None,
+            files=dict(skill.baseline.files) if skill.baseline else {},
             detached=skill.detached,
         )
     save_config(cfg, default_config_path(SKILL_MANIFEST_FILE))

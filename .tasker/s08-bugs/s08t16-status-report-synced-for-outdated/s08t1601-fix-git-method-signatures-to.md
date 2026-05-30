@@ -1,7 +1,7 @@
 ---
 id: s08t1601
 slug: fix-git-method-signatures-to
-status: pending
+status: done
 ---
 
 # Fix git method signatures to accept rel_path

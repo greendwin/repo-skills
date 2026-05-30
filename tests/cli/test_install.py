@@ -32,7 +32,7 @@ OTHER_SKILLS_DIR = OTHER_REPO_ROOT / "skills"
 
 @pytest.fixture(autouse=True)
 def _fake_git() -> Generator[FakeGitRepo]:
-    fake = FakeGitRepo(commits={"tdd": "abc1234"})
+    fake = FakeGitRepo(commits={"skills/tdd": "abc1234"})
     install_fake_git(fake)
     yield fake
     uninstall_fake_git()
@@ -90,7 +90,9 @@ class TestInstall:
 class TestInstallMultipleSkills:
     @pytest.fixture(autouse=True)
     def _fake_git(self) -> Generator[FakeGitRepo]:
-        fake = FakeGitRepo(commits={"tdd": "abc1234", "review": "def5678"})
+        fake = FakeGitRepo(
+            commits={"skills/tdd": "abc1234", "skills/review": "def5678"}
+        )
         install_fake_git(fake)
         yield fake
         uninstall_fake_git()

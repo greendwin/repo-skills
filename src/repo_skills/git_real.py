@@ -109,8 +109,8 @@ class RealGitRepo:
     def is_clean(self) -> bool:
         return self._run("status", "--porcelain") == ""
 
-    def get_skill_commit(self, skill_name: str) -> str:
-        return self._run("log", "-1", "--format=%H", "--", f"skills/{skill_name}")
+    def get_skill_commit(self, rel_path: str) -> str:
+        return self._run("log", "-1", "--format=%H", "--", rel_path)
 
     def log_commits(self, path: str, max_count: int) -> list[str]:
         output = self._run("log", f"--max-count={max_count}", "--format=%H", "--", path)
@@ -227,21 +227,20 @@ class RealGitRepo:
     def _in_merge(self) -> bool:
         return (self._path / ".git" / "MERGE_HEAD").exists()
 
-    def verify_commit_content(self, commit: str, skill_name: str) -> bool:
-        skill_path = f"skills/{skill_name}"
-        listing = self._run("ls-tree", "-r", "--name-only", commit, skill_path)
+    def verify_commit_content(self, commit: str, rel_path: str) -> bool:
+        listing = self._run("ls-tree", "-r", "--name-only", commit, rel_path)
         if not listing:
             return False
 
         committed_files = listing.splitlines()
-        working_dir = self._path / skill_path
+        working_dir = self._path / rel_path
 
-        for rel_path in committed_files:
-            local_file = self._path / rel_path
+        for file_path in committed_files:
+            local_file = self._path / file_path
             if not local_file.exists():
                 return False
 
-            committed_content = self._run_bytes("show", f"{commit}:{rel_path}")
+            committed_content = self._run_bytes("show", f"{commit}:{file_path}")
             if local_file.read_bytes() != committed_content:
                 return False
 

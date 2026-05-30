@@ -137,7 +137,7 @@ def test_get_skill_commit(repo: Path) -> None:
     expected = _git(repo, "log", "-1", "--format=%H", "--", "skills/tdd")
 
     git = RealGitRepo(repo)
-    assert git.get_skill_commit("tdd") == expected
+    assert git.get_skill_commit("skills/tdd") == expected
     assert len(expected) == 40
 
 
@@ -151,7 +151,7 @@ def test_verify_commit_content_matches(repo: Path) -> None:
     commit = _git(repo, "log", "-1", "--format=%H")
 
     git = RealGitRepo(repo)
-    assert git.verify_commit_content(commit, "tdd") is True
+    assert git.verify_commit_content(commit, "skills/tdd") is True
 
 
 def test_is_ancestor_true_when_reachable(repo: Path) -> None:
@@ -206,4 +206,4 @@ def test_verify_commit_content_mismatch(repo: Path) -> None:
     (skills_dir / "SKILL.md").write_text("# tdd modified")
 
     git = RealGitRepo(repo)
-    assert git.verify_commit_content(commit, "tdd") is False
+    assert git.verify_commit_content(commit, "skills/tdd") is False

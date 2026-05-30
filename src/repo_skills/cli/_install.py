@@ -8,6 +8,7 @@ import typer
 
 from repo_skills.config import (
     Baseline,
+    SkillManifest,
     Source,
     SourceRegistry,
     compute_file_hashes,
@@ -16,6 +17,7 @@ from repo_skills.config import (
     load_source_registry,
     save_skill_manifest,
 )
+from repo_skills.config._source import SourceSkill
 from repo_skills.console import console, fmt_command, fmt_data, fmt_ident
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo, ensure_on_branch
@@ -44,10 +46,13 @@ def install(
         typer.Option("--force", "-f", help="Overwrite existing skill."),
     ] = False,
 ) -> None:
+    manifest = load_skill_manifest()
     source_registry = load_source_registry()
+
     pulled_sources: set[str] = set()
     for name in names:
         _install_one(
+            manifest,
             source_registry,
             name,
             from_source=source,
@@ -84,6 +89,7 @@ def uninstall(
 
 
 def _install_one(
+    manifest: SkillManifest,
     source_registry: SourceRegistry,
     skill_name: str,
     *,
@@ -111,7 +117,7 @@ def _install_one(
         )
 
     src = source.repo_root / skill.rel_path
-    commit = _resolve_commit(git, skill_name)
+    commit = _resolve_commit(git, skill)
 
     provider_registry = load_provider_registry()
 
@@ -124,11 +130,7 @@ def _install_one(
             force=force,
         )
 
-    baseline = Baseline(
-        commit=commit,
-        files=compute_file_hashes(src),
-    )
-    _record_manifest(skill_name, source_name=source.name, baseline=baseline)
+    _record_manifest(manifest, source, skill, commit)
 
     console.print(f"Installed {fmt_ident(skill_name)} from {fmt_ident(source.name)}.")
 
@@ -170,23 +172,27 @@ def _resolve_source(
     )
 
 
-def _resolve_commit(git: GitRepo, skill_name: str) -> str:
-    commit = git.get_skill_commit(skill_name)
-    if not git.verify_commit_content(commit, skill_name):
+def _resolve_commit(git: GitRepo, skill: SourceSkill) -> str:
+    commit = git.get_skill_commit(skill.rel_path)
+    if not git.verify_commit_content(commit, skill.rel_path):
         raise AppError(
-            f"Skill {fmt_ident(skill_name)} content does not match "
+            f"Skill {fmt_ident(skill.name)} content does not match "
             f"commit {fmt_data(commit[:8])}."
         )
 
     return commit
 
 
-def _record_manifest(skill_name: str, *, source_name: str, baseline: Baseline) -> None:
-    manifest = load_skill_manifest()
+def _record_manifest(
+    manifest: SkillManifest, source: Source, skill: SourceSkill, commit: str
+) -> None:
     manifest.register_skill(
-        skill_name,
-        source_name=source_name,
-        baseline=baseline,
+        skill.name,
+        source_name=source.name,
+        baseline=Baseline(
+            commit=commit,
+            files=compute_file_hashes(source.repo_root / skill.rel_path),
+        ),
     )
     save_skill_manifest(manifest)
 

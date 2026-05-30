@@ -94,11 +94,11 @@ class FakeGitRepo:
     def is_clean(self) -> bool:
         return self.clean
 
-    def get_skill_commit(self, skill_name: str) -> str:
-        return self.commits.get(skill_name, "")
+    def get_skill_commit(self, rel_path: str) -> str:
+        return self.commits.get(rel_path, "")
 
-    def verify_commit_content(self, commit: str, skill_name: str) -> bool:
-        return self.verified.get(skill_name, True)
+    def verify_commit_content(self, commit: str, rel_path: str) -> bool:
+        return self.verified.get(rel_path, True)
 
     def log_commits(self, path: str, max_count: int) -> list[str]:
         return self.commit_logs.get(path, [])[:max_count]

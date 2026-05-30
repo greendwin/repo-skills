@@ -43,7 +43,7 @@ OTHER_REPO_ROOT = Path("/repos/other-project")
 @pytest.fixture(autouse=True)
 def _fake_git() -> Generator[FakeGitRepo]:
     fake = FakeGitRepo(
-        commits={"tdd": COMMIT},
+        commits={"skills/tdd": COMMIT},
         ancestors={(COMMIT, "main"): True},
     )
     install_fake_git(fake)
@@ -528,7 +528,7 @@ class TestMergeUntracked:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original")
-        _fake_git.commits["tdd"] = "source-commit-abc"
+        _fake_git.commits["skills/tdd"] = "source-commit-abc"
 
         result = assert_invoke("merge", "tdd", "--offline")
 
@@ -548,7 +548,7 @@ class TestMergeUntracked:
         create_source_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original")
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
-        _fake_git.commits["tdd"] = "merged-commit-xyz"
+        _fake_git.commits["skills/tdd"] = "merged-commit-xyz"
 
         assert_invoke("merge", "tdd", "--offline")
 
@@ -601,7 +601,7 @@ class TestMergeUntracked:
                 )
             }
         )
-        _fake_git.commits["tdd"] = "reattached-commit"
+        _fake_git.commits["skills/tdd"] = "reattached-commit"
 
         result = assert_invoke("merge", "tdd", "--offline")
 
@@ -772,7 +772,7 @@ class TestMergeOrphan:
     ) -> None:
         register_source(git_repo)
         install_skill(fs, "my-new-skill", content="# brand new")
-        _fake_git.commits["my-new-skill"] = "orphan-commit-123"
+        _fake_git.commits["skills/my-new-skill"] = "orphan-commit-123"
 
         assert_invoke("merge", "my-new-skill", "--offline")
 
@@ -1040,7 +1040,7 @@ class TestMergeContinue:
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _setup_merge_branch(fs, git_repo, _fake_git)
-        _fake_git.commits["tdd"] = "newcommit789"
+        _fake_git.commits["skills/tdd"] = "newcommit789"
 
         assert_invoke("merge", "--continue")
 
@@ -1256,7 +1256,7 @@ class TestDetectMergeRepo:
         cwd_git = FakeGitRepo(
             root=OTHER_REPO_ROOT,
             branch="skill-merge/claude/review",
-            commits={"review": "merged-commit"},
+            commits={"skills/review": "merged-commit"},
         )
         other_git = FakeGitRepo(root=SOURCE_REPO_ROOT)
         _install_multi_git({OTHER_REPO_ROOT: cwd_git, SOURCE_REPO_ROOT: other_git})
@@ -1310,7 +1310,7 @@ class TestDetectMergeRepo:
         source_git = FakeGitRepo(
             root=SOURCE_REPO_ROOT,
             branch="skill-merge/claude/tdd",
-            commits={"tdd": "merged-commit"},
+            commits={"skills/tdd": "merged-commit"},
         )
         _install_multi_git({SOURCE_REPO_ROOT: source_git})
 
@@ -1388,7 +1388,7 @@ class TestDetectMergeRepo:
         cwd_git = FakeGitRepo(
             root=SOURCE_REPO_ROOT,
             branch="skill-merge/claude/tdd",
-            commits={"tdd": "merged-commit"},
+            commits={"skills/tdd": "merged-commit"},
         )
         other_git = FakeGitRepo(
             root=OTHER_REPO_ROOT,

@@ -282,7 +282,7 @@ def _reattach_installed_skill(
     git: GitRepo,
 ) -> None:
     baseline = Baseline(
-        commit=git.get_skill_commit(skill.name),
+        commit=git.get_skill_commit(skill.rel_path),
         files=compute_file_hashes(source.repo_root / skill.rel_path),
     )
     manifest.register_skill(
@@ -357,7 +357,8 @@ def _merge_orphan(
     provider = _find_skill_in_provider(ctx.provider_registry, provider, skill_name)
 
     installed_path = provider.install_path / skill_name
-    skill_dst = source.repo_root / source.config.skills_dir / skill_name
+    skill_rel_path = f"{source.config.skills_dir}/{skill_name}"
+    skill_dst = source.repo_root / skill_rel_path
     _copy_skill_with_replace(src=installed_path, dst=skill_dst)
 
     if no_commit:
@@ -371,7 +372,7 @@ def _merge_orphan(
         skill_name,
         source_name=source.name,
         baseline=Baseline(
-            commit=git.get_skill_commit(skill_name),
+            commit=git.get_skill_commit(skill_rel_path),
             files=compute_file_hashes(skill_dst),
         ),
     )
@@ -613,7 +614,7 @@ def _finalize(
     )
 
     new_hashes = compute_file_hashes(installed_path)
-    is_equal = installed.baseline and new_hashes == installed.baseline.files
+    is_equal = installed.match_files(new_hashes)
 
     ctx.manifest.register_skill(
         skill_name,
@@ -621,7 +622,7 @@ def _finalize(
         baseline=Baseline(
             # note: take latest commit for code, since we just finished
             #       merging and must be in sync
-            commit=git.get_skill_commit(skill_name),
+            commit=git.get_skill_commit(skill.rel_path),
             files=new_hashes,
         ),
     )

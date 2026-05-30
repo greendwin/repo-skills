@@ -193,17 +193,14 @@ def _print_skill_report(skill_name: str, report: _SkillReport) -> None:
     unique = set(report.provider_statuses.values())
 
     if len(report.provider_statuses) > 1 and len(unique) > 1:
-        # TODO: this looks ugly, need to rework this update-status code
-        console.print("")
-        for pname, pstatus in report.provider_statuses.items():
-            console.print(
-                f"  Updating {fmt_data(skill_name)} ({pname}) … "
-                f"{_STATUS_LABEL[pstatus]}"
-            )
         if report.recovered:
-            console.print(f"  Updating {fmt_data(skill_name)} … {_RECOVERED}")
+            console.finish(_RECOVERED)
         elif report.newly_detached:
-            console.print(f"  Updating {fmt_data(skill_name)} … {_DETACHED}")
+            console.finish(_DETACHED)
+
+        # we should print several distinct statuses for same skill based on provider
+        for prov_name, pstatus in report.provider_statuses.items():
+            console.print(f"  {fmt_data(prov_name)}: {_STATUS_LABEL[pstatus]}")
         return
 
     if _Status.SKIPPED in unique and _Status.UPDATED not in unique:
@@ -218,4 +215,4 @@ def _print_skill_report(skill_name: str, report: _SkillReport) -> None:
     elif report.newly_detached:
         status = f"{status}, {_DETACHED}"
 
-    console.print(status)
+    console.finish(status)

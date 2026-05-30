@@ -546,8 +546,8 @@ class TestUpdatePerProviderOutput:
         cursor_lines = [line for line in lines if "cursor" in line]
         assert len(claude_lines) == 1
         assert len(cursor_lines) == 1
-        assert_words_in_message(claude_lines[0], "tdd (claude)", "updated")
-        assert_words_in_message(cursor_lines[0], "tdd (cursor)", "skipped")
+        assert_words_in_message(claude_lines[0], "claude", "updated")
+        assert_words_in_message(cursor_lines[0], "cursor", "skipped")
 
     def test_all_providers_updated_shows_single_line(
         self, fs: FakeFilesystem, git_repo: Path
@@ -652,6 +652,6 @@ class TestUpdatePerProviderOutput:
         cursor_lines = [line for line in lines if "cursor" in line]
         assert len(claude_lines) == 1
         assert len(cursor_lines) == 1
-        assert_words_in_message(claude_lines[0], "tdd (claude)", "updated")
-        assert_words_in_message(cursor_lines[0], "tdd (cursor)", "skipped")
+        assert_words_in_message(claude_lines[0], "claude", "updated")
+        assert_words_in_message(cursor_lines[0], "cursor", "skipped")
         assert_words_in_message(result.output, "recovered")

@@ -25,5 +25,5 @@ Fix TODO-documented bugs and issues across the CLI.
 - [x] [s08t13](s08t13-extract-shared-setup-in-testresolvebasecommit.md): Extract shared setup in TestResolveBaseCommit
 - [x] [s08t14](s08t14-broken-manifest-should-not-fail.md): Broken manifest should not fail
 - [x] [s08t15](s08t15-wrong-base-commit-is-taken/): Wrong base commit is taken
-- [ ] [s08t16](s08t16-status-report-synced-for-outdated/): Status report 'synced' for outdated install
+- [x] [s08t16](s08t16-status-report-synced-for-outdated/): Status report 'synced' for outdated install
 - [ ] [s08t17](s08t17-git-fails-when-nothing-to.md): Git fails when nothing to merge

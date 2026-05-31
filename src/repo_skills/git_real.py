@@ -109,8 +109,12 @@ class RealGitRepo:
     def is_clean(self) -> bool:
         return self._run("status", "--porcelain") == ""
 
-    def get_skill_commit(self, rel_path: str) -> str:
-        return self._run("log", "-1", "--format=%H", "--", rel_path)
+    def get_skill_commit(self, rel_path: str, *, branch: str = "") -> str:
+        args = ["log", "-1", "--format=%H"]
+        if branch:
+            args.append(branch)
+        args.extend(["--", rel_path])
+        return self._run(*args)
 
     def log_commits(self, path: str, max_count: int) -> list[str]:
         output = self._run("log", f"--max-count={max_count}", "--format=%H", "--", path)

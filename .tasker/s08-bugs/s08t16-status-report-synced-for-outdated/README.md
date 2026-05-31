@@ -1,7 +1,7 @@
 ---
 id: s08t16
 slug: status-report-synced-for-outdated
-status: pending
+status: done
 ---
 
 # Status report 'synced' for outdated install
@@ -30,4 +30,4 @@ None.
 
 - [x] [s08t1601](s08t1601-fix-git-method-signatures-to.md): Fix git method signatures to accept rel_path
 - [x] [s08t1602](s08t1602-have-status-switch-to-pinned.md): Have status switch to pinned branch per source
-- [ ] [s08t1603](s08t1603-outdated-detection-and-label-in.md): Outdated detection and label in status
+- [x] [s08t1603](s08t1603-outdated-detection-and-label-in.md): Outdated detection and label in status

@@ -1,7 +1,7 @@
 ---
 id: s08t1603
 slug: outdated-detection-and-label-in
-status: pending
+status: done
 ---
 
 # Outdated detection and label in status

@@ -652,3 +652,115 @@ class TestStatusBrokenProviderRegistry:
         result = assert_invoke("status")
 
         assert_words_in_message(result.output, "warning", "broken config file")
+
+
+def _setup_installed_skill(
+    fs: FakeFilesystem,
+    git_repo: Path,
+    commit: str = "old123",
+    *,
+    create_in_source: bool = True,
+) -> dict[str, str]:
+    register_source(git_repo)
+    _init_source_config(fs, git_repo)
+    if create_in_source:
+        _create_source_skill(fs, "tdd", git_repo)
+    hashes = install_skill(fs, "tdd")
+    save_manifest(
+        {
+            "tdd": InstalledSkill(
+                source="my-project",
+                baseline=Baseline(commit=commit, files=hashes),
+            )
+        }
+    )
+    return hashes
+
+
+class TestStatusOutdated:
+    def test_synced_but_outdated(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_installed_skill(fs, git_repo)
+        _fake_git.branch_commits = {("skills/tdd", "main"): "new456"}
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "tdd", "synced", "outdated")
+
+    def test_modified_and_outdated(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_installed_skill(fs, git_repo)
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited")
+        _fake_git.branch_commits = {("skills/tdd", "main"): "new456"}
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "tdd", "modified", "outdated")
+
+    def test_no_outdated_when_commits_match(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_installed_skill(fs, git_repo, "abc123")
+        _fake_git.branch_commits = {("skills/tdd", "main"): "abc123"}
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "tdd", "synced")
+        assert "outdated" not in result.output.lower()
+
+    def test_no_outdated_when_no_baseline(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "tdd", git_repo)
+        install_skill(fs, "tdd")
+        save_manifest({"tdd": InstalledSkill(source="my-project", baseline=None)})
+        _fake_git.branch_commits = {("skills/tdd", "main"): "new456"}
+
+        result = assert_invoke("status")
+
+        assert "outdated" not in result.output.lower()
+
+    def test_no_outdated_when_broken_source(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        broken_path = Path("/repos/broken-project")
+        fs.create_dir(broken_path / ".git")
+        registry = SourceRegistry()
+        registry.register_source("broken-project", broken_path)
+        save_source_registry(registry)
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="broken-project",
+                    baseline=Baseline(commit="old123", files=hashes),
+                )
+            }
+        )
+
+        result = assert_invoke("status")
+
+        assert "outdated" not in result.output.lower()
+
+    def test_no_outdated_when_get_skill_commit_empty(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_installed_skill(fs, git_repo)
+
+        result = assert_invoke("status")
+
+        assert "outdated" not in result.output.lower()
+
+    def test_no_outdated_when_skill_removed_from_source(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_installed_skill(fs, git_repo, create_in_source=False)
+        _fake_git.branch_commits = {("skills/tdd", "main"): "new456"}
+
+        result = assert_invoke("status")
+
+        assert "outdated" not in result.output.lower()

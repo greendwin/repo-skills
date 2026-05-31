@@ -9,6 +9,7 @@ from repo_skills.config import (
     Baseline,
     ProviderRegistry,
     SkillManifest,
+    Source,
     SourceBrokenError,
     SourceRegistry,
     compute_file_hashes,
@@ -56,10 +57,13 @@ def status(
     source_registry = load_source_registry()
     provider_registry = load_provider_registry()
 
+    # TODO: rework all this method to typed structures (too many raw strings now)
+    #       (e.g. don't store skill_name, but manifest entry itself, and so on)
     installed_by_source = _group_installed_by_source(manifest)
-    available_by_source, all_source_skills = _scan_sources(
+    available_by_source, all_source_skills, loaded_sources = _scan_sources(
         source_registry, installed_by_source, sync=sync
     )
+    outdated = _compute_outdated(manifest, installed_by_source, loaded_sources)
     untracked = _collect_untracked(manifest, provider_registry, all_source_skills)
     untracked_lookup = _build_untracked_lookup(untracked)
 
@@ -83,6 +87,7 @@ def status(
         name_width=name_width,
         provider_width=provider_width,
         untracked_lookup=untracked_lookup,
+        outdated=outdated,
     )
 
     has_output |= _print_untracked_section(untracked, name_width, provider_width)
@@ -105,9 +110,11 @@ def _scan_sources(
     installed_by_source: SkillsBySource,
     *,
     sync: bool = False,
-) -> tuple[SkillsBySource, SourceSkillIndex]:
+) -> tuple[SkillsBySource, SourceSkillIndex, dict[str, Source]]:
+    # TODO: rework ret type to named tuple
     available_by_source: SkillsBySource = {}
     all_source_skills: SourceSkillIndex = {}
+    loaded_sources: dict[str, Source] = {}
 
     for source_name in source_registry.sources:
         try:
@@ -135,6 +142,7 @@ def _scan_sources(
 
         # load skills on correct branch
         source = source_registry.get_source(source_name, load_skills=True)
+        loaded_sources[source_name] = source
 
         all_source_skills[source_name] = set(source.skills)
         already_installed = set(installed_by_source.get(source_name, []))
@@ -142,7 +150,42 @@ def _scan_sources(
         if available:
             available_by_source[source_name] = available
 
-    return available_by_source, all_source_skills
+    return available_by_source, all_source_skills, loaded_sources
+
+
+def _compute_outdated(
+    manifest: SkillManifest,
+    installed_by_source: SkillsBySource,
+    loaded_sources: dict[str, Source],
+) -> set[str]:
+    outdated: set[str] = set()
+    for source_name, skill_names in installed_by_source.items():
+        # TODO: do we need 'loaded_sources'? why not just use `source_registry`?
+        source = loaded_sources.get(source_name)
+        if source is None:
+            continue
+
+        git = resolve_git_repo(source.repo_root)
+        target_branch = source.get_branch(git)
+        for skill_name in skill_names:
+            entry = manifest.skills[skill_name]
+            if entry.baseline is None:
+                continue
+
+            source_skill = source.skills.get(skill_name)
+            if source_skill is None:
+                continue
+
+            latest_commit = git.get_skill_commit(
+                source_skill.rel_path, branch=target_branch
+            )
+            if not latest_commit:
+                continue
+
+            if entry.baseline.commit != latest_commit:
+                outdated.add(skill_name)
+
+    return outdated
 
 
 def _collect_untracked(
@@ -200,6 +243,7 @@ def _print_source_sections(
     name_width: int,
     provider_width: int,
     untracked_lookup: UntrackedLookup,
+    outdated: set[str],
 ) -> bool:
     all_sources = sorted(
         set(installed_by_source.keys()) | set(available_by_source.keys())
@@ -223,6 +267,8 @@ def _print_source_sections(
             for provider in provider_registry.providers:
                 installed_path = provider.install_path / skill_name
                 divergence = _check_divergence(installed_path, entry.baseline)
+                if skill_name in outdated and installed_path.exists():
+                    divergence = f"{divergence}, [blue]outdated[/blue]"
                 console.print(
                     f"  {skill_name:<{name_width}}"
                     f"  [dim]{provider.name:<{provider_width}}[/dim]"

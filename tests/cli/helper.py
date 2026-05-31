@@ -59,6 +59,7 @@ class FakeGitRepo:
     branch: str = "main"
     clean: bool = True
     commits: dict[str, str] = field(default_factory=dict)
+    branch_commits: dict[tuple[str, str], str] = field(default_factory=dict)
     verified: dict[str, bool] = field(default_factory=dict)
     pulled: bool = False
     created_branches: dict[str, str] = field(default_factory=dict)
@@ -94,7 +95,9 @@ class FakeGitRepo:
     def is_clean(self) -> bool:
         return self.clean
 
-    def get_skill_commit(self, rel_path: str) -> str:
+    def get_skill_commit(self, rel_path: str, *, branch: str = "") -> str:
+        if branch:
+            return self.branch_commits.get((rel_path, branch), "")
         return self.commits.get(rel_path, "")
 
     def verify_commit_content(self, commit: str, rel_path: str) -> bool:

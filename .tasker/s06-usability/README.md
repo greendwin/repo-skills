@@ -19,7 +19,7 @@ status: in-progress
 - [x] [s06t10](s06t10-improve-source-init-reinit-feedback/): Improve `source init` re-init feedback & add hidden `skills init`
 - [x] [s06t11](s06t11-show-exact-errors-on-skills/): Show exact errors on skills update
 - [x] [s06t12](s06t12-stream-gitsubprocess-invocations-under-debug.md): Stream git/subprocess invocations under --debug
-- [ ] [s06t13](s06t13-allow-to-omit-skill-name/): Allow to omit skill name when only one skill is modified
+- [~] [s06t13](s06t13-allow-to-omit-skill-name/): **review** Allow to omit skill name when only one skill is modified
 - [x] [s06t14](s06t14-inconsistent-status-command/): Inconsistent 'status' command -
 - [x] [s06t16](s06t16-autoattach-untracked-skills-on-update/): Auto-attach untracked skills on `update` when they match source exactly
 - [ ] [s06t17](s06t17-group-skills-when-installed-from.md): Group skills when installed from same source

@@ -1930,3 +1930,114 @@ class TestFindBaseCommitCRLF:
         assert result is not None
         assert result.commit == "abc"
         assert result.distance == 0
+
+
+class TestMergeAutoDetect:
+    def test_auto_detects_single_modified_skill(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_diverged_skill(fs, git_repo)
+
+        result = assert_invoke("merge", "--offline")
+
+        assert _fake_git.created_branches["skill-merge/claude/tdd"] == COMMIT
+        assert_words_in_message(result.output, "merge", "complete")
+
+    def test_errors_when_multiple_modified(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        create_source_skill(fs, "review", content="# original")
+        hashes_tdd = install_skill(fs, "tdd", content="# original")
+        hashes_review = install_skill(fs, "review", content="# original")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit=COMMIT, files=hashes_tdd),
+                ),
+                "review": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit=COMMIT, files=hashes_review),
+                ),
+            }
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited tdd")
+        (INSTALL_DIR / "review" / "SKILL.md").write_text("# edited review")
+
+        result = assert_invoke("merge", "--offline", expect_error=True)
+
+        assert_words_in_message(
+            result.exception.message, "multiple skills", "review", "tdd"
+        )
+        assert_words_in_message(result.exception.message, "specify skill name")
+
+    def test_errors_when_no_modified_skills(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit=COMMIT, files=hashes),
+                )
+            }
+        )
+
+        result = assert_invoke("merge", "--offline", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "no modified skills")
+
+    def test_skills_without_baseline_not_considered_modified(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        install_skill(fs, "tdd", content="# different")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=None,
+                )
+            }
+        )
+
+        result = assert_invoke("merge", "--offline", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "no modified skills")
+
+    def test_from_flag_scopes_auto_detect_to_provider(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        create_source_skill(fs, "review", content="# original")
+        hashes_tdd = install_skill(fs, "tdd", content="# original")
+        hashes_review = install_skill(fs, "review", content="# original")
+        install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
+        register_provider("cursor", str(CURSOR_DIR))
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit=COMMIT, files=hashes_tdd),
+                ),
+                "review": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit=COMMIT, files=hashes_review),
+                ),
+            }
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited tdd")
+        (INSTALL_DIR / "review" / "SKILL.md").write_text("# edited review")
+        (CURSOR_DIR / "tdd" / "SKILL.md").write_text("# edited cursor tdd")
+
+        result = assert_invoke("merge", "--from", "cursor", "--offline")
+
+        assert _fake_git.created_branches["skill-merge/cursor/tdd"] == COMMIT
+        assert_words_in_message(result.output, "merge", "complete")

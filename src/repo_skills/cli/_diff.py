@@ -21,13 +21,16 @@ from repo_skills.errors import AppError, FileNotInCommitError, NoopError
 
 from ._app import app
 from ._deps import resolve_git_repo
-from ._utils import find_skill_in_provider, resolve_untracked
+from ._utils import find_skill_in_provider, require_single_modified, resolve_untracked
 
 
 @app.command(help="Show diff of installed skill against baseline.")
 def diff(
     *,
-    skill_name: Annotated[str, typer.Argument(help="Skill to diff.")],
+    skill_name: Annotated[
+        Optional[str],
+        typer.Argument(help="Skill to diff."),
+    ] = None,
     from_provider: Annotated[
         Optional[str],
         typer.Option("--from", help="Provider (required when ambiguous)."),
@@ -36,6 +39,11 @@ def diff(
     provider_registry = load_provider_registry()
     source_registry = load_source_registry()
     manifest = load_skill_manifest()
+
+    if skill_name is None:
+        skill_name = require_single_modified(
+            provider_registry, manifest, provider_name=from_provider
+        )
 
     provider_obj = None
     if from_provider:

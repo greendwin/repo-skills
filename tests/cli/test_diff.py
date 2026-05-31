@@ -10,6 +10,7 @@ from tests.cli.helper import (
     SKILLS_DIR,
     FakeGitRepo,
     assert_invoke,
+    assert_words_in_message,
     create_source_skill,
     install_skill,
     register_provider,
@@ -400,3 +401,132 @@ class TestDiffRichMarkupEscape:
 
         result = assert_invoke("diff", "tdd")
         assert "[red]markup[/red]" in result.output
+
+
+class TestDiffAutoDetect:
+    def test_auto_detects_single_modified_skill(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+    ) -> None:
+        register_provider("claude", str(INSTALL_DIR))
+        _setup_tracked_with_baseline(
+            fs,
+            git_repo,
+            _fake_git,
+            baseline_content="# original",
+            installed_content="# edited",
+        )
+
+        result = assert_invoke("diff")
+        assert "-# original" in result.output
+        assert "+# edited" in result.output
+
+    def test_errors_when_multiple_modified(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+    ) -> None:
+        register_provider("claude", str(INSTALL_DIR))
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        create_source_skill(fs, "review", content="# original")
+        hashes_tdd = install_skill(fs, "tdd", content="# original")
+        hashes_review = install_skill(fs, "review", content="# original")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit=COMMIT, files=hashes_tdd),
+                ),
+                "review": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit=COMMIT, files=hashes_review),
+                ),
+            }
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited tdd")
+        (INSTALL_DIR / "review" / "SKILL.md").write_text("# edited review")
+
+        result = assert_invoke("diff", expect_error=True)
+
+        assert_words_in_message(
+            result.exception.message, "multiple skills", "review", "tdd"
+        )
+        assert_words_in_message(result.exception.message, "specify skill name")
+
+    def test_errors_when_no_modified_skills(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+    ) -> None:
+        register_provider("claude", str(INSTALL_DIR))
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit=COMMIT, files=hashes),
+                )
+            }
+        )
+
+        result = assert_invoke("diff", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "no modified skills")
+
+    def test_skills_without_baseline_not_considered_modified(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+    ) -> None:
+        register_provider("claude", str(INSTALL_DIR))
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        install_skill(fs, "tdd", content="# different")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=None,
+                )
+            }
+        )
+
+        result = assert_invoke("diff", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "no modified skills")
+
+    def test_from_flag_scopes_auto_detect_to_provider(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+    ) -> None:
+        register_provider("claude", str(INSTALL_DIR))
+        register_provider("cursor", str(CURSOR_DIR))
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes_tdd = install_skill(fs, "tdd", content="# original")
+        install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit=COMMIT, files=hashes_tdd),
+                )
+            }
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited in claude")
+        (CURSOR_DIR / "tdd" / "SKILL.md").write_text("# edited in cursor")
+
+        result = assert_invoke("diff", "--from", "cursor")
+
+        assert "+# edited in cursor" in result.output
+        assert "# edited in claude" not in result.output

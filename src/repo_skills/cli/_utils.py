@@ -5,9 +5,11 @@ from dataclasses import dataclass
 from repo_skills.config import (
     Provider,
     ProviderRegistry,
+    SkillManifest,
     Source,
     SourceRegistry,
     SourceSkill,
+    compute_file_hashes,
 )
 from repo_skills.console import fmt_command, fmt_ident
 from repo_skills.errors import AppError
@@ -91,6 +93,55 @@ def resolve_untracked(
 
     source, skill = matches[0]
     return UntrackedSkill(provider, source, skill)
+
+
+def find_modified_skills(
+    provider_registry: ProviderRegistry,
+    manifest: SkillManifest,
+    *,
+    provider_name: str | None = None,
+) -> list[str]:
+    if provider_name is not None:
+        providers = [provider_registry.require(provider_name)]
+    else:
+        providers = list(provider_registry.providers)
+
+    modified: set[str] = set()
+    for skill_name, entry in manifest.skills.items():
+        if entry.baseline is None:
+            continue
+
+        for provider in providers:
+            installed_path = provider.install_path / skill_name
+            if not installed_path.is_dir():
+                continue
+
+            current_hashes = compute_file_hashes(installed_path)
+            if current_hashes != entry.baseline.files:
+                modified.add(skill_name)
+                break
+
+    return sorted(modified)
+
+
+def require_single_modified(
+    provider_registry: ProviderRegistry,
+    manifest: SkillManifest,
+    *,
+    provider_name: str | None = None,
+) -> str:
+    modified = find_modified_skills(
+        provider_registry, manifest, provider_name=provider_name
+    )
+    if len(modified) == 0:
+        raise AppError("No modified skills found.")
+    if len(modified) > 1:
+        names = ", ".join(fmt_ident(s) for s in modified)
+        raise AppError(
+            f"Multiple skills are modified ({names}).",
+            hint="Specify skill name.",
+        )
+    return modified[0]
 
 
 def resolve_orphan_source(source_registry: SourceRegistry) -> Source:

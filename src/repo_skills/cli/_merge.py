@@ -35,6 +35,7 @@ from ._app import app
 from ._deps import resolve_git_repo
 from ._utils import (
     find_skill_in_provider,
+    require_single_modified,
     resolve_orphan_source,
     resolve_untracked,
 )
@@ -105,9 +106,8 @@ def merge(
         return
 
     if skill_name is None:
-        raise AppError(
-            "Skill name is required.",
-            hint=f"Use {fmt_command('--continue')} to finalize a merge in progress.",
+        skill_name = require_single_modified(
+            ctx.provider_registry, ctx.manifest, provider_name=from_provider
         )
 
     _merge_start(

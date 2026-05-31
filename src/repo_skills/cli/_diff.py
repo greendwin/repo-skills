@@ -47,13 +47,21 @@ def diff(
     entry = manifest.skills.get(skill_name)
 
     if entry is not None:
-        source = source_registry.get_source(entry.source, load_skills=True)
+        try:
+            source = source_registry.get_source(entry.source, load_skills=True)
+        except AppError:
+            raise AppError(
+                f"Source {fmt_ident(entry.source)} for skill"
+                f" {fmt_ident(skill_name)} is no longer registered."
+            ) from None
         skill = source.get_skill(skill_name)
 
         if entry.baseline:
-            ref_files = _read_baseline_files(source, skill, entry, installed_path)
+            ref_files, all_files = _read_baseline_files(
+                source, skill, entry, installed_path
+            )
         else:
-            ref_files = _read_source_files(source, skill, installed_path)
+            ref_files, all_files = _read_source_files(source, skill, installed_path)
     else:
         untracked = resolve_untracked(
             provider_registry,
@@ -64,11 +72,19 @@ def diff(
         if untracked is None:
             raise AppError(f"Cannot find source for {fmt_ident(skill_name)}.")
 
-        ref_files = _read_source_files(
+        ref_files, all_files = _read_source_files(
             untracked.source, untracked.skill, installed_path
         )
 
-    _output_diff(skill_name, ref_files, installed_path)
+    _output_diff(skill_name, ref_files, all_files, installed_path)
+
+
+def _collect_files(path: Path) -> set[str]:
+    return {str(f.relative_to(path)) for f in path.rglob("*") if f.is_file()}
+
+
+def _read_file(path: Path) -> list[str]:
+    return path.read_bytes().decode(errors="replace").splitlines(keepends=True)
 
 
 def _read_baseline_files(
@@ -76,13 +92,13 @@ def _read_baseline_files(
     skill: SourceSkill,
     entry: InstalledSkill,
     installed_path: Path,
-) -> dict[str, list[str]]:
+) -> tuple[dict[str, list[str]], set[str]]:
     assert entry.baseline is not None
 
     git = resolve_git_repo(source.repo_root)
     commit = entry.baseline.commit
 
-    all_files = set(_collect_installed_files(installed_path))
+    all_files = _collect_files(installed_path)
     all_files.update(entry.baseline.files.keys())
 
     ref_files: dict[str, list[str]] = {}
@@ -96,67 +112,43 @@ def _read_baseline_files(
         except FileNotInCommitError:
             ref_files[rel_file] = []
 
-    return ref_files
+    return ref_files, all_files
 
 
 def _read_source_files(
     source: Source,
     skill: SourceSkill,
     installed_path: Path,
-) -> dict[str, list[str]]:
-    all_files = set(_collect_installed_files(installed_path))
+) -> tuple[dict[str, list[str]], set[str]]:
+    all_files = _collect_files(installed_path)
     source_skill_dir = source.repo_root / skill.rel_path
     if source_skill_dir.is_dir():
-        for f in sorted(source_skill_dir.rglob("*")):
-            if f.is_file():
-                all_files.add(str(f.relative_to(source_skill_dir)))
+        all_files.update(_collect_files(source_skill_dir))
 
     ref_files: dict[str, list[str]] = {}
     for rel_file in all_files:
         disk_path = source_skill_dir / rel_file
         if disk_path.exists():
-            ref_files[rel_file] = (
-                disk_path.read_bytes()
-                .decode(errors="replace")
-                .splitlines(keepends=True)
-            )
+            ref_files[rel_file] = _read_file(disk_path)
         else:
             ref_files[rel_file] = []
 
-    return ref_files
-
-
-def _collect_installed_files(installed_path: Path) -> list[str]:
-    files: list[str] = []
-    for f in sorted(installed_path.rglob("*")):
-        if f.is_file():
-            files.append(str(f.relative_to(installed_path)))
-    return files
+    return ref_files, all_files
 
 
 def _output_diff(
     skill_name: str,
     ref_files: dict[str, list[str]],
+    all_files: set[str],
     installed_path: Path,
 ) -> None:
     has_diff = False
-
-    all_files = set(ref_files.keys())
-    all_files.update(
-        str(f.relative_to(installed_path))
-        for f in installed_path.rglob("*")
-        if f.is_file()
-    )
 
     for rel_file in sorted(all_files):
         ref_lines = ref_files.get(rel_file, [])
         installed_file = installed_path / rel_file
         if installed_file.exists():
-            installed_lines = (
-                installed_file.read_bytes()
-                .decode(errors="replace")
-                .splitlines(keepends=True)
-            )
+            installed_lines = _read_file(installed_file)
         else:
             installed_lines = []
 

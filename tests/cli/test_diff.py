@@ -63,10 +63,10 @@ class TestDiffTrackedBaseline:
         )
 
         result = assert_invoke("diff", "tdd")
-        assert "+" in result.output
-        assert "-" in result.output
-        assert "# edited" in result.output
-        assert "# original" in result.output
+        assert "--- a/tdd/SKILL.md" in result.output
+        assert "+++ b/tdd/SKILL.md" in result.output
+        assert "-# original" in result.output
+        assert "+# edited" in result.output
 
     def test_noop_when_unmodified(
         self,
@@ -162,6 +162,22 @@ class TestDiffNotInstalled:
         assert "not installed" in result.exception.message.lower()
 
 
+class TestDiffMissingSource:
+    def test_error_when_source_no_longer_registered(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+    ) -> None:
+        register_provider("claude", str(INSTALL_DIR))
+        install_skill(fs, "tdd")
+        save_manifest({"tdd": InstalledSkill(source="deleted-source", baseline=None)})
+
+        result = assert_invoke("diff", "tdd", expect_error=True)
+        assert "deleted-source" in result.exception.message
+        assert "no longer registered" in result.exception.message
+
+
 class TestDiffMultiFile:
     def test_diffs_multiple_files(
         self,
@@ -224,8 +240,7 @@ class TestDiffDeletedFromInstalled:
 
         result = assert_invoke("diff", "tdd")
         assert "extra.md" in result.output
-        assert "# extra baseline" in result.output
-        assert "-" in result.output
+        assert "-# extra baseline" in result.output
 
     def test_file_deleted_from_installed_shows_red_diff_source(
         self,
@@ -283,8 +298,7 @@ class TestDiffAddedToInstalled:
 
         result = assert_invoke("diff", "tdd")
         assert "new_file.md" in result.output
-        assert "# added by user" in result.output
-        assert "+" in result.output
+        assert "+# added by user" in result.output
 
 
 class TestDiffRichMarkupEscape:

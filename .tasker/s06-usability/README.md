@@ -22,3 +22,5 @@ status: pending
 - [x] [s06t12](s06t12-stream-gitsubprocess-invocations-under-debug.md): Stream git/subprocess invocations under --debug
 - [ ] [s06t13](s06t13-allow-to-omit-skill-name.md): Allow to omit skill name when only one skill is modified
 - [x] [s06t14](s06t14-inconsistent-status-command/): Inconsistent 'status' command -
+- [ ] [s06t15](s06t15-rework-statuspy-internals-to-typed.md): Rework `_status.py` internals to typed structures
+- [ ] [s06t16](s06t16-autoattach-untracked-skills-on-update.md): Auto-attach untracked skills on `update` when they match source exactly

@@ -1,7 +1,7 @@
 ---
 id: s08
 slug: bugs
-status: done
+status: pending
 ---
 
 # Bugs
@@ -27,3 +27,4 @@ Fix TODO-documented bugs and issues across the CLI.
 - [x] [s08t15](s08t15-wrong-base-commit-is-taken/): Wrong base commit is taken
 - [x] [s08t16](s08t16-status-report-synced-for-outdated/): Status report 'synced' for outdated install
 - [x] [s08t17](s08t17-git-fails-when-nothing-to/): Git fails when nothing to merge
+- [ ] [s08t18](s08t18-error-when-manifest-version-is.md): Error when manifest version is higher than supported

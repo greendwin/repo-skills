@@ -158,7 +158,6 @@ def _compute_outdated(
 ) -> set[str]:
     outdated: set[str] = set()
     for source_name, skill_names in installed_by_source.items():
-        # TODO: do we need 'loaded_sources'? why not just use `source_registry`?
         source = loaded_sources.get(source_name)
         if source is None:
             continue

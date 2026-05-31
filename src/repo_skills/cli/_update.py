@@ -140,7 +140,6 @@ def update(
     providers = load_provider_registry()
     manifest = load_skill_manifest()
 
-    # TODO: can we do anything with skills that are not in manifest?
     if not manifest.skills:
         raise NoopError("[dim]No skills installed.[/dim]")
 

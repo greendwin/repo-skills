@@ -1,7 +1,7 @@
 ---
 id: s01t04
 slug: add-skills-diff-command
-status: pending
+status: in-progress
 ---
 
 # Add 'skills diff' command
@@ -22,6 +22,6 @@ status: pending
 
 ## Subtasks
 
-- [ ] [s01t0401](s01t0401-extract-shared-helpers-from-mergepy.md): Extract shared helpers from _merge.py
+- [~] [s01t0401](s01t0401-extract-shared-helpers-from-mergepy.md): **review** Extract shared helpers from _merge.py
 - [ ] [s01t0402](s01t0402-basic-diff-command-for-tracked.md): Basic diff command for tracked modified skill
 - [ ] [s01t0403](s01t0403-edge-cases-not-modified-addeddeleted.md): Edge cases: not modified, added/deleted files, errors

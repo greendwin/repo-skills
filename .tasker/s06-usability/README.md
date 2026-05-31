@@ -1,7 +1,7 @@
 ---
 id: s06
 slug: usability
-status: pending
+status: in-progress
 ---
 
 # Usability

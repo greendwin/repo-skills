@@ -18,7 +18,6 @@ from repo_skills.config import (
     ProviderRegistry,
     SkillManifest,
     Source,
-    SourceRegistry,
     SourceSkill,
     compute_file_hashes,
     load_config_context,
@@ -34,6 +33,11 @@ from repo_skills.utils import normalize_line_endings
 
 from ._app import app
 from ._deps import resolve_git_repo
+from ._utils import (
+    find_skill_in_provider,
+    resolve_orphan_source,
+    resolve_untracked,
+)
 
 MERGE_BRANCH_PREFIX = "skill-merge/"
 
@@ -139,8 +143,9 @@ def _merge_start(
 
     installed = ctx.manifest.skills.get(skill_name)
     if installed is None:
-        untracked = _resolve_untracked(
-            ctx,
+        untracked = resolve_untracked(
+            ctx.provider_registry,
+            ctx.source_registry,
             skill_name=skill_name,
             provider=provider,
             source=source,
@@ -341,51 +346,6 @@ def _reattach_installed_skill(
     save_skill_manifest(manifest)
 
 
-@dataclass
-class _UntrackedSkill:
-    provider: Provider
-    source: Source
-    skill: SourceSkill
-
-
-def _resolve_untracked(
-    ctx: ConfigContext,
-    *,
-    provider: Provider | None,
-    skill_name: str,
-    source: Source | None = None,
-) -> _UntrackedSkill | None:
-    provider = _find_skill_in_provider(ctx.provider_registry, provider, skill_name)
-
-    if source is not None:
-        skill = source.skills.get(skill_name)
-        if skill is None:
-            return None
-        return _UntrackedSkill(provider, source, skill)
-
-    matches: list[tuple[Source, SourceSkill]] = []
-    for source_name in ctx.source_registry.sources:
-        source = ctx.source_registry.get_source(source_name, load_skills=True)
-        skill = source.skills.get(skill_name)
-        if skill is not None:
-            matches.append((source, skill))
-
-    if len(matches) > 1:
-        names = ", ".join(
-            fmt_ident(s.name) for s, _ in sorted(matches, key=lambda x: x[0].name)
-        )
-        raise AppError(
-            f"Multiple sources have {fmt_ident(skill_name)} ({names}).",
-            hint=f"Use {fmt_command('--source')} to specify.",
-        )
-
-    if not matches:
-        return None
-
-    source, skill = matches[0]
-    return _UntrackedSkill(provider, source, skill)
-
-
 def _merge_orphan(
     ctx: ConfigContext,
     skill_name: str,
@@ -396,13 +356,13 @@ def _merge_orphan(
     no_commit: bool = False,
 ) -> None:
     if source is None:
-        source = _resolve_orphan_source(ctx.source_registry)
+        source = resolve_orphan_source(ctx.source_registry)
 
     git = resolve_git_repo(source.repo_root)
     target_branch = source.get_branch(git)
     ensure_on_branch(git, target_branch, pull=not offline)
 
-    provider = _find_skill_in_provider(ctx.provider_registry, provider, skill_name)
+    provider = find_skill_in_provider(ctx.provider_registry, provider, skill_name)
 
     installed_path = provider.install_path / skill_name
     skill_rel_path = f"{source.config.skills_dir}/{skill_name}"
@@ -427,40 +387,6 @@ def _merge_orphan(
     save_skill_manifest(manifest)
 
     console.print(f"Merge complete for {fmt_ident(skill_name)}.")
-
-
-def _find_skill_in_provider(
-    provider_registry: ProviderRegistry, provider: Provider | None, skill_name: str
-) -> Provider:
-    if provider:
-        skill_path = provider.install_path / skill_name
-        if not skill_path.is_dir():
-            raise AppError(
-                f"Skill {fmt_ident(skill_name)} is not installed "
-                f"in {fmt_ident(provider.name)}."
-            )
-
-        return provider
-
-    matches = []
-    for prov in provider_registry.providers:
-        skill_path = prov.install_path / skill_name
-        if skill_path.is_dir():
-            matches.append(prov)
-
-    if len(matches) > 1:
-        names = ", ".join(
-            fmt_ident(p.name) for p in sorted(matches, key=lambda x: x.name)
-        )
-        raise AppError(
-            f"Multiple providers have {fmt_ident(skill_name)} ({names}).",
-            hint=f"Use {fmt_command('--from')} to specify.",
-        )
-
-    if not matches:
-        raise AppError(f"Skill {fmt_ident(skill_name)} is not installed.")
-
-    return matches[0]
 
 
 def _copy_skill_with_replace(*, src: Path, dst: Path) -> None:
@@ -831,20 +757,3 @@ def _compute_distance(
                 total += 1
 
     return total
-
-
-def _resolve_orphan_source(source_registry: SourceRegistry) -> Source:
-    if not source_registry.sources:
-        raise AppError("No sources registered.")
-
-    if len(source_registry.sources) > 1:
-        names = ", ".join(
-            fmt_ident(name) for name in sorted(source_registry.sources.keys())
-        )
-        raise AppError(
-            f"Multiple sources registered ({names}).",
-            hint=f"Use {fmt_command('--source')} to specify.",
-        )
-
-    source_name = list(source_registry.sources)[0]
-    return source_registry.get_source(source_name, load_skills=False)

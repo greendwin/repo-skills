@@ -21,3 +21,4 @@ status: pending
 - [x] [s06t11](s06t11-show-exact-errors-on-skills/): Show exact errors on skills update
 - [x] [s06t12](s06t12-stream-gitsubprocess-invocations-under-debug.md): Stream git/subprocess invocations under --debug
 - [ ] [s06t13](s06t13-allow-to-omit-skill-name.md): Allow to omit skill name when only one skill is modified
+- [ ] [s06t14](s06t14-inconsistent-status-command.md): Inconsistent 'status' command -

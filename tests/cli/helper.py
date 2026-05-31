@@ -210,7 +210,10 @@ def assert_invoke(
         return ErrorResult(exception=result.exception, output=result.output)
 
     if isinstance(result.exception, NoopError):
-        return NoopResult(output=result.exception.message)
+        output = result.output
+        if output and not output.endswith("\n"):
+            output += "\n"
+        return NoopResult(output=output + result.exception.message)
 
     if result.exception is not None and not isinstance(result.exception, SystemExit):
         raise result.exception

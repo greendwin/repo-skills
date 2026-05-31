@@ -10,11 +10,15 @@ from repo_skills.config import (
     InstalledSkill,
     SourceConfig,
     SourceRegistry,
+    default_config_path,
     load_source_config,
     load_source_registry,
     save_source_config,
     save_source_registry,
 )
+from repo_skills.config._provider_registry import PROVIDERS_REGISTRY_FILE
+from repo_skills.config._skill_manifest import SKILL_MANIFEST_FILE
+from repo_skills.config._source_registry import SOURCES_REGISTRY_FILE
 from tests.cli.helper import (
     INSTALL_DIR,
     SOURCE_REPO_ROOT,
@@ -592,3 +596,59 @@ class TestStatusSync:
         assert_invoke("status")
 
         assert _fake_git.pulled is False
+
+
+class TestStatusBrokenManifest:
+    def test_broken_manifest_shows_warning(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "review", git_repo)
+        manifest_path = default_config_path(SKILL_MANIFEST_FILE)
+        manifest_path.write_text("")
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "warning", "broken config file")
+
+    def test_broken_manifest_continues_showing_sources(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "review", git_repo)
+        manifest_path = default_config_path(SKILL_MANIFEST_FILE)
+        manifest_path.write_text("")
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "my-project", "review")
+
+
+class TestStatusBrokenSourceRegistry:
+    def test_broken_source_registry_shows_warning(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        source_path = default_config_path(SOURCES_REGISTRY_FILE)
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        source_path.write_text("{{{invalid json")
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "warning", "broken config file")
+
+
+class TestStatusBrokenProviderRegistry:
+    def test_broken_provider_registry_shows_warning(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "review", git_repo)
+        provider_path = default_config_path(PROVIDERS_REGISTRY_FILE)
+        provider_path.write_text("{{{invalid json")
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "warning", "broken config file")

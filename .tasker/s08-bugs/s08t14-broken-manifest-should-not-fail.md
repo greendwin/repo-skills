@@ -1,7 +1,7 @@
 ---
 id: s08t14
 slug: broken-manifest-should-not-fail
-status: pending
+status: done
 ---
 
 # Broken manifest should not fail

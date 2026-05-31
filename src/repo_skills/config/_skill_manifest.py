@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel
 
+from repo_skills.console import console
+from repo_skills.errors import ConfigBrokenError
 from repo_skills.utils import load_config, save_config
 
 from ._utils import RelPathHashes, default_config_path
@@ -72,10 +74,20 @@ class SkillManifest:
 
 def load_skill_manifest() -> SkillManifest:
     path = default_config_path(SKILL_MANIFEST_FILE)
-    cfg = load_config(_SkillManifestConfig, path)
-    if cfg is None:
-        cfg = _SkillManifestConfig()
+    try:
+        cfg = load_config(_SkillManifestConfig, path)
+    except ConfigBrokenError:
+        if console.debug:
+            console.print_exception()
 
+        console.print(f"[yellow]Warning[/yellow]: broken config file: {path}")
+        return SkillManifest()
+
+    if cfg is None:
+        return SkillManifest()
+
+    # TODO: config version can be *higher* then current,
+    #       we should stop then and ask to update
     if cfg.version != CURRENT_VERSION:
         return SkillManifest()
 
@@ -97,10 +109,14 @@ def load_skill_manifest() -> SkillManifest:
 def save_skill_manifest(manifest: SkillManifest) -> None:
     cfg = _SkillManifestConfig(version=CURRENT_VERSION)
     for name, skill in manifest.skills.items():
-        cfg.skills[name] = _InstalledSkillDesc(
+        desc = _InstalledSkillDesc(
             source=skill.source,
-            commit=skill.baseline.commit if skill.baseline else None,
-            files=dict(skill.baseline.files) if skill.baseline else {},
             detached=skill.detached,
         )
+        if skill.baseline:
+            desc.commit = skill.baseline.commit
+            desc.files.update(skill.baseline.files)
+
+        cfg.skills[name] = desc
+
     save_config(cfg, default_config_path(SKILL_MANIFEST_FILE))

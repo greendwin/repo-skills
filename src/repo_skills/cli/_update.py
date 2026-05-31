@@ -92,8 +92,7 @@ def _update_skill(
             provider_statuses[provider.name] = _Status.UP_TO_DATE
             continue
 
-        baseline_files = entry.baseline.files if entry.baseline else {}
-        if current_hashes != baseline_files:
+        if not entry.match_files(current_hashes):
             provider_statuses[provider.name] = _Status.SKIPPED
             continue
 

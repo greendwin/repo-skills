@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from contextlib import contextmanager
+from pathlib import Path
 
 from rich.markup import escape
 
@@ -27,6 +28,15 @@ class FileNotInCommitError(AppError):
         super().__init__(
             "File not found at commit",
             props={"commit": commit, "path": path},
+        )
+
+
+class ConfigBrokenError(AppError):
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        super().__init__(
+            "Broken config file",
+            props={"path": str(path)},
         )
 
 

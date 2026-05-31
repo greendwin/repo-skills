@@ -8,11 +8,13 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
     SourceConfig,
+    default_config_path,
     load_skill_manifest,
     load_source_registry,
     save_source_config,
     save_source_registry,
 )
+from repo_skills.config._skill_manifest import SKILL_MANIFEST_FILE
 from tests.cli.helper import (
     INSTALL_DIR,
     SKILLS_DIR,
@@ -322,3 +324,19 @@ class TestInstallGitValidation:
         assert_invoke("install", "tdd", "--offline")
 
         assert _fake_git.pulled is False
+
+
+class TestInstallBrokenManifest:
+    def test_broken_manifest_warns_and_installs(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_repo_skill(fs, "tdd", root=SKILLS_DIR)
+        manifest_path = default_config_path(SKILL_MANIFEST_FILE)
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text("")
+
+        result = assert_invoke("install", "tdd", "--offline")
+
+        assert_words_in_message(result.output, "warning", "broken config file")
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").exists()

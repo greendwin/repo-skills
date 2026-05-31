@@ -6,8 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from repo_skills.console import fmt_ident
-from repo_skills.errors import AppError
+from repo_skills.console import console, fmt_ident
+from repo_skills.errors import AppError, ConfigBrokenError
 from repo_skills.utils import load_config, save_config
 
 from ._utils import default_config_path
@@ -74,11 +74,24 @@ def _apply_defaults(cfg: _ProviderRegistryConfig) -> _ProviderRegistryConfig:
 
 def load_provider_registry() -> ProviderRegistry:
     path = default_config_path(PROVIDERS_REGISTRY_FILE)
-    cfg = load_config(_ProviderRegistryConfig, path)
+
+    cfg = None
+    broken = False
+    try:
+        cfg = load_config(_ProviderRegistryConfig, path)
+    except ConfigBrokenError:
+        if console.debug:
+            console.print_exception()
+
+        console.print(f"[yellow]Warning[/yellow]: broken config file: {path}")
+        broken = True
 
     if cfg is None:
         cfg = _apply_defaults(_ProviderRegistryConfig())
-        save_config(cfg, path)
+
+        # don't overwrite immediately broken config
+        if not broken:
+            save_config(cfg, path)
     elif cfg.version < CURRENT_VERSION:
         cfg = _apply_defaults(cfg)
         save_config(cfg, path)

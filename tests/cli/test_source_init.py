@@ -8,10 +8,12 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 from repo_skills.config import (
     REPO_SKILLS_DIR,
     InstalledSkill,
+    default_config_path,
     load_source_config,
     load_source_registry,
     save_source_registry,
 )
+from repo_skills.config._source_registry import SOURCES_REGISTRY_FILE
 from tests.cli.helper import (
     SOURCE_REPO_ROOT,
     FakeGitRepo,
@@ -270,3 +272,18 @@ class TestSourceInitAutoDetect:
         source_cfg = load_source_config(git_repo)
         assert source_cfg is not None
         assert source_cfg.skills_dir == "skills"
+
+
+class TestSourceInitBrokenSourceRegistry:
+    def test_broken_registry_warns_and_initializes(self, git_repo: Path) -> None:
+        source_path = default_config_path(SOURCES_REGISTRY_FILE)
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        source_path.write_text("{{{invalid")
+
+        result = assert_invoke("source", "init")
+
+        assert_words_in_message(result.output, "warning", "broken config file")
+        assert_words_in_message(result.output, "initialized", "my-project")
+
+        registry = load_source_registry()
+        assert "my-project" in registry.sources

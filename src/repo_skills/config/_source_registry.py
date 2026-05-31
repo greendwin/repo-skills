@@ -4,8 +4,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from repo_skills.console import fmt_ident
-from repo_skills.errors import AppError
+from repo_skills.console import console, fmt_ident
+from repo_skills.errors import AppError, ConfigBrokenError
 from repo_skills.utils import load_config, save_config
 
 from ._source import Source, load_source
@@ -59,14 +59,25 @@ class SourceRegistry:
 
 
 def load_source_registry() -> SourceRegistry:
-    cfg = load_config(_SourceRegistryConfig, default_config_path(SOURCES_REGISTRY_FILE))
-    if cfg is None:
-        cfg = _SourceRegistryConfig()
 
-    r = SourceRegistry()
+    path = default_config_path(SOURCES_REGISTRY_FILE)
+    try:
+        cfg = load_config(_SourceRegistryConfig, path)
+    except ConfigBrokenError:
+        if console.debug:
+            console.print_exception()
+
+        console.print(f"[yellow]Warning[/yellow]: broken config file: {path}")
+        return SourceRegistry()
+
+    if cfg is None:
+        return SourceRegistry()
+
+    reg = SourceRegistry()
     for name, p in cfg.sources.items():
-        r.register_source(name, Path(p.path))
-    return r
+        reg.register_source(name, Path(p.path))
+
+    return reg
 
 
 def save_source_registry(reg: SourceRegistry) -> None:

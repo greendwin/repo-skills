@@ -1,8 +1,11 @@
+import json
 import os
 from pathlib import Path
 from typing import TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+
+from repo_skills.errors import ConfigBrokenError
 
 _T = TypeVar("_T", bound=BaseModel)
 
@@ -20,7 +23,10 @@ def load_config(cls: type[_T], path: Path) -> _T | None:
     if not os.path.exists(path):
         return None
 
-    return cls.model_validate_json(read_text(path))
+    try:
+        return cls.model_validate_json(read_text(path))
+    except (ValidationError, json.JSONDecodeError, UnicodeDecodeError) as ex:
+        raise ConfigBrokenError(path) from ex
 
 
 def save_config(cfg: BaseModel, path: Path) -> None:

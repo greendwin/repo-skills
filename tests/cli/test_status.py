@@ -4,7 +4,6 @@ from pathlib import Path
 
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from repo_skills.cli._status import UntrackedEntry, _build_untracked_lookup
 from repo_skills.config import (
     Baseline,
     InstalledSkill,
@@ -150,8 +149,79 @@ class TestStatusMultiProvider:
 
         result = assert_invoke("status")
 
+        assert_words_in_message(result.output, "claude, cursor", "synced")
+
+    def test_provider_column_aligns_when_providers_comma_joined(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "review", git_repo)
+
+        hashes_tdd = install_skill(fs, "tdd")
+
+        cursor_dir = Path("/home/user/.cursor/skills")
+        install_skill(fs, "tdd", install_dir=cursor_dir)
+        register_provider("cursor", str(cursor_dir))
+
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit="abc", files=hashes_tdd),
+                )
+            }
+        )
+
+        result = assert_invoke("status")
+
+        lines = result.output.strip().split("\n")
+        skill_lines = [line for line in lines if line.startswith("  ")]
+
+        # all skill rows must have the status keyword at the same column
+        status_positions = []
+        for line in skill_lines:
+            for keyword in ("synced", "available"):
+                idx = line.lower().find(keyword)
+                if idx != -1:
+                    status_positions.append(idx)
+                    break
+
+        assert len(status_positions) >= 2
+        assert len(set(status_positions)) == 1, (
+            f"Status columns are misaligned: {status_positions}\n"
+            f"Lines: {skill_lines}"
+        )
+
+    def test_shows_separate_lines_when_statuses_differ(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        hashes = install_skill(fs, "tdd")
+
+        cursor_dir = Path("/home/user/.cursor/skills")
+        install_skill(fs, "tdd", install_dir=cursor_dir)
+
+        register_provider("cursor", str(cursor_dir))
+
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="abc", files=hashes)
+                )
+            }
+        )
+
+        # modify the cursor copy so statuses diverge
+        (cursor_dir / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        result = assert_invoke("status")
+
+        lines = result.output.strip().split("\n")
+        tdd_lines = [line for line in lines if "tdd" in line.lower()]
+        assert len(tdd_lines) == 2
         assert_words_in_message(result.output, "claude", "synced")
-        assert_words_in_message(result.output, "cursor", "synced")
+        assert_words_in_message(result.output, "cursor", "modified")
 
 
 def _create_source_skill(
@@ -292,7 +362,7 @@ class TestStatusOrphan:
 
 
 class TestStatusUntrackedHint:
-    def test_available_skill_shows_untracked_hint(
+    def test_available_skill_shows_mergeable_with_provider(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
@@ -302,11 +372,10 @@ class TestStatusUntrackedHint:
 
         result = assert_invoke("status")
 
-        assert_words_in_message(
-            result.output, "review", "mergeable", "untracked in claude"
-        )
+        assert_words_in_message(result.output, "review", "claude", "mergeable")
+        assert "untracked in" not in result.output.lower()
 
-    def test_available_skill_without_untracked_shows_no_hint(
+    def test_available_skill_without_untracked_shows_empty_provider(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
@@ -315,9 +384,10 @@ class TestStatusUntrackedHint:
 
         result = assert_invoke("status")
 
+        assert_words_in_message(result.output, "review", "available")
         assert "untracked in" not in result.output.lower()
 
-    def test_available_skill_shows_multiple_providers_in_hint(
+    def test_available_skill_shows_multiple_providers_comma_joined(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
@@ -331,9 +401,8 @@ class TestStatusUntrackedHint:
 
         result = assert_invoke("status")
 
-        assert_words_in_message(
-            result.output, "review", "mergeable", "untracked in claude, cursor"
-        )
+        assert_words_in_message(result.output, "review", "claude, cursor", "mergeable")
+        assert "untracked in" not in result.output.lower()
 
 
 class TestStatusMergeable:
@@ -347,9 +416,7 @@ class TestStatusMergeable:
 
         result = assert_invoke("status")
 
-        assert_words_in_message(
-            result.output, "review", "mergeable", "untracked in claude"
-        )
+        assert_words_in_message(result.output, "review", "claude", "mergeable")
 
 
 class TestStatusUntrackedOrdering:
@@ -394,29 +461,21 @@ class TestStatusUntrackedOrdering:
         assert "zeta-orphan" in untracked_lines[1]
 
 
-class TestBuildUntrackedLookup:
-    def test_groups_mergeable_by_skill_name(self) -> None:
-        untracked = [
-            UntrackedEntry("review", "claude", "my-project"),
-            UntrackedEntry("review", "cursor", "my-project"),
-            UntrackedEntry("mystery", "claude", ""),
-        ]
+class TestStatusOrphanMultiProvider:
+    def test_orphans_with_multiple_providers_comma_joined(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        fs.create_file(INSTALL_DIR / "mystery" / "SKILL.md", contents="# mystery")
 
-        result = _build_untracked_lookup(untracked)
+        cursor_dir = Path("/home/user/.cursor/skills")
+        fs.create_file(cursor_dir / "mystery" / "SKILL.md", contents="# mystery cursor")
+        register_provider("cursor", str(cursor_dir))
 
-        assert result == {"review": ["claude", "cursor"]}
+        result = assert_invoke("status")
 
-    def test_excludes_orphans(self) -> None:
-        untracked = [
-            UntrackedEntry("mystery", "claude", ""),
-        ]
-
-        result = _build_untracked_lookup(untracked)
-
-        assert result == {}
-
-    def test_empty_input(self) -> None:
-        assert _build_untracked_lookup([]) == {}
+        assert_words_in_message(result.output, "mystery", "claude, cursor", "orphan")
 
 
 class TestStatusDetached:

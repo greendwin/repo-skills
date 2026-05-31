@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from pathlib import Path
 from typing import Annotated, NamedTuple, TypeAlias
 
@@ -27,22 +28,19 @@ from ._deps import resolve_git_repo
 SkillsBySource: TypeAlias = dict[str, list[str]]
 SourceSkillIndex: TypeAlias = dict[str, set[str]]
 
+STATUS_MISSING = "[red]missing[/red]"
+STATUS_SYNCED = "[green]synced[/green]"
+STATUS_MODIFIED = "[yellow]modified[/yellow]"
+STATUS_OUTDATED = "[blue]outdated[/blue]"
+STATUS_MERGEABLE = "[cyan]mergeable[/cyan]"
+STATUS_AVAILABLE = "[blue]available[/blue]"
+STATUS_ORPHAN = "[dim magenta]orphan[/dim magenta]"
+
 
 class UntrackedEntry(NamedTuple):
     name: str
     provider: str
     source_match: str
-
-
-UntrackedLookup: TypeAlias = dict[str, list[str]]
-
-
-def _build_untracked_lookup(untracked: list[UntrackedEntry]) -> UntrackedLookup:
-    result: UntrackedLookup = {}
-    for name, pname, source_match in untracked:
-        if source_match:
-            result.setdefault(name, []).append(pname)
-    return result
 
 
 @app.command(help="Show status of installed skills.")
@@ -65,7 +63,6 @@ def status(
     )
     outdated = _compute_outdated(manifest, installed_by_source, loaded_sources)
     untracked = _collect_untracked(manifest, provider_registry, all_source_skills)
-    untracked_lookup = _build_untracked_lookup(untracked)
 
     all_names: list[str] = []
     for names in installed_by_source.values():
@@ -76,7 +73,8 @@ def status(
         all_names.append(name)
 
     name_width = max((len(n) for n in all_names), default=0)
-    provider_width = max((len(p.name) for p in provider_registry.providers), default=0)
+    provider_names = [p.name for p in provider_registry.providers]
+    provider_width = len(", ".join(provider_names)) if provider_names else 0
 
     has_output = _print_source_sections(
         provider_registry,
@@ -86,7 +84,7 @@ def status(
         available_by_source=available_by_source,
         name_width=name_width,
         provider_width=provider_width,
-        untracked_lookup=untracked_lookup,
+        untracked=untracked,
         outdated=outdated,
     )
 
@@ -97,10 +95,10 @@ def status(
 
 
 def _group_installed_by_source(manifest: SkillManifest) -> SkillsBySource:
-    result: SkillsBySource = {}
+    result: SkillsBySource = defaultdict(list)
     for skill_name, entry in manifest.skills.items():
         if not entry.detached:
-            result.setdefault(entry.source, []).append(skill_name)
+            result[entry.source].append(skill_name)
 
     return result
 
@@ -226,11 +224,23 @@ def _collect_untracked(
     return result
 
 
-def _untracked_hint(skill_name: str, lookup: UntrackedLookup) -> str:
-    providers = lookup.get(skill_name)
-    if not providers:
-        return ""
-    return f"  [dim](untracked in {', '.join(providers)})[/dim]"
+def _print_skill_rows(
+    skill_name: str,
+    pairs: list[tuple[str, str]],
+    name_width: int,
+    provider_width: int,
+) -> None:
+    grouped: defaultdict[str, list[str]] = defaultdict(list)
+    for provider_name, status_str in pairs:
+        grouped[status_str].append(provider_name)
+
+    for status_str, providers in grouped.items():
+        joined = ", ".join(providers)
+        console.print(
+            f"  {skill_name:<{name_width}}"
+            f"  [dim]{joined:<{provider_width}}[/dim]"
+            f"  {status_str}"
+        )
 
 
 def _print_source_sections(
@@ -242,12 +252,18 @@ def _print_source_sections(
     available_by_source: SkillsBySource,
     name_width: int,
     provider_width: int,
-    untracked_lookup: UntrackedLookup,
+    untracked: list[UntrackedEntry],
     outdated: set[str],
 ) -> bool:
     all_sources = sorted(
         set(installed_by_source.keys()) | set(available_by_source.keys())
     )
+
+    # build lookup: skill_name -> list of provider names (for mergeable skills)
+    mergeable_providers: defaultdict[str, list[str]] = defaultdict(list)
+    for name, pname, source_match in untracked:
+        if source_match:
+            mergeable_providers[name].append(pname)
 
     has_output = False
 
@@ -264,27 +280,24 @@ def _print_source_sections(
 
         for skill_name in sorted(installed_by_source.get(source_name, [])):
             entry = manifest.skills[skill_name]
+            pairs: list[tuple[str, str]] = []
             for provider in provider_registry.providers:
                 installed_path = provider.install_path / skill_name
                 divergence = _check_divergence(installed_path, entry.baseline)
                 if skill_name in outdated and installed_path.exists():
-                    divergence = f"{divergence}, [blue]outdated[/blue]"
-                console.print(
-                    f"  {skill_name:<{name_width}}"
-                    f"  [dim]{provider.name:<{provider_width}}[/dim]"
-                    f"  {divergence}"
-                )
+                    divergence = f"{divergence}, {STATUS_OUTDATED}"
+                pairs.append((provider.name, divergence))
+
+            _print_skill_rows(skill_name, pairs, name_width, provider_width)
 
         for skill_name in sorted(available_by_source.get(source_name, [])):
-            hint = _untracked_hint(skill_name, untracked_lookup)
-            if hint:
-                console.print(
-                    f"  {skill_name:<{name_width}}  [cyan]mergeable[/cyan]{hint}"
-                )
+            providers = mergeable_providers.get(skill_name)
+            if providers:
+                pairs = [(p, STATUS_MERGEABLE) for p in providers]
             else:
-                console.print(
-                    f"  {skill_name:<{name_width}}  [blue]available[/blue]{hint}"
-                )
+                pairs = [("", STATUS_AVAILABLE)]
+
+            _print_skill_rows(skill_name, pairs, name_width, provider_width)
 
     return has_output
 
@@ -298,13 +311,19 @@ def _print_untracked_section(
     if not orphans:
         return False
 
+    # group orphans by skill name to collect providers
+    orphan_providers: defaultdict[str, list[str]] = defaultdict(list)
+    for entry in orphans:
+        orphan_providers[entry.name].append(entry.provider)
+
     console.print("")
     console.print("[yellow]Untracked[/yellow]")
-    for skill in orphans:
-        console.print(
-            f"  {skill.name:<{name_width}}"
-            f"  [dim]{skill.provider:<{provider_width}}[/dim]"
-            f"  [dim magenta]orphan[/dim magenta]"
+    for skill_name, providers in orphan_providers.items():
+        _print_skill_rows(
+            skill_name,
+            [(p, STATUS_ORPHAN) for p in providers],
+            name_width,
+            provider_width,
         )
 
     return True
@@ -312,13 +331,13 @@ def _print_untracked_section(
 
 def _check_divergence(installed_path: Path, baseline: Baseline | None) -> str:
     if not installed_path.exists():
-        return "[red]missing[/red]"
+        return STATUS_MISSING
 
     if baseline is None:
-        return "[dim]untracked[/dim]"
+        return STATUS_MERGEABLE
 
     current = compute_file_hashes(installed_path)
     if current == baseline.files:
-        return "[green]synced[/green]"
+        return STATUS_SYNCED
 
-    return "[yellow]modified[/yellow]"
+    return STATUS_MODIFIED

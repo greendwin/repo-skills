@@ -7,11 +7,18 @@ import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 import repo_skills.cli._deps as deps_mod
+import repo_skills.cli._merge as merge_mod
+from repo_skills.cli._merge import (
+    _FindBestCommitResult,
+    _resolve_base_commit,
+    _ResolveBaseResult,
+)
 from repo_skills.config import (
     Baseline,
     InstalledSkill,
     SourceConfig,
     SourceRegistry,
+    SourceSkill,
     compute_file_hashes,
     save_skill_manifest,
     save_source_config,
@@ -1423,3 +1430,173 @@ class TestDetectMergeRepo:
 
         assert cwd_git.ff_targets == ["skill-merge/claude/tdd"]
         assert_words_in_message(result.output, "merge", "complete")
+
+
+class TestResolveBaseCommitReturnType:
+    """Unit tests for _resolve_base_commit returning _BaseCommit."""
+
+    def test_baseline_reachable_returns_base_commit_not_exact(
+        self,
+    ) -> None:
+        git = FakeGitRepo(ancestors={("base-abc", "main"): True})
+        skill = SourceSkill(name="tdd", rel_path="skills/tdd")
+        installed = InstalledSkill(
+            source="my-project",
+            baseline=Baseline(commit="base-abc", files={}),
+        )
+
+        result = _resolve_base_commit(
+            git,
+            skill,
+            installed,
+            Path("/install/tdd"),
+            target_branch="main",
+            force=False,
+        )
+
+        assert result is not None
+        assert result == _ResolveBaseResult(commit="base-abc", exact_match=False)
+
+    def test_find_base_returns_none(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        git = FakeGitRepo()
+        skill = SourceSkill(name="tdd", rel_path="skills/tdd")
+        installed = InstalledSkill(source="my-project", baseline=None)
+
+        monkeypatch.setattr(merge_mod, "_find_base_commit", lambda *a, **kw: None)
+
+        result = _resolve_base_commit(
+            git,
+            skill,
+            installed,
+            Path("/install/tdd"),
+            target_branch="main",
+            force=False,
+        )
+
+        assert result is None
+
+    def test_find_base_exact_match(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        git = FakeGitRepo()
+        skill = SourceSkill(name="tdd", rel_path="skills/tdd")
+        installed = InstalledSkill(source="my-project", baseline=None)
+
+        monkeypatch.setattr(
+            merge_mod,
+            "_find_base_commit",
+            lambda *a, **kw: _FindBestCommitResult(
+                commit="exact-abc", message="msg", distance=0
+            ),
+        )
+
+        result = _resolve_base_commit(
+            git,
+            skill,
+            installed,
+            Path("/install/tdd"),
+            target_branch="main",
+            force=False,
+        )
+
+        assert result is not None
+        assert result == _ResolveBaseResult(commit="exact-abc", exact_match=True)
+
+    def test_find_base_non_exact_match(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        git = FakeGitRepo()
+        skill = SourceSkill(name="tdd", rel_path="skills/tdd")
+        installed = InstalledSkill(source="my-project", baseline=None)
+
+        monkeypatch.setattr(
+            merge_mod,
+            "_find_base_commit",
+            lambda *a, **kw: _FindBestCommitResult(
+                commit="near-abc", message="msg", distance=3
+            ),
+        )
+
+        result = _resolve_base_commit(
+            git,
+            skill,
+            installed,
+            Path("/install/tdd"),
+            target_branch="main",
+            force=False,
+        )
+
+        assert result is not None
+        assert result == _ResolveBaseResult(commit="near-abc", exact_match=False)
+
+    def test_dangling_baseline_falls_through_to_history(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When baseline commit is dangling (not reachable, not in any branch),
+        the function falls through to history search."""
+        git = FakeGitRepo(
+            ancestors={("dangling-abc", "main"): False},
+            reachable_commits=set(),
+        )
+        skill = SourceSkill(name="tdd", rel_path="skills/tdd")
+        installed = InstalledSkill(
+            source="my-project",
+            baseline=Baseline(commit="dangling-abc", files={}),
+        )
+
+        monkeypatch.setattr(
+            merge_mod,
+            "_find_base_commit",
+            lambda *a, **kw: _FindBestCommitResult(
+                commit="found-abc", message="msg", distance=1
+            ),
+        )
+
+        result = _resolve_base_commit(
+            git,
+            skill,
+            installed,
+            Path("/install/tdd"),
+            target_branch="main",
+            force=False,
+        )
+
+        assert result is not None
+        assert result == _ResolveBaseResult(commit="found-abc", exact_match=False)
+
+    def test_force_bypasses_baseline(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        git = FakeGitRepo(ancestors={("base-abc", "main"): True})
+        skill = SourceSkill(name="tdd", rel_path="skills/tdd")
+        installed = InstalledSkill(
+            source="my-project",
+            baseline=Baseline(commit="base-abc", files={}),
+        )
+
+        monkeypatch.setattr(
+            merge_mod,
+            "_find_base_commit",
+            lambda *a, **kw: _FindBestCommitResult(
+                commit="history-abc", message="msg", distance=2
+            ),
+        )
+
+        result = _resolve_base_commit(
+            git,
+            skill,
+            installed,
+            Path("/install/tdd"),
+            target_branch="main",
+            force=True,
+        )
+
+        assert result is not None
+        assert result == _ResolveBaseResult(commit="history-abc", exact_match=False)

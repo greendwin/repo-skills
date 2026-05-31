@@ -217,7 +217,7 @@ def _merge_start(
 
     installed_path = provider.install_path / skill_name
 
-    base_commit = _resolve_base_commit(
+    base_result = _resolve_base_commit(
         git,
         skill,
         installed,
@@ -226,8 +226,8 @@ def _merge_start(
         force=search_base,
     )
 
-    if base_commit is not None:
-        git.create_branch(branch_name, base_commit)
+    if base_result is not None:
+        git.create_branch(branch_name, base_result.commit)
     else:
         git.create_orphan_branch(branch_name)
 
@@ -246,11 +246,11 @@ def _merge_start(
     git.commit_all(f"chore: merge `{skill_name}` from `{provider.name}`")
 
     use_merge = False
-    if base_commit is not None and not rebase:
+    if base_result is not None and not rebase:
         git.checkout(target_branch)
         clean = git.merge(branch_name)
         use_merge = True
-    elif base_commit is not None:
+    elif base_result is not None:
         clean = git.rebase(target_branch)
     else:
         clean = git.rebase_root(target_branch)
@@ -456,6 +456,12 @@ def _resolve_diverged_provider(
     return diverged[0]
 
 
+@dataclass
+class _ResolveBaseResult:
+    commit: str
+    exact_match: bool
+
+
 def _resolve_base_commit(
     git: GitRepo,
     skill: SourceSkill,
@@ -464,10 +470,14 @@ def _resolve_base_commit(
     *,
     target_branch: str,
     force: bool,
-) -> str | None:
+) -> _ResolveBaseResult | None:
     if installed.baseline and not force:
         if _check_reachability(git, installed.baseline.commit, target_branch):
-            return installed.baseline.commit
+            # caller already verified that provider files differ
+            # from baseline before calling this function
+            return _ResolveBaseResult(
+                commit=installed.baseline.commit, exact_match=False
+            )
 
         console.print(
             f"[yellow]Warning:[/yellow] Stored commit"
@@ -486,13 +496,13 @@ def _resolve_base_commit(
             f"Base commit: {fmt_ident(r.commit[:8])} [dim](exact match)[/dim]\n"
             f"Message: {fmt_data(escape(r.message))}"
         )
-        return r.commit
+        return _ResolveBaseResult(commit=r.commit, exact_match=True)
 
     console.print(
         f"Base commit: {fmt_ident(r.commit[:8])} [dim](distance: {r.distance})[/dim]\n"
         f"Message: {fmt_data(escape(r.message))}"
     )
-    return r.commit
+    return _ResolveBaseResult(commit=r.commit, exact_match=False)
 
 
 def _check_reachability(git: GitRepo, commit: str, target_branch: str) -> bool:
@@ -514,7 +524,7 @@ _MAX_SEARCH_COMMITS = 50
 
 
 @dataclass
-class _BestCommit:
+class _FindBestCommitResult:
     commit: str
     message: str
     distance: int
@@ -524,7 +534,7 @@ def _find_base_commit(
     git: GitRepo,
     skill_rel: str,
     installed_path: Path,
-) -> _BestCommit | None:
+) -> _FindBestCommitResult | None:
     installed_hashes = compute_file_hashes(installed_path)
     if not installed_hashes:
         return None
@@ -563,7 +573,11 @@ def _find_base_commit(
         return None
 
     message = git.get_commit_message(best_commit)
-    return _BestCommit(commit=best_commit, message=message, distance=best_distance)
+    return _FindBestCommitResult(
+        commit=best_commit,
+        message=message,
+        distance=best_distance,
+    )
 
 
 def _merge_continue(ctx: _MergeContext) -> None:

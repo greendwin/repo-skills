@@ -10,6 +10,7 @@ from rich.markup import escape
 from repo_skills.config import (
     InstalledSkill,
     Source,
+    SourceBrokenError,
     SourceSkill,
     load_provider_registry,
     load_skill_manifest,
@@ -47,13 +48,20 @@ def diff(
     entry = manifest.skills.get(skill_name)
 
     if entry is not None:
-        try:
-            source = source_registry.get_source(entry.source, load_skills=True)
-        except AppError:
+        source_entry = source_registry.sources.get(entry.source)
+        if source_entry is None:
             raise AppError(
                 f"Source {fmt_ident(entry.source)} for skill"
                 f" {fmt_ident(skill_name)} is no longer registered."
-            ) from None
+            )
+
+        if not source_entry.repo_root.is_dir():
+            raise AppError(
+                f"Source repo for {fmt_ident(entry.source)} is not available.",
+                props={"path": str(source_entry.repo_root)},
+            )
+
+        source = source_registry.get_source(entry.source, load_skills=True)
         skill = source.get_skill(skill_name)
 
         if entry.baseline:
@@ -63,12 +71,17 @@ def diff(
         else:
             ref_files, all_files = _read_source_files(source, skill, installed_path)
     else:
-        untracked = resolve_untracked(
-            provider_registry,
-            source_registry,
-            skill_name=skill_name,
-            provider=provider_obj,
-        )
+        try:
+            untracked = resolve_untracked(
+                provider_registry,
+                source_registry,
+                skill_name=skill_name,
+                provider=provider_obj,
+            )
+        except SourceBrokenError:
+            raise AppError(
+                f"Source repo for {fmt_ident(skill_name)} is not available.",
+            ) from None
         if untracked is None:
             raise AppError(f"Cannot find source for {fmt_ident(skill_name)}.")
 

@@ -301,6 +301,82 @@ class TestDiffAddedToInstalled:
         assert "+# added by user" in result.output
 
 
+class TestDiffUntrackedNoSource:
+    def test_error_when_orphaned_skill(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+    ) -> None:
+        register_provider("claude", str(INSTALL_DIR))
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# real skill")
+        # Install an orphaned skill that is not in the manifest and not a source skill
+        install_skill(fs, "orphan", content="# orphan content")
+
+        result = assert_invoke("diff", "orphan", expect_error=True)
+        assert "cannot find source" in result.exception.message.lower()
+
+
+class TestDiffSourceRepoUnavailable:
+    def test_error_when_source_repo_gone_baseline(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+    ) -> None:
+        register_provider("claude", str(INSTALL_DIR))
+        _setup_tracked_with_baseline(
+            fs,
+            git_repo,
+            _fake_git,
+            baseline_content="# original",
+            installed_content="# edited",
+        )
+        fs.remove_object(str(git_repo))
+
+        result = assert_invoke("diff", "tdd", expect_error=True)
+        assert "not available" in result.exception.message.lower()
+
+    def test_error_when_source_repo_gone_no_baseline(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+    ) -> None:
+        register_provider("claude", str(INSTALL_DIR))
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# source version")
+        install_skill(fs, "tdd", content="# installed version")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=None,
+                )
+            }
+        )
+        fs.remove_object(str(git_repo))
+
+        result = assert_invoke("diff", "tdd", expect_error=True)
+        assert "not available" in result.exception.message.lower()
+
+    def test_error_when_source_repo_gone_untracked(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+    ) -> None:
+        register_provider("claude", str(INSTALL_DIR))
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# source version")
+        install_skill(fs, "tdd", content="# installed version")
+        fs.remove_object(str(git_repo))
+
+        result = assert_invoke("diff", "tdd", expect_error=True)
+        assert "not available" in result.exception.message.lower()
+
+
 class TestDiffRichMarkupEscape:
     def test_rich_markup_in_content_rendered_literally(
         self,

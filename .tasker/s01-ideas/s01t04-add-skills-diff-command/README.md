@@ -24,4 +24,4 @@ status: in-progress
 
 - [~] [s01t0401](s01t0401-extract-shared-helpers-from-mergepy.md): **review** Extract shared helpers from _merge.py
 - [~] [s01t0402](s01t0402-basic-diff-command-for-tracked.md): **review** Basic diff command for tracked modified skill
-- [ ] [s01t0403](s01t0403-edge-cases-not-modified-addeddeleted.md): Edge cases: not modified, added/deleted files, errors
+- [~] [s01t0403](s01t0403-edge-cases-not-modified-addeddeleted.md): **review** Edge cases: not modified, added/deleted files, errors

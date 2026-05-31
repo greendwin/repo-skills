@@ -1,7 +1,7 @@
 ---
 id: s01t0403
 slug: edge-cases-not-modified-addeddeleted
-status: pending
+status: in-progress
 ---
 
 # Edge cases: not modified, added/deleted files, errors

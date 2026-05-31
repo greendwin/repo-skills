@@ -110,6 +110,7 @@ skills source init --name foo  # custom source name
 skills source init --branch dev  # pin to a specific branch
 skills source list             # list all registered sources
 skills source remove <name>    # unregister a source
+skills source remove <name> --force  # remove even if skills are installed
 ```
 
 ### `skills provider`
@@ -156,6 +157,8 @@ skills merge --from <provider>  # specify provider (when ambiguous)
 skills merge --no-commit   # stage changes without committing
 skills merge --continue    # finalize an in-progress merge
 skills merge --abort       # abort an in-progress merge
+skills merge --rebase      # use rebase instead of merge
+skills merge --search-base # search git history for base commit
 skills merge --offline     # skip git pull
 ```
 
@@ -203,6 +206,19 @@ Configuration files are stored in `~/.config/repo-skills/`:
 [MIT](LICENSE)
 
 ## Release Notes
+
+### v0.9.0
+
+- Streaming progress for `skills update` — per-source pull and per-skill status
+- `skills merge` uses git merge by default, preserving history; `--rebase` restores legacy behavior
+- `--search-base` flag for merge — locate a base commit via history search for orphan merges
+- Detached skill detection and auto-recovery during `skills update`
+- `--force` flag for `source remove` to unregister sources with installed skills
+- Broken source/config resilience — warn and continue instead of crashing
+- Outdated install detection in `skills status`
+- `--debug` streams git and subprocess invocations
+- Per-provider update results and unified status column layout
+- Internal: `ProviderRegistry`/`SkillManifest` API, `Console` class, `Baseline` dataclass
 
 ### v0.2.0
 

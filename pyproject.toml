@@ -1,6 +1,6 @@
 [project]
 name = "repo-skills"
-version = "0.2.0"
+version = "0.9.0"
 description = "CLI tool for managing Claude Code skills from a shared repository."
 requires-python = ">=3.10"
 license = "MIT"

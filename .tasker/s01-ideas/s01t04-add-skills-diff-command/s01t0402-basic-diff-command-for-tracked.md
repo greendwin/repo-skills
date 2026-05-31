@@ -1,7 +1,7 @@
 ---
 id: s01t0402
 slug: basic-diff-command-for-tracked
-status: pending
+status: in-review
 ---
 
 # Basic diff command for tracked modified skill

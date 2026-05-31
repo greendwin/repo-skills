@@ -1,7 +1,7 @@
 ---
 id: s08t1702
 slug: early-exit-on-exact-match
-status: pending
+status: done
 ---
 
 # Early exit on exact match with manifest update

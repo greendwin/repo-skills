@@ -226,6 +226,19 @@ def _merge_start(
         force=search_base,
     )
 
+    if base_result is not None and base_result.exact_match:
+        # Provider files are byte-identical to a historical commit;
+        # register baseline and skip branch/merge entirely.
+        _finalyze_in_sync_skill(
+            ctx,
+            source=source,
+            skill=skill,
+            base_commit=base_result.commit,
+            installed_path=installed_path,
+            git=git,
+        )
+        return
+
     if base_result is not None:
         git.create_branch(branch_name, base_result.commit)
     else:
@@ -272,6 +285,36 @@ def _merge_start(
         provider,
         skill_name,
         already_merged=use_merge,
+    )
+
+
+def _finalyze_in_sync_skill(
+    ctx: _MergeContext,
+    git: GitRepo,
+    source: Source,
+    skill: SourceSkill,
+    base_commit: str,
+    installed_path: Path,
+) -> None:
+    baseline = Baseline(
+        commit=base_commit,
+        files=compute_file_hashes(installed_path),
+    )
+    ctx.manifest.register_skill(
+        skill.name,
+        source_name=source.name,
+        baseline=baseline,
+    )
+    save_skill_manifest(ctx.manifest)
+
+    latest = git.get_skill_commit(skill.rel_path)
+    if base_commit == latest:
+        console.print(f"{fmt_ident(skill.name)} is already up to date.")
+        return
+
+    console.print(
+        f"{fmt_ident(skill.name)} matches a previous version.\n"
+        f"Run {fmt_command('skills update')} to pull the latest changes."
     )
 
 

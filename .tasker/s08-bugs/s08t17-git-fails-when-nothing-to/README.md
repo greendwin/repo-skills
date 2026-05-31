@@ -1,7 +1,7 @@
 ---
 id: s08t17
 slug: git-fails-when-nothing-to
-status: pending
+status: done
 ---
 
 # Git fails when nothing to merge
@@ -34,4 +34,4 @@ None — all questions resolved during grill.
 ## Subtasks
 
 - [x] [s08t1701](s08t1701-change-resolvebasecommit-to-return-bestcommit.md): Change `_resolve_base_commit` to return `_BestCommit | None`
-- [ ] [s08t1702](s08t1702-early-exit-on-exact-match.md): Early exit on exact match with manifest update
+- [x] [s08t1702](s08t1702-early-exit-on-exact-match.md): Early exit on exact match with manifest update

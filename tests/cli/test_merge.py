@@ -254,11 +254,13 @@ class TestBaseCommitSearch:
         _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = (
             b"# edited by user"
         )
+        _fake_git.commits["skills/tdd"] = "bbb222"
 
         result = assert_invoke("merge", "tdd", "--offline")
 
-        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "bbb222"
-        assert_words_in_message(result.output, "merge", "complete")
+        # Exact match triggers early exit — no branch, no merge
+        assert _fake_git.created_branches == {}
+        assert_words_in_message(result.output, "up to date")
 
     def test_closest_match_when_no_exact(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -316,7 +318,7 @@ class TestBaseCommitSearch:
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
         _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = (
-            b"# edited by user"
+            b"# edited by user v2"
         )
         _fake_git.commit_messages = {"bbb222": "feat: add tdd skill"}
 
@@ -344,9 +346,11 @@ class TestBaseCommitSearch:
 
         result = assert_invoke("merge", "tdd", "--search-base", "--offline")
 
+        # Exact match triggers early exit with commit info printed
         assert "bbb222" in result.output
         assert "exact match" in result.output
         assert "feat: add tdd skill" in result.output
+        assert _fake_git.created_branches == {}
 
     def test_search_base_reports_distance_for_closest(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -428,7 +432,7 @@ class TestCommitReachability:
 
         _fake_git.commit_logs["skills/tdd"] = ["found111"]
         _fake_git.files_at_commit[("found111", "skills/tdd/SKILL.md")] = (
-            b"# edited by user"
+            b"# edited by user v2"
         )
         _fake_git.commit_messages = {"found111": "feat: add tdd"}
 
@@ -448,7 +452,7 @@ class TestCommitReachability:
 
         _fake_git.commit_logs["skills/tdd"] = ["found111"]
         _fake_git.files_at_commit[("found111", "skills/tdd/SKILL.md")] = (
-            b"# edited by user"
+            b"# edited by user v2"
         )
         _fake_git.commit_messages = {"found111": "feat: add tdd"}
 
@@ -508,7 +512,8 @@ class TestResolveBaseCommit:
 
         result = assert_invoke("merge", "tdd", "--search-base", "--offline")
 
-        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "cat111"
+        # Exact match triggers early exit
+        assert _fake_git.created_branches == {}
         assert "cat111" in result.output
         assert "exact match" in result.output
 
@@ -1600,3 +1605,103 @@ class TestResolveBaseCommitReturnType:
 
         assert result is not None
         assert result == _ResolveBaseResult(commit="history-abc", exact_match=False)
+
+
+def _setup_exact_match_skill(
+    fs: FakeFilesystem,
+    git_repo: Path,
+    _fake_git: FakeGitRepo,
+    *,
+    latest_commit: str = "exact-commit",
+    detached: bool = False,
+) -> None:
+    register_source(git_repo)
+    create_source_skill(fs, "tdd", content="# original")
+    install_skill(fs, "tdd", content="# from-history")
+    save_manifest(
+        {"tdd": InstalledSkill(source="my-project", baseline=None, detached=detached)}
+    )
+    # Provider content differs from source so the match_files noop check won't trigger.
+
+    # Set up history search to find exact match (distance=0)
+    _fake_git.commit_logs["skills/tdd"] = ["exact-commit"]
+    _fake_git.files_at_commit[("exact-commit", "skills/tdd/SKILL.md")] = (
+        b"# from-history"
+    )
+    _fake_git.commit_messages = {"exact-commit": "feat: add tdd"}
+
+    # Control what get_skill_commit returns (latest commit on branch)
+    _fake_git.commits["skills/tdd"] = latest_commit
+
+
+class TestExactMatchEarlyExit:
+    def test_exact_match_latest_updates_manifest_no_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_exact_match_skill(fs, git_repo, _fake_git, latest_commit="exact-commit")
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        # No branch creation, no commit, no orphan
+        assert _fake_git.created_branches == {}
+        assert _fake_git.committed_messages == []
+        assert _fake_git.orphan_branches == []
+
+        # Manifest updated with correct baseline
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "exact-commit"
+        assert not entry.detached
+
+        # Message says "up to date"
+        assert_words_in_message(result.output, "up to date")
+
+    def test_exact_match_outdated_suggests_update(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_exact_match_skill(fs, git_repo, _fake_git, latest_commit="newer-commit")
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        # No branch creation, no commit
+        assert _fake_git.created_branches == {}
+        assert _fake_git.committed_messages == []
+        assert _fake_git.orphan_branches == []
+
+        # Manifest updated
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "exact-commit"
+
+        # Message suggests skills update
+        assert_words_in_message(result.output, "skills update")
+
+    def test_exact_match_clears_detached_flag(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_exact_match_skill(
+            fs, git_repo, _fake_git, latest_commit="exact-commit", detached=True
+        )
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert not entry.detached
+        assert entry.baseline is not None
+        assert_words_in_message(result.output, "up to date")
+
+    def test_exact_match_records_correct_baseline(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_exact_match_skill(fs, git_repo, _fake_git, latest_commit="exact-commit")
+
+        assert_invoke("merge", "tdd", "--offline")
+
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "exact-commit"
+        assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "tdd")

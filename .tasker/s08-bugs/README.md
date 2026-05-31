@@ -1,7 +1,7 @@
 ---
 id: s08
 slug: bugs
-status: pending
+status: done
 ---
 
 # Bugs
@@ -26,4 +26,4 @@ Fix TODO-documented bugs and issues across the CLI.
 - [x] [s08t14](s08t14-broken-manifest-should-not-fail.md): Broken manifest should not fail
 - [x] [s08t15](s08t15-wrong-base-commit-is-taken/): Wrong base commit is taken
 - [x] [s08t16](s08t16-status-report-synced-for-outdated/): Status report 'synced' for outdated install
-- [ ] [s08t17](s08t17-git-fails-when-nothing-to/): Git fails when nothing to merge
+- [x] [s08t17](s08t17-git-fails-when-nothing-to/): Git fails when nothing to merge

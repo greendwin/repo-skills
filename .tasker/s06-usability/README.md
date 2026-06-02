@@ -25,3 +25,9 @@ status: pending
 - [ ] [s06t15](s06t15-rework-statuspy-internals-to-typed.md): Rework `_status.py` internals to typed structures
 - [ ] [s06t16](s06t16-autoattach-untracked-skills-on-update.md): Auto-attach untracked skills on `update` when they match source exactly
 - [ ] [s06t17](s06t17-group-skills-when-installed-from.md): Group skills when installed from same source
+- [ ] [s06t18](s06t18-update-specific-source.md): Update specific source
+- [ ] [s06t19](s06t19-allow-to-edit-source-skills.md): Allow to edit `source` skills directory
+- [ ] [s06t20](s06t20-multiple-source-support.md): Multiple source support
+- [ ] [s06t21](s06t21-ignore-uncommitted-changes-when-they.md): Ignore uncommitted changes when they do not relate to skills
+- [ ] [s06t22](s06t22-support-projectlevel-skills.md): Support project-level skills
+- [ ] [s06t23](s06t23-support-s-alias-for-source.md): Support `-s` alias for `--source`

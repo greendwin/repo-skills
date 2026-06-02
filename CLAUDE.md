@@ -15,3 +15,7 @@ See `CONTEXT.md` for project terminology (source, skill, provider, etc.).
 * Never use `unittest.mock.patch`, use `monkeypatch`.
 * Never use inline imports inside methods and tests.
 * Always use `assert_invoke` helper instead of `CliRunner`.
+
+## Conventions
+
+Task-coupled skills read `docs/agents/task-tracker.md` to resolve task-tracker verbs and statuses.

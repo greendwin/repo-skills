@@ -4,6 +4,7 @@
 |------|-----------|
 | **Source** | A git repository registered as a skills provider via `skills source init`. Multiple sources can coexist; each is identified by name. Auto-derived from repo directory name, overridable with `--name`. |
 | **Source registry** | The collection of all registered sources, stored at `~/.config/repo-skills/sources.json`. Consulted by commands like `status`, `update`, and `merge` to locate skills across repos. |
+| **Skills root** | The directory within a source that holds its skills. Auto-detected when the source is set up, or specified explicitly; skills are discovered by walking it for `SKILL.md` files. |
 | **Skill** | A self-contained directory containing a `SKILL.md` file, located within a source's skills root. Identified by leaf directory name regardless of nesting depth. |
 | **Category** | An optional subdirectory under the skills root used to organize skills. Purely organizational — the tool identifies skills by leaf directory name, not path. |
 | **Provider** | An agent platform (e.g. Claude) with a known skills install directory. Providers are registered globally in `~/.config/repo-skills/providers.json`. Claude is included as a default on first creation; the user may remove or modify it freely. |

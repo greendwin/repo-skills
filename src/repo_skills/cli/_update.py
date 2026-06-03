@@ -12,6 +12,7 @@ from repo_skills.config import (
     Baseline,
     InstalledSkill,
     ProviderRegistry,
+    SkillManifest,
     SourceRegistry,
     compute_file_hashes,
     load_provider_registry,
@@ -64,13 +65,12 @@ def _update_skill(
     source_branches: dict[str, str],
 ) -> _SkillReport:
     if entry.source not in source_registry.sources:
-        raise _SkillError(f"source '{entry.source}' not found")
+        raise _SkillError(f"Source '{entry.source}' not found")
 
     source = source_registry.get_source(entry.source, load_skills=True)
     skill = source.skills.get(skill_name)
-
     if skill is None:
-        raise _SkillError("skill removed from source")
+        raise _SkillError("Skill removed from source")
 
     src = source.repo_root / skill.rel_path
     source_hashes = compute_file_hashes(src)
@@ -104,7 +104,7 @@ def _update_skill(
     recovered = False
     newly_detached = False
 
-    if entry.baseline and entry.baseline.commit and entry.source in source_branches:
+    if entry.baseline and entry.source in source_branches:
         git = resolve_git_repo(source.repo_root)
         pinned = source_branches[entry.source]
         reachable = git.is_ancestor(entry.baseline.commit, pinned)
@@ -124,33 +124,95 @@ def _update_skill(
     )
 
 
+@dataclass(frozen=True)
+class _Targets:
+    skills: dict[str, InstalledSkill]
+    sources: frozenset[str]
+
+
+def _collect_skills_for_update(
+    manifest: SkillManifest,
+    source_registry: SourceRegistry,
+    *,
+    skill_names: list[str] | None,
+    source_names: list[str] | None,
+) -> _Targets:
+    # TODO: we can target any untrack skill too
+    skills: dict[str, InstalledSkill] = {}
+
+    for name in skill_names or ():
+        inst = manifest.skills.get(name)
+        if inst is None:
+            raise AppError(f"Skill {fmt_ident(name)} is not installed.")
+
+        skills[name] = inst
+
+    for name in source_names or ():
+        # make sure this source exists
+        _ = source_registry.get_source(name, load_skills=False)
+
+    for name, skill in manifest.skills.items():
+        if skill.source in (source_names or ()):
+            skills[name] = skill
+
+    if not skill_names and not source_names:
+        skills = dict(manifest.skills)
+
+    return _Targets(
+        skills=skills,
+        sources=frozenset(entry.source for entry in skills.values()),
+    )
+
+
+def _fmt_sources(sources: list[str]) -> str:
+    return ", ".join(fmt_data(source) for source in sources)
+
+
 @app.command(help="Update installed skills from sources.")
 def update(
     *,
-    name: Annotated[
-        Optional[str],
-        typer.Argument(help="Skill to update (all if omitted)."),
+    skill_names: Annotated[
+        Optional[list[str]],
+        typer.Argument(help="Skills to update (all if omitted)."),
+    ] = None,
+    source_names: Annotated[
+        Optional[list[str]],
+        typer.Option("--source", "-s", help="Update only skills from these sources."),
     ] = None,
     offline: Annotated[
         bool,
         typer.Option("--offline", help="Skip git pull."),
     ] = False,
 ) -> None:
-    source_registry = load_source_registry()
     providers = load_provider_registry()
     manifest = load_skill_manifest()
 
+    # TODO: we must re-attach non-install skills too
     if not manifest.skills:
         raise NoopError("[dim]No skills installed.[/dim]")
 
-    if name and name not in manifest.skills:
-        raise AppError(f"Skill {fmt_ident(name)} is not installed.")
+    source_registry = load_source_registry()
+    to_update = _collect_skills_for_update(
+        manifest,
+        source_registry,
+        skill_names=skill_names,
+        source_names=source_names,
+    )
+
+    if source_names and not to_update.skills:
+        assert not skill_names
+        raise NoopError(
+            f"[dim]No skills installed from {_fmt_sources(source_names)}.[/dim]"
+        )
 
     source_branches: dict[str, str] = {}
-    for source_name in source_registry.sources:
-        source = source_registry.get_source(source_name, load_skills=False)
-        git = resolve_git_repo(source.repo_root)
-        branch = source.get_branch(git)
+    for source_name in sorted(source_registry.sources):
+        if source_name not in to_update.sources:
+            continue
+
+        registered = source_registry.get_source(source_name, load_skills=False)
+        git = resolve_git_repo(registered.repo_root)
+        branch = registered.get_branch(git)
 
         with console.running(f"Pulling {fmt_data(source_name)}"):
             ensure_on_branch(git, branch, pull=not offline)
@@ -160,21 +222,19 @@ def update(
             else:
                 console.finish("[green]done[/green]")
 
-    skills_to_update = {name: manifest.skills[name]} if name else dict(manifest.skills)
-
-    for skill_name, entry in skills_to_update.items():
+    for skill_name, entry in to_update.skills.items():
         with console.running(f"Updating {fmt_data(skill_name)}"):
             try:
                 report = _update_skill(
                     skill_name, entry, source_registry, providers, source_branches
                 )
             except _SkillError as ex:
-                console.print(f"[red]error: {escape(str(ex))}[/red]")
+                console.print(f"[red]Error[/red]: {escape(str(ex))}")
                 continue
             except Exception as ex:
-                console.print(f"[red]error: {escape(str(ex))}[/red]")
                 if console.debug:
                     console.print_exception()
+                console.print(f"[red]Error[/red]: {escape(str(ex))}")
                 continue
 
             _print_skill_report(skill_name, report)

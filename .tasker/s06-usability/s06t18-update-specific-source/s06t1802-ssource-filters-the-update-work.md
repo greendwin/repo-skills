@@ -1,7 +1,7 @@
 ---
 id: s06t1802
 slug: ssource-filters-the-update-work
-status: pending
+status: in-review
 ---
 
 # `-s/--source` filters the update work set

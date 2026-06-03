@@ -174,15 +174,32 @@ class FakeGitRepo:
         return [b for b in self.branches if pattern.rstrip("*") in b]
 
 
+_fake_git_repos: dict[str, FakeGitRepo] = {}
+
+
 def install_fake_git(fake: FakeGitRepo) -> None:
-    def factory(_path: Path) -> GitRepo:
-        return fake
+    _fake_git_repos.clear()
+    _fake_git_repos[str(fake.root)] = fake
+
+    def factory(path: Path) -> GitRepo:
+        return fake_git_for(path)
 
     deps_mod._git_repo_factory = factory
 
 
+def fake_git_for(root: Path) -> FakeGitRepo:
+    key = str(root)
+    existing = _fake_git_repos.get(key)
+    if existing is not None:
+        return existing
+    created = FakeGitRepo(root=root)
+    _fake_git_repos[key] = created
+    return created
+
+
 def uninstall_fake_git() -> None:
     deps_mod._git_repo_factory = None
+    _fake_git_repos.clear()
 
 
 @overload

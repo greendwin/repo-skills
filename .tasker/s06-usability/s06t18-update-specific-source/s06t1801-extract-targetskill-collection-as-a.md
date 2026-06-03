@@ -1,7 +1,7 @@
 ---
 id: s06t1801
 slug: extract-targetskill-collection-as-a
-status: pending
+status: in-review
 ---
 
 # Extract target-skill collection as a seam

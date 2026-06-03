@@ -28,3 +28,5 @@ Fix TODO-documented bugs and issues across the CLI.
 - [x] [s08t16](s08t16-status-report-synced-for-outdated/): Status report 'synced' for outdated install
 - [x] [s08t17](s08t17-git-fails-when-nothing-to/): Git fails when nothing to merge
 - [ ] [s08t18](s08t18-error-when-manifest-version-is.md): Error when manifest version is higher than supported
+- [ ] s08t19: Make sure that 'skill update' don't touch in-merge skills, show also 'status' for such skills
+- [ ] s08t20: Use 'feat' prefix when merging orphan branch and 'ref' when updating existing one

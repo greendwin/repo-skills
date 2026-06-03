@@ -24,3 +24,4 @@ status: pending
 - [x] [s06t14](s06t14-inconsistent-status-command/): Inconsistent 'status' command -
 - [ ] [s06t15](s06t15-rework-statuspy-internals-to-typed.md): Rework `_status.py` internals to typed structures
 - [ ] [s06t16](s06t16-autoattach-untracked-skills-on-update.md): Auto-attach untracked skills on `update` when they match source exactly
+- [ ] [s06t17](s06t17-group-skills-when-installed-from.md): Group skills when installed from same source

@@ -30,16 +30,15 @@ from tests.cli.helper import (
     SKILLS_DIR,
     SOURCE_REPO_ROOT,
     FakeGitRepo,
+    FakeGitRepoManager,
     assert_invoke,
     assert_words_in_message,
     create_source_skill,
-    install_fake_git,
     install_skill,
     load_manifest,
     register_provider,
     register_source,
     save_manifest,
-    uninstall_fake_git,
 )
 
 COMMIT = "abc1234"
@@ -48,14 +47,13 @@ OTHER_REPO_ROOT = Path("/repos/other-project")
 
 
 @pytest.fixture(autouse=True)
-def _fake_git() -> Generator[FakeGitRepo]:
+def _fake_git(fake_git_manager: FakeGitRepoManager) -> Generator[FakeGitRepo]:
     fake = FakeGitRepo(
         commits={"skills/tdd": COMMIT},
         ancestors={(COMMIT, "main"): True},
     )
-    install_fake_git(fake)
+    fake_git_manager.install(fake)
     yield fake
-    uninstall_fake_git()
 
 
 def _setup_diverged_skill(

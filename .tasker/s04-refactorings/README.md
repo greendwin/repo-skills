@@ -1,7 +1,7 @@
 ---
 id: s04
 slug: refactorings
-status: done
+status: pending
 ---
 
 # Refactorings
@@ -14,3 +14,4 @@ status: done
 - [x] [s04t04](s04t04-refactor-providerregistry-out-of-configdeprecated/): Refactor ProviderRegistry out of config.deprecated
 - [x] [s04t05](s04t05-refactor-skillmanifest-out-of-configdeprecated/): Refactor SkillManifest out of config.deprecated
 - [x] [s04t06](s04t06-wrap-clicktestingresult-behind-a-protocol.md): Wrap click.testing.Result behind a protocol in test helper
+- [ ] [s04t07](s04t07-support-lists-in-fmtdata-and.md): Support lists in fmt_data and fmt_ident console helpers

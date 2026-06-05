@@ -19,13 +19,12 @@ from tests.cli.helper import (
     INSTALL_DIR,
     SKILLS_DIR,
     FakeGitRepo,
+    FakeGitRepoManager,
     assert_invoke,
     assert_words_in_message,
     create_repo_skill,
-    install_fake_git,
     register_provider,
     register_source,
-    uninstall_fake_git,
 )
 
 OTHER_REPO_ROOT = Path("/repos/other-project")
@@ -33,11 +32,10 @@ OTHER_SKILLS_DIR = OTHER_REPO_ROOT / "skills"
 
 
 @pytest.fixture(autouse=True)
-def _fake_git() -> Generator[FakeGitRepo]:
+def _fake_git(fake_git_manager: FakeGitRepoManager) -> Generator[FakeGitRepo]:
     fake = FakeGitRepo(commits={"skills/tdd": "abc1234"})
-    install_fake_git(fake)
+    fake_git_manager.install(fake)
     yield fake
-    uninstall_fake_git()
 
 
 def _add_second_source(fs: FakeFilesystem) -> None:
@@ -91,13 +89,12 @@ class TestInstall:
 
 class TestInstallMultipleSkills:
     @pytest.fixture(autouse=True)
-    def _fake_git(self) -> Generator[FakeGitRepo]:
+    def _fake_git(self, fake_git_manager: FakeGitRepoManager) -> Generator[FakeGitRepo]:
         fake = FakeGitRepo(
             commits={"skills/tdd": "abc1234", "skills/review": "def5678"}
         )
-        install_fake_git(fake)
+        fake_git_manager.install(fake)
         yield fake
-        uninstall_fake_git()
 
     def test_installs_multiple_skills(self, fs: FakeFilesystem, git_repo: Path) -> None:
         register_source(git_repo)

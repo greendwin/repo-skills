@@ -698,6 +698,30 @@ class TestMergeUntracked:
 
         assert_words_in_message(result.output, "merge", "complete")
 
+    def test_untracked_selects_source_with_short_flag(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        other_repo = OTHER_REPO_ROOT
+        fs.create_dir(other_repo / ".git")
+        registry = SourceRegistry()
+        registry.register_source("my-project", git_repo)
+        registry.register_source("other-project", other_repo)
+        save_source_registry(registry)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dir="skills"), git_repo
+        )
+        save_source_config(
+            SourceConfig(name="other-project", skills_dir="skills"), other_repo
+        )
+        create_source_skill(fs, "tdd", content="# original")
+        create_source_skill(fs, "tdd", content="# original", root=other_repo / "skills")
+        install_skill(fs, "tdd", content="# original")
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        result = assert_invoke("merge", "tdd", "--offline", "-s", "my-project")
+
+        assert_words_in_message(result.output, "merge", "complete")
+
 
 class TestMergeOrphan:
     def test_single_source_auto_picks_and_merges(

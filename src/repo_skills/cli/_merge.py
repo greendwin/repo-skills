@@ -59,6 +59,7 @@ def merge(
         Optional[str],
         typer.Option(
             "--source",
+            "-s",
             help="Target source (required for orphan skills when ambiguous).",
         ),
     ] = None,

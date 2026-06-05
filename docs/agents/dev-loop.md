@@ -1,13 +1,13 @@
 # Dev loop
 
-This repo runs inside **Claude Code**. The code-review lenses invoke the built-in
-`/code-review` command (read-only by default); the refactor lenses run the built-in
-`/simplify` in a **throwaway scratch worktree** and capture the diff it produces as
-their proposal — `/simplify` never touches the tracked tree, so `dev-loop`'s
-single-writer invariant holds (only `tdd` applies the accepted hunks). Each lens below
-is one reviewer; `dev-loop` spawns the lenses in a roster in parallel and collects
-their findings. This document is self-contained — no other file is needed to perform
-any lens below.
+This repo runs inside **Claude Code**. The code-review lens invokes the built-in
+`/code-review` command (read-only by default); the refactor lenses are read-only
+reviewers that propose refactorings in prose. Every lens reports findings with an
+inline `suggested-fix` and never edits the tracked tree — `dev-loop` hands the accepted
+findings to `tdd`, the sole writer, which implements them under green tests. Each lens
+below is one reviewer; `dev-loop` spawns the lenses in a roster in parallel and
+collects their findings. This document is self-contained — no other file is needed to
+perform any lens below.
 
 ## `code-reviewer`
 
@@ -26,17 +26,9 @@ behavior-level test, tests exercise the public interface (the package's `__init_
 re-exports, not `_`-prefixed submodule internals), and there are no
 implementation-coupled or mock-heavy tests. Confirm tests use the `assert_invoke`
 helper rather than `CliRunner` for CLI behavior, use `pyfakefs` rather than a real
-filesystem or `tmp_path`, and patch via the imported module object rather than a
-string path or `unittest.mock.patch`. Report gaps and weak tests as findings. Do not
-edit code; propose only.
-
-### security
-
-Review the change under review for security and data-safety issues: input handling and
-validation, path traversal, injection, secret leakage in logs or errors, and any
-operation that could lose or corrupt user data (e.g. overwriting or deleting tracked
-files without a guard). Report each issue as a finding with its location, severity, and
-a suggested fix. Do not edit code; propose only.
+filesystem or `tmp_path`, and patch via `monkeypatch` on the imported module object
+rather than a string path or `unittest.mock.patch`. Report gaps and weak tests as
+findings. Do not edit code; propose only.
 
 ### performance
 
@@ -51,30 +43,28 @@ propose only.
 
 Runs against the whole change during the refactor phase.
 
-### simplify
+### duplication
 
-Create a **throwaway scratch worktree** of the change under review, run the built-in
-`/simplify` inside it, and **capture the diff it produces** — then discard the
-worktree without touching the tracked tree. Report each simplification as a finding
-whose `suggested-fix` is the captured hunk(s), with its location and rationale.
-Propose only: you never write the tracked tree — `dev-loop` hands accepted hunks to
-`tdd`, which applies them verbatim (repairing or dropping any that redden the suite).
+Review the change for repeated logic or structure — copy-pasted blocks, parallel
+branches that differ only in a value, the same computation done in several places.
+For each, name the duplicated sites and propose how to unify them (extract a helper,
+parameterize, hoist a shared value). Distinguish true duplication from incidental
+similarity — only flag cases where a single point of change is clearly better. Report
+each as a finding with location, rationale, and an inline `suggested-fix`. Do not edit
+code; propose only.
 
 ### deep-modules
 
-Review the change for shallow modules that should be deepened: thin wrappers that add
-no abstraction, interfaces that leak implementation detail to their callers, and
-primitive obsession where a small domain type (source, skill, provider) would hide
-complexity behind a simpler interface. Push toward modules whose interface is small
-relative to the functionality they provide. Report each opportunity as a finding
-(location + rationale + suggested refactoring). Propose only; `dev-loop` hands accepted
-proposals to `tdd` to apply.
+Review the change for shallow modules — a large interface over thin implementation,
+pass-through wrappers, and abstractions that leak their internals. Push toward modules
+whose interface is small relative to the functionality they provide: collapse a
+needless wrapper, hide complexity behind a smaller interface, or fold a one-call helper
+into its caller. Report each as a finding with location, rationale, and an inline
+`suggested-fix`. Do not edit code; propose only.
 
-### duplication
+### simplification
 
-Review the change for duplication to extract: near-identical blocks across sources or
-skills handling, repeated parsing/formatting logic, and parallel code paths that have
-drifted and should be unified behind one helper. Distinguish true duplication from
-incidental similarity — only flag cases where a single point of change is clearly
-better. Report each as a finding (location + rationale + suggested extraction). Propose
-only; `dev-loop` hands accepted proposals to `tdd` to apply.
+Review the change for control-flow complexity — deep nesting, arrow code, redundant
+conditionals, and branches that a guard clause or early return would flatten. Propose
+the flattened form. Report each as a finding with location, rationale, and an inline
+`suggested-fix`. Do not edit code; propose only.

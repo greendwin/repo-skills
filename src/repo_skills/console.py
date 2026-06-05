@@ -99,7 +99,10 @@ def fmt_path(path: Path | str) -> str:
     return f"[dim]{escape(str(path))}[/dim]"
 
 
-def fmt_data(text: Any) -> str:
+def fmt_data(text: str | int | Path | list[Any]) -> str:
+    if isinstance(text, list):
+        return ", ".join(fmt_data(p) for p in sorted(map(str, text)))
+
     return f"[cyan]{escape(str(text))}[/cyan]"
 
 

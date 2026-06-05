@@ -1,7 +1,7 @@
 ---
 id: s06t18
 slug: update-specific-source
-status: pending
+status: done
 ---
 
 # Update specific source
@@ -32,6 +32,6 @@ Implementation order: **t18 → t16 → t19**.
 
 ## Subtasks
 
-- [ ] [s06t1801](s06t1801-extract-targetskill-collection-as-a.md): Extract target-skill collection as a seam
-- [ ] [s06t1802](s06t1802-ssource-filters-the-update-work.md): `-s/--source` filters the update work set
-- [ ] [s06t1803](s06t1803-derive-pulls-from-the-collected.md): Derive pulls from the collected skill set
+- [x] [s06t1801](s06t1801-extract-targetskill-collection-as-a.md): Extract target-skill collection as a seam
+- [x] [s06t1802](s06t1802-ssource-filters-the-update-work.md): `-s/--source` filters the update work set
+- [x] [s06t1803](s06t1803-derive-pulls-from-the-collected.md): Derive pulls from the collected skill set

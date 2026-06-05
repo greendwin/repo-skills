@@ -7,7 +7,6 @@ from typing import Literal, overload
 from pyfakefs.fake_filesystem import FakeFilesystem
 from typer.testing import CliRunner
 
-import repo_skills.cli._deps as deps_mod
 from repo_skills.cli import app
 from repo_skills.config import (
     InstalledSkill,
@@ -23,7 +22,6 @@ from repo_skills.config import (
     save_source_registry,
 )
 from repo_skills.errors import AppError, FileNotInCommitError, NoopError
-from repo_skills.git import GitRepo
 
 
 @dataclass
@@ -174,15 +172,25 @@ class FakeGitRepo:
         return [b for b in self.branches if pattern.rstrip("*") in b]
 
 
-def install_fake_git(fake: FakeGitRepo) -> None:
-    def factory(_path: Path) -> GitRepo:
-        return fake
+class FakeGitRepoManager:
+    def __init__(self) -> None:
+        self.repos: dict[str, FakeGitRepo] = {}
 
-    deps_mod._git_repo_factory = factory
+    def install(self, fake: FakeGitRepo) -> None:
+        self.repos[str(fake.root)] = fake
 
+    def uninstall_all(self) -> None:
+        self.repos.clear()
 
-def uninstall_fake_git() -> None:
-    deps_mod._git_repo_factory = None
+    def make(self, root: Path) -> FakeGitRepo:
+        key = str(root)
+        existing = self.repos.get(key)
+        if existing is not None:
+            return existing
+
+        created = FakeGitRepo(root=root)
+        self.repos[key] = created
+        return created
 
 
 @overload

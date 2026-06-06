@@ -566,6 +566,26 @@ class TestUpdateSourceFilter:
             result.output, "no skills installed from source", "other-project"
         )
 
+    def test_empty_filtered_update_does_not_pull(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        # No tracked targets and no name-membership candidates in the eligible
+        # source: the no-op fires before any pull.
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "tdd", content="# tdd v1", root=SKILLS_DIR)
+        hashes = install_skill(fs, "tdd", content="# tdd v1")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="old", files=hashes)
+                )
+            }
+        )
+
+        assert_invoke("update", "--source", "other-project")
+
+        assert fake_git_manager.make(OTHER_REPO_ROOT).pulled is False
+
     def test_short_flag_narrows_to_that_source(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
@@ -1090,3 +1110,403 @@ class TestUpdatePerProviderOutput:
         assert_words_in_message(claude_lines[0], "claude", "updated")
         assert_words_in_message(cursor_lines[0], "cursor", "skipped")
         assert_words_in_message(result.output, "recovered")
+
+
+class TestUpdateAttach:
+    def test_exact_match_untracked_is_attached_and_updated(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd")
+        install_skill(fs, "tdd", content="# tdd")
+        save_manifest({})
+        _fake_git.branch_commits[("skills/tdd", "main")] = "commit-tdd"
+        _fake_git.ancestors[("commit-tdd", "main")] = True
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(
+            result.output, "Attached skill tdd", "matched source my-project"
+        )
+
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert entry.source == "my-project"
+        assert entry.detached is False
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "commit-tdd"
+        assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "tdd")
+
+    def test_same_skill_in_two_providers_attaches_once(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd")
+        install_skill(fs, "tdd", content="# tdd")
+        cursor_dir = Path("/home/user/.cursor/skills")
+        register_provider("cursor", str(cursor_dir))
+        install_skill(fs, "tdd", content="# tdd", install_dir=cursor_dir)
+        save_manifest({})
+        _fake_git.branch_commits[("skills/tdd", "main")] = "commit-tdd"
+        _fake_git.ancestors[("commit-tdd", "main")] = True
+
+        result = assert_invoke("update", "--offline")
+
+        assert result.output.count("Attached skill tdd") == 1
+        manifest = load_manifest()
+        assert list(manifest.skills) == ["tdd"]
+
+    def test_exact_match_untracked_is_attached_and_reports_up_to_date(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd")
+        install_skill(fs, "tdd", content="# tdd")
+        save_manifest({})
+        _fake_git.branch_commits[("skills/tdd", "main")] = "commit-tdd"
+        _fake_git.ancestors[("commit-tdd", "main")] = True
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "Updating tdd", "up-to-date")
+
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "commit-tdd"
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd"
+
+    def test_exact_match_with_verify_failure_is_not_attached(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd")
+        install_skill(fs, "tdd", content="# tdd")
+        save_manifest({})
+        _fake_git.branch_commits[("skills/tdd", "main")] = "commit-tdd"
+        _fake_git.verified["skills/tdd"] = False
+
+        result = assert_invoke("update", "--offline")
+
+        assert "Attached skill tdd" not in result.output
+        manifest = load_manifest()
+        assert "tdd" not in manifest.skills
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd"
+
+    def test_exact_match_with_unresolved_commit_is_not_attached(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd")
+        install_skill(fs, "tdd", content="# tdd")
+        save_manifest({})
+
+        result = assert_invoke("update", "--offline")
+
+        assert "Attached skill tdd" not in result.output
+        manifest = load_manifest()
+        assert "tdd" not in manifest.skills
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd"
+
+    def test_skill_vanished_from_source_post_pull_is_not_attached(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # The skill name-matches when the candidate is found, but the source
+        # path no longer hashes equal at attach time (content drifted across the
+        # pull). It must be silently left untouched, with no crash.
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd")
+        install_skill(fs, "tdd", content="# tdd")
+        save_manifest({})
+        _fake_git.branch_commits[("skills/tdd", "main")] = "commit-tdd"
+        _fake_git.ancestors[("commit-tdd", "main")] = True
+
+        real_compute = compute_file_hashes
+
+        def _drift(path: Path) -> dict[str, str]:
+            if str(path).startswith(str(SKILLS_DIR / "tdd")):
+                return {"SKILL.md": "drifted"}
+            return real_compute(path)
+
+        monkeypatch.setattr(update_mod, "compute_file_hashes", _drift)
+
+        result = assert_invoke("update", "--offline")
+
+        assert "Attached skill tdd" not in result.output
+        manifest = load_manifest()
+        assert "tdd" not in manifest.skills
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd"
+
+    def test_detached_entry_matching_source_is_not_re_attached(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd")
+        hashes = install_skill(fs, "tdd", content="# tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit="abc123", files=hashes),
+                    detached=True,
+                )
+            }
+        )
+        _fake_git.ancestors[("abc123", "main")] = True
+
+        result = assert_invoke("update", "--offline")
+
+        assert "Attached skill tdd" not in result.output
+        manifest = load_manifest()
+        assert list(manifest.skills) == ["tdd"]
+        assert manifest.skills["tdd"].detached is False
+
+    def test_modified_untracked_is_not_attached_and_untouched(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd v2")
+        install_skill(fs, "tdd", content="# user copy")
+        save_manifest({})
+
+        result = assert_invoke("update", "--offline")
+
+        assert "Attached skill tdd" not in result.output
+        manifest = load_manifest()
+        assert "tdd" not in manifest.skills
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# user copy"
+
+
+class TestUpdateAttachAmbiguity:
+    def test_multi_source_exact_match_is_skipped_with_note(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "tdd", content="# tdd", root=SKILLS_DIR)
+        create_source_skill(fs, "tdd", content="# tdd", root=OTHER_SKILLS_DIR)
+        install_skill(fs, "tdd", content="# tdd")
+        save_manifest({})
+
+        result = assert_invoke("update", "--offline")
+
+        assert "Attached skill tdd" not in result.output
+        assert_words_in_message(result.output, "tdd", "multiple sources")
+        manifest = load_manifest()
+        assert "tdd" not in manifest.skills
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd"
+
+    def test_source_flag_disambiguates_multi_source_match(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "tdd", content="# tdd", root=SKILLS_DIR)
+        create_source_skill(fs, "tdd", content="# tdd", root=OTHER_SKILLS_DIR)
+        install_skill(fs, "tdd", content="# tdd")
+        save_manifest({})
+        my_git = fake_git_manager.make(git_repo)
+        my_git.branch_commits[("skills/tdd", "main")] = "commit-tdd"
+        my_git.ancestors[("commit-tdd", "main")] = True
+
+        result = assert_invoke("update", "--offline", "-s", "my-project")
+
+        assert_words_in_message(
+            result.output, "Attached skill tdd", "matched source my-project"
+        )
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].source == "my-project"
+
+
+class TestUpdateAttachFilter:
+    def test_source_flag_excludes_other_source_candidate(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "review", content="# review", root=OTHER_SKILLS_DIR)
+        install_skill(fs, "review", content="# review")
+        save_manifest({})
+
+        result = assert_invoke("update", "--offline", "-s", "my-project")
+
+        assert "Attached skill review" not in result.output
+        manifest = load_manifest()
+        assert "review" not in manifest.skills
+
+    def test_source_flag_attaches_untracked_match_instead_of_noop(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "review", content="# review", root=OTHER_SKILLS_DIR)
+        install_skill(fs, "review", content="# review")
+        save_manifest({})
+        other_git = fake_git_manager.make(OTHER_REPO_ROOT)
+        other_git.branch_commits[("skills/review", "main")] = "commit-review"
+        other_git.ancestors[("commit-review", "main")] = True
+
+        result = assert_invoke("update", "--offline", "-s", "other-project")
+
+        assert "no skills installed from source" not in result.output.lower()
+        assert_words_in_message(
+            result.output, "Attached skill review", "matched source other-project"
+        )
+        assert_words_in_message(result.output, "Updating review")
+        manifest = load_manifest()
+        assert manifest.skills["review"].source == "other-project"
+
+    def test_attach_candidate_source_is_pulled(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "review", content="# review", root=OTHER_SKILLS_DIR)
+        install_skill(fs, "review", content="# review")
+        save_manifest({})
+
+        assert_invoke("update", "-s", "other-project")
+
+        assert fake_git_manager.make(OTHER_REPO_ROOT).pulled is True
+
+    def test_source_flag_does_not_pull_or_attach_other_source_match(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        # An untracked dir exactly matches source Y, but only X is named.
+        # Attach must not expand the -s filter: Y is neither pulled nor attached.
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "tdd", content="# tdd", root=SKILLS_DIR)
+        create_source_skill(fs, "review", content="# review", root=OTHER_SKILLS_DIR)
+        install_skill(fs, "review", content="# review")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit="abc", files={}),
+                )
+            }
+        )
+        other_git = fake_git_manager.make(OTHER_REPO_ROOT)
+        other_git.branch_commits[("skills/review", "main")] = "commit-review"
+        other_git.ancestors[("commit-review", "main")] = True
+
+        result = assert_invoke("update", "-s", "my-project")
+
+        assert "Attached skill review" not in result.output
+        manifest = load_manifest()
+        assert "review" not in manifest.skills
+        assert other_git.pulled is False
+
+    def test_name_filter_does_not_attach_unrelated_untracked_match(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        # Name-only filter: eligible = sources of named skills. An untracked dir
+        # matching a different, unnamed source must not be attached.
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "tdd", content="# tdd", root=SKILLS_DIR)
+        create_source_skill(fs, "review", content="# review", root=OTHER_SKILLS_DIR)
+        install_skill(fs, "tdd", content="# tdd")
+        install_skill(fs, "review", content="# review")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(
+                        commit="abc", files=compute_file_hashes(INSTALL_DIR / "tdd")
+                    ),
+                )
+            }
+        )
+        other_git = fake_git_manager.make(OTHER_REPO_ROOT)
+        other_git.branch_commits[("skills/review", "main")] = "commit-review"
+        other_git.ancestors[("commit-review", "main")] = True
+
+        result = assert_invoke("update", "tdd", "--offline")
+
+        assert "Attached skill review" not in result.output
+        manifest = load_manifest()
+        assert "review" not in manifest.skills
+
+    def test_name_membership_candidate_source_is_pulled_for_post_pull_check(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        # The source contains a skill by NAME matching the untracked dir, but the
+        # pre-pull content differs. The source must still be pulled so the match
+        # can be re-validated against post-pull content.
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "review", content="# review v2", root=OTHER_SKILLS_DIR)
+        install_skill(fs, "review", content="# review v1")
+        save_manifest({})
+
+        assert_invoke("update", "-s", "other-project")
+
+        assert fake_git_manager.make(OTHER_REPO_ROOT).pulled is True
+
+
+class TestUpdateBrokenSource:
+    def test_broken_source_warns_and_valid_skill_still_updates(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        # "broken-project" is registered but has no source config, so loading it
+        # raises during eligible-source collection. The presence of an untracked
+        # install dir triggers that load; the warning must fire and not crash,
+        # and the valid tracked skill must still update.
+        broken_root = Path("/repos/broken-project")
+        fs.create_dir(broken_root / ".git")
+        registry = SourceRegistry()
+        registry.register_source("my-project", git_repo)
+        registry.register_source("broken-project", broken_root)
+        save_source_registry(registry)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dir="skills", branch=""), git_repo
+        )
+
+        create_source_skill(fs, "tdd", content="# tdd v2", root=SKILLS_DIR)
+        h1 = install_skill(fs, "tdd", content="# tdd v1")
+        install_skill(fs, "untracked-skill", content="# untracked")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="old", files=h1)
+                )
+            }
+        )
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "warning", "broken-project")
+        assert_words_in_message(result.output, "tdd", "updated")
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v2"
+
+
+class TestUpdateAttachNoFilter:
+    def test_plain_update_attaches_match_from_untracked_only_source(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        # Plain update (no filters): an untracked exact-match from a registered
+        # source with zero installed skills is pulled and attached.
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "tdd", content="# tdd", root=SKILLS_DIR)
+        create_source_skill(fs, "review", content="# review", root=OTHER_SKILLS_DIR)
+        install_skill(fs, "tdd", content="# tdd")
+        install_skill(fs, "review", content="# review")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(
+                        commit="abc", files=compute_file_hashes(INSTALL_DIR / "tdd")
+                    ),
+                )
+            }
+        )
+        other_git = fake_git_manager.make(OTHER_REPO_ROOT)
+        other_git.branch_commits[("skills/review", "main")] = "commit-review"
+        other_git.ancestors[("commit-review", "main")] = True
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(
+            result.output, "Attached skill review", "matched source other-project"
+        )
+        manifest = load_manifest()
+        assert manifest.skills["review"].source == "other-project"

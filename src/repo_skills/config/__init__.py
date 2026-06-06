@@ -18,6 +18,7 @@ __all__ = [
     "load_source_config",
     "save_source_config",
     "load_source_registry",
+    "make_baseline",
     "save_provider_registry",
     "save_skill_manifest",
     "save_source_registry",
@@ -36,6 +37,7 @@ from ._skill_manifest import (
     InstalledSkill,
     SkillManifest,
     load_skill_manifest,
+    make_baseline,
     save_skill_manifest,
 )
 from ._source import (

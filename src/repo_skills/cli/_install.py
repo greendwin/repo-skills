@@ -7,20 +7,19 @@ from typing import Annotated, Optional
 import typer
 
 from repo_skills.config import (
-    Baseline,
     SkillManifest,
     Source,
     SourceRegistry,
-    compute_file_hashes,
     load_provider_registry,
     load_skill_manifest,
     load_source_registry,
+    make_baseline,
     save_skill_manifest,
 )
 from repo_skills.config._source import SourceSkill
 from repo_skills.console import console, fmt_command, fmt_data, fmt_ident
 from repo_skills.errors import AppError
-from repo_skills.git import GitRepo, ensure_on_branch
+from repo_skills.git import GitRepo, ensure_on_branch, resolve_verified_commit
 
 from ._app import app
 from ._deps import resolve_git_repo
@@ -173,11 +172,11 @@ def _resolve_source(
 
 
 def _resolve_commit(git: GitRepo, skill: SourceSkill) -> str:
-    commit = git.get_skill_commit(skill.rel_path)
-    if not git.verify_commit_content(commit, skill.rel_path):
+    commit = resolve_verified_commit(git, skill.rel_path)
+    if commit is None:
         raise AppError(
             f"Skill {fmt_ident(skill.name)} content does not match "
-            f"commit {fmt_data(commit[:8])}."
+            f"commit {fmt_data(git.get_skill_commit(skill.rel_path)[:8])}."
         )
 
     return commit
@@ -189,10 +188,7 @@ def _record_manifest(
     manifest.register_skill(
         skill.name,
         source_name=source.name,
-        baseline=Baseline(
-            commit=commit,
-            files=compute_file_hashes(source.repo_root / skill.rel_path),
-        ),
+        baseline=make_baseline(commit, source.repo_root / skill.rel_path),
     )
     save_skill_manifest(manifest)
 

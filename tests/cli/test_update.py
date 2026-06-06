@@ -19,6 +19,7 @@ from tests.cli.helper import (
     INSTALL_DIR,
     SOURCE_REPO_ROOT,
     FakeGitRepo,
+    FakeGitRepoManager,
     assert_invoke,
     assert_words_in_message,
     create_source_skill,
@@ -30,6 +31,44 @@ from tests.cli.helper import (
 )
 
 SKILLS_DIR = SOURCE_REPO_ROOT / "skills"
+OTHER_REPO_ROOT = Path("/repos/other-project")
+OTHER_SKILLS_DIR = OTHER_REPO_ROOT / "skills"
+
+
+def _register_two_sources(
+    fs: FakeFilesystem, git_repo: Path, other_root: Path = OTHER_REPO_ROOT
+) -> None:
+    if not (other_root / ".git").exists():
+        fs.create_dir(other_root / ".git")
+    registry = SourceRegistry()
+    registry.register_source("my-project", git_repo)
+    registry.register_source("other-project", other_root)
+    save_source_registry(registry)
+    save_source_config(
+        SourceConfig(name="my-project", skills_dir="skills", branch=""), git_repo
+    )
+    save_source_config(
+        SourceConfig(name="other-project", skills_dir="skills", branch=""),
+        other_root,
+    )
+
+
+def _install_two_source_skills(fs: FakeFilesystem, git_repo: Path) -> None:
+    _register_two_sources(fs, git_repo)
+    create_source_skill(fs, "tdd", content="# tdd v2", root=SKILLS_DIR)
+    create_source_skill(fs, "review", content="# review v2", root=OTHER_SKILLS_DIR)
+    h1 = install_skill(fs, "tdd", content="# tdd v1")
+    h2 = install_skill(fs, "review", content="# review v1")
+    save_manifest(
+        {
+            "tdd": InstalledSkill(
+                source="my-project", baseline=Baseline(commit="old", files=h1)
+            ),
+            "review": InstalledSkill(
+                source="other-project", baseline=Baseline(commit="old", files=h2)
+            ),
+        }
+    )
 
 
 class TestUpdateSynced:
@@ -209,20 +248,35 @@ class TestUpdatePull:
 
         assert_words_in_message(result.output, "Pulling", "skipped")
 
-    def test_each_source_gets_own_pull_line(
+    def test_each_owning_source_gets_own_pull_line(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        registry = SourceRegistry()
-        registry.register_source("my-project", git_repo)
-        registry.register_source("other-project", git_repo)
-        save_source_registry(registry)
-        save_source_config(
-            SourceConfig(name="my-project", skills_dir="skills", branch=""), git_repo
-        )
-        save_source_config(
-            SourceConfig(name="other-project", skills_dir="skills", branch=""), git_repo
-        )
+        _register_two_sources(fs, git_repo, other_root=git_repo)
         create_source_skill(fs, "tdd")
+        create_source_skill(fs, "review")
+        h1 = install_skill(fs, "tdd")
+        h2 = install_skill(fs, "review")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="abc", files=h1)
+                ),
+                "review": InstalledSkill(
+                    source="other-project", baseline=Baseline(commit="abc", files=h2)
+                ),
+            }
+        )
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "Pulling my-project")
+        assert_words_in_message(result.output, "Pulling other-project")
+
+    def test_idle_source_is_not_pulled(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "tdd", root=SKILLS_DIR)
         hashes = install_skill(fs, "tdd")
         save_manifest(
             {
@@ -235,7 +289,46 @@ class TestUpdatePull:
         result = assert_invoke("update", "--offline")
 
         assert_words_in_message(result.output, "Pulling my-project")
-        assert_words_in_message(result.output, "Pulling other-project")
+        assert "Pulling other-project" not in result.output
+
+    def test_source_flag_pulls_only_that_source(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        _install_two_source_skills(fs, git_repo)
+
+        result = assert_invoke("update", "--offline", "--source", "my-project")
+
+        assert_words_in_message(result.output, "Pulling my-project")
+        assert "Pulling other-project" not in result.output
+
+    def test_only_owning_source_repo_is_pulled(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "tdd", root=SKILLS_DIR)
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="abc", files=hashes)
+                )
+            }
+        )
+
+        assert_invoke("update")
+
+        assert fake_git_manager.make(git_repo).pulled is True
+        assert fake_git_manager.make(OTHER_REPO_ROOT).pulled is False
+
+    def test_source_flag_pulls_only_selected_source_repo(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        _install_two_source_skills(fs, git_repo)
+
+        assert_invoke("update", "--source", "my-project")
+
+        assert fake_git_manager.make(git_repo).pulled is True
+        assert fake_git_manager.make(OTHER_REPO_ROOT).pulled is False
 
 
 class TestUpdateValidation:
@@ -365,6 +458,184 @@ class TestUpdateAll:
         assert_words_in_message(result.output, "review", "updated")
 
 
+class TestUpdateNamedTarget:
+    def test_named_skill_updates_only_that_skill(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd v2")
+        create_source_skill(fs, "review", content="# review v2")
+        h1 = install_skill(fs, "tdd", content="# tdd v1")
+        h2 = install_skill(fs, "review", content="# review v1")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="old", files=h1)
+                ),
+                "review": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="old", files=h2)
+                ),
+            }
+        )
+
+        result = assert_invoke("update", "tdd", "--offline")
+
+        assert_words_in_message(result.output, "Updating tdd", "updated")
+        assert "Updating review" not in result.output
+        assert (INSTALL_DIR / "review" / "SKILL.md").read_text() == "# review v1"
+
+
+class TestUpdateSourceFilter:
+    def test_source_flag_narrows_to_that_source(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        _install_two_source_skills(fs, git_repo)
+
+        result = assert_invoke("update", "--offline", "--source", "my-project")
+
+        assert_words_in_message(result.output, "Updating tdd", "updated")
+        assert "Updating review" not in result.output
+        assert (INSTALL_DIR / "review" / "SKILL.md").read_text() == "# review v1"
+
+    def test_unknown_source_errors(self, fs: FakeFilesystem, git_repo: Path) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd")
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="abc", files=hashes)
+                )
+            }
+        )
+
+        result = assert_invoke(
+            "update", "--offline", "--source", "nope", expect_error=True
+        )
+
+        assert_words_in_message(result.exception.message, "nope", "not found")
+        assert "Updating tdd" not in result.output
+
+    def test_unknown_source_errors_even_with_valid_one(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        _install_two_source_skills(fs, git_repo)
+
+        result = assert_invoke(
+            "update",
+            "--offline",
+            "-s",
+            "my-project",
+            "-s",
+            "nope",
+            expect_error=True,
+        )
+
+        assert_words_in_message(result.exception.message, "nope", "not found")
+
+    def test_name_and_source_compose_as_union(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        _install_two_source_skills(fs, git_repo)
+
+        result = assert_invoke(
+            "update", "review", "--offline", "--source", "my-project"
+        )
+
+        # "review" is selected by name; "tdd" by its my-project source.
+        assert_words_in_message(result.output, "Updating review", "updated")
+        assert_words_in_message(result.output, "Updating tdd", "updated")
+
+    def test_valid_source_with_no_installed_skills_noops(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "tdd", content="# tdd v1", root=SKILLS_DIR)
+        hashes = install_skill(fs, "tdd", content="# tdd v1")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="old", files=hashes)
+                )
+            }
+        )
+
+        result = assert_invoke("update", "--offline", "--source", "other-project")
+
+        assert_words_in_message(
+            result.output, "no skills installed from source", "other-project"
+        )
+
+    def test_short_flag_narrows_to_that_source(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        _install_two_source_skills(fs, git_repo)
+
+        result = assert_invoke("update", "--offline", "-s", "other-project")
+
+        assert_words_in_message(result.output, "Updating review", "updated")
+        assert "Updating tdd" not in result.output
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v1"
+
+    def test_multiple_sources_select_their_skills(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        _install_two_source_skills(fs, git_repo)
+
+        result = assert_invoke(
+            "update", "--offline", "-s", "my-project", "-s", "other-project"
+        )
+
+        assert_words_in_message(result.output, "Updating tdd", "updated")
+        assert_words_in_message(result.output, "Updating review", "updated")
+
+
+class TestUpdateMultipleNames:
+    def test_multiple_named_skills_update_only_those(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        for name in ("tdd", "review", "ship"):
+            create_source_skill(fs, name, content=f"# {name} v2")
+        hashes = {
+            name: install_skill(fs, name, content=f"# {name} v1")
+            for name in ("tdd", "review", "ship")
+        }
+        save_manifest(
+            {
+                name: InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="old", files=h)
+                )
+                for name, h in hashes.items()
+            }
+        )
+
+        result = assert_invoke("update", "tdd", "review", "--offline")
+
+        assert_words_in_message(result.output, "Updating tdd", "updated")
+        assert_words_in_message(result.output, "Updating review", "updated")
+        assert "Updating ship" not in result.output
+        assert (INSTALL_DIR / "ship" / "SKILL.md").read_text() == "# ship v1"
+
+    def test_unknown_among_named_skills_errors(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd")
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="abc", files=hashes)
+                )
+            }
+        )
+
+        result = assert_invoke("update", "tdd", "nope", "--offline", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "nope", "not installed")
+
+
 class TestUpdateDetached:
     def test_unreachable_commit_marks_skill_detached(
         self, fs: FakeFilesystem, git_repo: Path
@@ -409,6 +680,29 @@ class TestUpdateDetached:
         manifest = load_manifest()
         assert manifest.skills["tdd"].detached is False
         assert_words_in_message(result.output, "tdd", "recovered")
+
+    def test_non_default_source_skill_recovers(
+        self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
+    ) -> None:
+        _register_two_sources(fs, git_repo)
+        create_source_skill(fs, "review", root=OTHER_SKILLS_DIR)
+        hashes = install_skill(fs, "review")
+        save_manifest(
+            {
+                "review": InstalledSkill(
+                    source="other-project",
+                    baseline=Baseline(commit="abc123", files=hashes),
+                    detached=True,
+                )
+            }
+        )
+        fake_git_manager.make(OTHER_REPO_ROOT).ancestors[("abc123", "main")] = True
+
+        result = assert_invoke("update", "--offline")
+
+        manifest = load_manifest()
+        assert manifest.skills["review"].detached is False
+        assert_words_in_message(result.output, "review", "recovered")
 
     def test_still_detached_shows_untracked(
         self, fs: FakeFilesystem, git_repo: Path
@@ -470,7 +764,7 @@ class TestUpdateErrorMessages:
         result = assert_invoke("update", "--offline")
 
         assert_words_in_message(
-            result.output, "error: source 'unknown-source' not found"
+            result.output, "error", "source", "unknown-source", "not found"
         )
 
         manifest = load_manifest()

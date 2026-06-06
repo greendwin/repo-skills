@@ -1,7 +1,7 @@
 ---
 id: s06t1601
 slug: attach-a-uniquelymatching-untracked-skill
-status: pending
+status: in-review
 ---
 
 # Attach a uniquely-matching untracked skill

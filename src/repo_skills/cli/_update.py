@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 from dataclasses import dataclass
 from enum import Enum, auto
+from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
@@ -13,6 +14,7 @@ from repo_skills.config import (
     InstalledSkill,
     ProviderRegistry,
     SkillManifest,
+    Source,
     SourceRegistry,
     compute_file_hashes,
     load_provider_registry,
@@ -22,7 +24,7 @@ from repo_skills.config import (
 )
 from repo_skills.console import console, fmt_data, fmt_ident
 from repo_skills.errors import AppError, NoopError
-from repo_skills.git import ensure_on_branch
+from repo_skills.git import ensure_on_branch, resolve_verified_commit
 
 from ._app import app
 from ._deps import resolve_git_repo
@@ -62,12 +64,8 @@ def update(
 ) -> None:
     providers = load_provider_registry()
     manifest = load_skill_manifest()
-
-    # TODO: we must re-attach non-install skills too
-    if not manifest.skills:
-        raise NoopError("[dim]No skills installed.[/dim]")
-
     source_registry = load_source_registry()
+
     to_update = _collect_skills_for_update(
         manifest,
         source_registry,
@@ -75,15 +73,35 @@ def update(
         source_names=source_names,
     )
 
-    if source_names and not to_update.skills:
-        assert not skill_names
-        raise NoopError(
-            f"[dim]No skills installed from source {fmt_data(source_names)}.[/dim]"
+    untracked = _scan_untracked_install_dirs(
+        manifest,
+        providers,
+        skill_names=skill_names,
+    )
+    if untracked:
+        eligible = _eligible_attach_sources(
+            source_registry,
+            to_update,
+            skill_names=skill_names,
+            source_names=source_names,
         )
+        attach_candidates = _find_attach_candidates(untracked, eligible)
+    else:
+        attach_candidates = []
+
+    if not to_update.skills and not attach_candidates:
+        if source_names:
+            raise NoopError(
+                f"[dim]No skills installed from source {fmt_data(source_names)}.[/dim]"
+            )
+        raise NoopError("[dim]No skills installed.[/dim]")
+
+    candidate_sources = frozenset(name for c in attach_candidates for name in c.sources)
+    pull_sources = to_update.sources | candidate_sources
 
     source_branches: dict[str, str] = {}
     for source_name in sorted(source_registry.sources):
-        if source_name not in to_update.sources:
+        if source_name not in pull_sources:
             continue
 
         registered = source_registry.get_source(source_name, load_skills=False)
@@ -98,7 +116,10 @@ def update(
             else:
                 console.finish("[green]done[/green]")
 
-    for skill_name, entry in to_update.skills.items():
+    attached = _attach_skills(attach_candidates, manifest, source_branches)
+    skills_to_update = {**to_update.skills, **attached}
+
+    for skill_name, entry in skills_to_update.items():
         with console.running(f"Updating {fmt_data(skill_name)}"):
             try:
                 report = _update_skill(
@@ -146,7 +167,6 @@ def _collect_skills_for_update(
     skill_names: list[str] | None,
     source_names: list[str] | None,
 ) -> _Targets:
-    # TODO: we can target any untrack skill too
     skills: dict[str, InstalledSkill] = {}
 
     for name in skill_names or ():
@@ -171,6 +191,163 @@ def _collect_skills_for_update(
         skills=skills,
         sources=frozenset(entry.source for entry in skills.values()),
     )
+
+
+def _eligible_attach_sources(
+    source_registry: SourceRegistry,
+    to_update: _Targets,
+    *,
+    skill_names: list[str] | None,
+    source_names: list[str] | None,
+) -> dict[str, Source]:
+    if not skill_names and not source_names:
+        allowed: set[str] | None = None
+    else:
+        allowed = set(to_update.sources) | set(source_names or ())
+
+    sources: dict[str, Source] = {}
+    for source_name in source_registry.sources:
+        if allowed is not None and source_name not in allowed:
+            continue
+
+        try:
+            sources[source_name] = source_registry.get_source(
+                source_name, load_skills=True
+            )
+        except AppError:
+            # TODO: it can be not broken
+            console.print(
+                f"[yellow]Warning[/yellow]: skipping broken source "
+                f"{fmt_ident(source_name)}"
+            )
+            continue
+
+    return sources
+
+
+def _scan_untracked_install_dirs(
+    manifest: SkillManifest,
+    providers: ProviderRegistry,
+    *,
+    skill_names: list[str] | None,
+) -> dict[str, Path]:
+    tracked = set(manifest.skills)
+
+    untracked: dict[str, Path] = {}
+    for provider in providers.providers:
+        install_dir = provider.install_path
+        if not install_dir.is_dir():
+            continue
+
+        for child in sorted(install_dir.iterdir()):
+            if not child.is_dir():
+                continue
+
+            name = child.name
+            if name in tracked or name in untracked:
+                continue
+            if skill_names and name not in skill_names:
+                continue
+
+            untracked[name] = child
+
+    return untracked
+
+
+@dataclass(frozen=True)
+class _AttachCandidate:
+    skill_name: str
+    installed_hashes: dict[str, str]
+    sources: dict[str, Source]
+
+
+def _find_attach_candidates(
+    untracked: dict[str, Path],
+    eligible: dict[str, Source],
+) -> list[_AttachCandidate]:
+    candidates: list[_AttachCandidate] = []
+    for name, child in untracked.items():
+        name_matches = {
+            source_name: source
+            for source_name, source in eligible.items()
+            if name in source.skills
+        }
+        if not name_matches:
+            continue
+
+        candidates.append(
+            _AttachCandidate(
+                skill_name=name,
+                installed_hashes=compute_file_hashes(child),
+                sources=name_matches,
+            )
+        )
+
+    return candidates
+
+
+def _attach_skills(
+    candidates: list[_AttachCandidate],
+    manifest: SkillManifest,
+    source_branches: dict[str, str],
+) -> dict[str, InstalledSkill]:
+    attached: dict[str, InstalledSkill] = {}
+    for candidate in candidates:
+        entry = _attach_skill(candidate, manifest, source_branches)
+        if entry is not None:
+            attached[candidate.skill_name] = entry
+
+    return attached
+
+
+def _attach_skill(
+    candidate: _AttachCandidate,
+    manifest: SkillManifest,
+    source_branches: dict[str, str],
+) -> InstalledSkill | None:
+    hash_matches: list[tuple[str, Source, dict[str, str]]] = []
+    for source_name, source in candidate.sources.items():
+        skill = source.skills.get(candidate.skill_name)
+        if skill is None:
+            continue
+
+        source_hashes = compute_file_hashes(source.repo_root / skill.rel_path)
+        if source_hashes == candidate.installed_hashes:
+            hash_matches.append((source_name, source, source_hashes))
+
+    if not hash_matches:
+        return None
+    
+    if len(hash_matches) > 1:
+        console.print(
+            f"[yellow]Skipped[/yellow] skill {fmt_data(candidate.skill_name)}: "
+            f"matched multiple sources "
+            f"{fmt_data(sorted(name for name, _, _ in hash_matches))}"
+        )
+        return None
+
+    source_name, source, source_hashes = hash_matches[0]
+    skill = source.skills[candidate.skill_name]
+
+    git = resolve_git_repo(source.repo_root)
+    branch = source_branches.get(source_name, "")
+    commit = resolve_verified_commit(
+        git, skill.rel_path, branch=branch, require_commit=True
+    )
+    if commit is None:
+        return None
+
+    entry = manifest.register_skill(
+        candidate.skill_name,
+        source_name=source_name,
+        baseline=Baseline(commit=commit, files=source_hashes),
+        detached=False,
+    )
+    console.print(
+        f"Attached skill {fmt_data(candidate.skill_name)} "
+        f"(matched source {fmt_data(source_name)})"
+    )
+    return entry
 
 
 @dataclass

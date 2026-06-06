@@ -38,6 +38,20 @@ class GitRepo(Protocol):
     def commit_exists_in_any_branch(self, commit: str) -> bool: ...
 
 
+def resolve_verified_commit(
+    git: GitRepo,
+    rel_path: str,
+    *,
+    branch: str = "",
+) -> str | None:
+    commit = git.get_skill_commit(rel_path, branch=branch)
+    if not commit:
+        return None
+    if not git.verify_commit_content(commit, rel_path):
+        return None
+    return commit
+
+
 def ensure_on_branch(
     git: GitRepo,
     branch: str,

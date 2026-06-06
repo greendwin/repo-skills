@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import shlex
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
 
 from rich.console import Console as RichConsole
 from rich.markup import escape
@@ -51,7 +50,7 @@ class Console:
                 self._con_err.print(f"[dim]  stderr: {escape(line)}[/dim]")
 
     @contextmanager
-    def running(self, prefix: str) -> Iterator[None]:
+    def running(self, prefix: str) -> Generator[None]:
         self._finish_eoln()
         self._con.print(f"{prefix} ... ", end="")
         self._pending_eoln = True
@@ -99,9 +98,9 @@ def fmt_path(path: Path | str) -> str:
     return f"[dim]{escape(str(path))}[/dim]"
 
 
-def fmt_data(text: str | int | Path | list[Any]) -> str:
+def fmt_data(text: str | int | Path | list[str]) -> str:
     if isinstance(text, list):
-        return ", ".join(fmt_data(p) for p in sorted(map(str, text)))
+        return ", ".join(fmt_data(p) for p in sorted(text))
 
     return f"[cyan]{escape(str(text))}[/cyan]"
 

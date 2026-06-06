@@ -1,7 +1,7 @@
 ---
 id: s06t1803
 slug: derive-pulls-from-the-collected
-status: pending
+status: done
 ---
 
 # Derive pulls from the collected skill set

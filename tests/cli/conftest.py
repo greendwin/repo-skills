@@ -6,12 +6,12 @@ from pathlib import Path
 import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
+import repo_skills.cli._deps as deps_mod
 from repo_skills.console import console
 from tests.cli.helper import (
     SOURCE_REPO_ROOT,
     FakeGitRepo,
-    install_fake_git,
-    uninstall_fake_git,
+    FakeGitRepoManager,
 )
 
 
@@ -28,12 +28,21 @@ def git_repo(fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch) -> Path:
     return SOURCE_REPO_ROOT
 
 
+@pytest.fixture()
+def fake_git_manager(monkeypatch: pytest.MonkeyPatch) -> Generator[FakeGitRepoManager]:
+    mng = FakeGitRepoManager()
+    monkeypatch.setattr(deps_mod, "_git_repo_factory", mng.make)
+    try:
+        yield mng
+    finally:
+        mng.uninstall_all()
+
+
 @pytest.fixture(autouse=True)
-def _fake_git() -> Generator[FakeGitRepo]:
+def _fake_git(fake_git_manager: FakeGitRepoManager) -> Generator[FakeGitRepo]:
     fake = FakeGitRepo()
-    install_fake_git(fake)
+    fake_git_manager.install(fake)
     yield fake
-    uninstall_fake_git()
 
 
 @pytest.fixture(autouse=True)

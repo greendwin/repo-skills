@@ -11,7 +11,6 @@ from rich.markup import escape
 from repo_skills.config import (
     Baseline,
     InstalledSkill,
-    ProviderRegistry,
     SkillManifest,
     SourceRegistry,
     compute_file_hashes,
@@ -25,7 +24,15 @@ from repo_skills.errors import AppError, NoopError
 from repo_skills.git import ensure_on_branch
 
 from ._app import app
+from ._context import CommandContext
 from ._deps import resolve_git_repo
+from ._update_attach import (
+    AttachCandidate,
+    attach_skills,
+    eligible_attach_sources,
+    find_attach_candidates,
+    scan_untracked_install_dirs,
+)
 
 
 class _Status(Enum):
@@ -60,30 +67,121 @@ def update(
         typer.Option("--offline", help="Skip git pull."),
     ] = False,
 ) -> None:
-    providers = load_provider_registry()
-    manifest = load_skill_manifest()
+    ctx = CommandContext(
+        provider_registry=load_provider_registry(),
+        source_registry=load_source_registry(),
+        manifest=load_skill_manifest(),
+    )
 
-    # TODO: we must re-attach non-install skills too
-    if not manifest.skills:
-        raise NoopError("[dim]No skills installed.[/dim]")
-
-    source_registry = load_source_registry()
-    to_update = _collect_skills_for_update(
-        manifest,
-        source_registry,
+    targets = _collect_targets(
+        ctx,
         skill_names=skill_names,
         source_names=source_names,
     )
 
-    if source_names and not to_update.skills:
-        assert not skill_names
-        raise NoopError(
-            f"[dim]No skills installed from source {fmt_data(source_names)}.[/dim]"
-        )
+    if not targets.skills and not targets.attach_candidates:
+        if source_names:
+            raise NoopError(
+                f"[dim]No skills installed from source {fmt_data(source_names)}.[/dim]"
+            )
+        raise NoopError("[dim]No skills installed.[/dim]")
 
+    source_branches = _pull_sources(
+        ctx.source_registry,
+        targets.pull_sources,
+        offline=offline,
+    )
+
+    attached = attach_skills(targets.attach_candidates, source_branches)
+    skills_to_update = {**targets.skills, **attached}
+
+    _run_updates(ctx, skills_to_update, source_branches)
+    save_skill_manifest(ctx.manifest)
+
+
+@dataclass(frozen=True)
+class _Targets:
+    skills: dict[str, InstalledSkill]
+    attach_candidates: list[AttachCandidate]
+    pull_sources: frozenset[str]
+
+
+def _collect_targets(
+    ctx: CommandContext,
+    *,
+    skill_names: list[str] | None,
+    source_names: list[str] | None,
+) -> _Targets:
+    _validate_filters(ctx.manifest, ctx.source_registry, skill_names, source_names)
+
+    skills = _select_skills(ctx.manifest, skill_names, source_names)
+    tracked_sources = frozenset(p.source for p in skills.values())
+
+    candidates = []
+    untracked = scan_untracked_install_dirs(
+        ctx.manifest, ctx.provider_registry, skill_names
+    )
+    if untracked:
+        eligible = eligible_attach_sources(
+            ctx.source_registry,
+            source_names,
+        )
+        candidates = find_attach_candidates(untracked, eligible)
+
+    candidate_sources = frozenset(name for c in candidates for name in c.sources)
+
+    return _Targets(
+        skills=skills,
+        attach_candidates=candidates,
+        pull_sources=tracked_sources | candidate_sources,
+    )
+
+
+def _validate_filters(
+    manifest: SkillManifest,
+    source_registry: SourceRegistry,
+    skill_names: list[str] | None,
+    source_names: list[str] | None,
+) -> None:
+    for name in skill_names or ():
+        if name not in manifest.skills:
+            # TODO: we can target untracked skill to try to auto-attach it
+            raise AppError(f"Skill {fmt_ident(name)} is not installed.")
+
+    for name in source_names or ():
+        _ = source_registry.get_source(name, load_skills=False)
+
+
+def _select_skills(
+    manifest: SkillManifest,
+    skill_names: list[str] | None,
+    source_names: list[str] | None,
+) -> dict[str, InstalledSkill]:
+    if not skill_names and not source_names:
+        return dict(manifest.skills)
+
+    skills: dict[str, InstalledSkill] = {}
+
+    for name in skill_names or ():
+        skills[name] = manifest.skills[name]
+
+    source_set = set(source_names or ())
+    for name, skill in manifest.skills.items():
+        if skill.source in source_set:
+            skills[name] = skill
+
+    return skills
+
+
+def _pull_sources(
+    source_registry: SourceRegistry,
+    needed_sources: frozenset[str],
+    *,
+    offline: bool,
+) -> dict[str, str]:
     source_branches: dict[str, str] = {}
     for source_name in sorted(source_registry.sources):
-        if source_name not in to_update.sources:
+        if source_name not in needed_sources:
             continue
 
         registered = source_registry.get_source(source_name, load_skills=False)
@@ -98,79 +196,7 @@ def update(
             else:
                 console.finish("[green]done[/green]")
 
-    for skill_name, entry in to_update.skills.items():
-        with console.running(f"Updating {fmt_data(skill_name)}"):
-            try:
-                report = _update_skill(
-                    skill_name, entry, source_registry, providers, source_branches
-                )
-            except Exception as ex:
-                if console.debug:
-                    console.print_exception()
-                console.print(f"[red]Error[/red]: {escape(str(ex))}")
-                continue
-
-            if isinstance(report, _SkillError):
-                console.print(f"[red]Error[/red]: {report.message}")
-                continue
-
-            _print_skill_report(skill_name, report)
-
-            baseline = None
-            if entry.baseline:
-                baseline = Baseline(
-                    commit=entry.baseline.commit,
-                    files=report.source_hashes,
-                )
-
-            manifest.register_skill(
-                skill_name,
-                source_name=entry.source,
-                baseline=baseline,
-                detached=report.detached,
-            )
-
-    save_skill_manifest(manifest)
-
-
-@dataclass(frozen=True)
-class _Targets:
-    skills: dict[str, InstalledSkill]
-    sources: frozenset[str]
-
-
-def _collect_skills_for_update(
-    manifest: SkillManifest,
-    source_registry: SourceRegistry,
-    *,
-    skill_names: list[str] | None,
-    source_names: list[str] | None,
-) -> _Targets:
-    # TODO: we can target any untrack skill too
-    skills: dict[str, InstalledSkill] = {}
-
-    for name in skill_names or ():
-        inst = manifest.skills.get(name)
-        if inst is None:
-            raise AppError(f"Skill {fmt_ident(name)} is not installed.")
-
-        skills[name] = inst
-
-    for name in source_names or ():
-        # make sure this source exists
-        _ = source_registry.get_source(name, load_skills=False)
-
-    for name, skill in manifest.skills.items():
-        if skill.source in (source_names or ()):
-            skills[name] = skill
-
-    if not skill_names and not source_names:
-        skills = dict(manifest.skills)
-
-    return _Targets(
-        skills=skills,
-        sources=frozenset(entry.source for entry in skills.values()),
-    )
+    return source_branches
 
 
 @dataclass
@@ -182,31 +208,57 @@ class _SkillReport:
     newly_detached: bool = False
 
 
-@dataclass
-class _SkillError:
-    message: str
+def _run_updates(
+    ctx: CommandContext,
+    skills: dict[str, InstalledSkill],
+    source_branches: dict[str, str],
+) -> None:
+    for skill_name, entry in skills.items():
+        with console.running(f"Updating {fmt_data(skill_name)}"):
+            try:
+                report = _update_skill(ctx, skill_name, entry, source_branches)
+            except Exception as ex:
+                if console.debug:
+                    console.print_exception()
+                console.print(f"[red]Error[/red]: {escape(str(ex))}")
+                continue
+
+            _print_skill_report(report)
+
+            baseline = None
+            if entry.baseline:
+                baseline = Baseline(
+                    commit=entry.baseline.commit,
+                    files=report.source_hashes,
+                )
+
+            ctx.manifest.register_skill(
+                skill_name,
+                source_name=entry.source,
+                baseline=baseline,
+                detached=report.detached,
+            )
 
 
 def _update_skill(
+    ctx: CommandContext,
     skill_name: str,
     entry: InstalledSkill,
-    source_registry: SourceRegistry,
-    providers: ProviderRegistry,
     source_branches: dict[str, str],
-) -> _SkillReport | _SkillError:
-    if entry.source not in source_registry.sources:
-        return _SkillError(f"Source {fmt_ident(entry.source)} not found")
+) -> _SkillReport:
+    if entry.source not in ctx.source_registry.sources:
+        raise AppError(f"Source {fmt_ident(entry.source)} not found")
 
-    source = source_registry.get_source(entry.source, load_skills=True)
+    source = ctx.source_registry.get_source(entry.source, load_skills=True)
     skill = source.skills.get(skill_name)
     if skill is None:
-        return _SkillError("Skill removed from source")
+        raise AppError("Skill removed from source")
 
     src = source.repo_root / skill.rel_path
     source_hashes = compute_file_hashes(src)
     provider_statuses: dict[str, _Status] = {}
 
-    for provider in providers.providers:
+    for provider in ctx.provider_registry.providers:
         install_dir = provider.install_path
         dst = install_dir / skill_name
 
@@ -254,7 +306,7 @@ def _update_skill(
     )
 
 
-def _print_skill_report(skill_name: str, report: _SkillReport) -> None:
+def _print_skill_report(report: _SkillReport) -> None:
     unique = set(report.provider_statuses.values())
 
     if len(report.provider_statuses) > 1 and len(unique) > 1:

@@ -1,7 +1,7 @@
 ---
 id: s06t16
 slug: autoattach-untracked-skills-on-update
-status: pending
+status: done
 ---
 
 # Auto-attach untracked skills on `update` when they match source exactly
@@ -31,5 +31,6 @@ Depends on s06t18's collection model. Implementation order: **t18 → t16 → t1
 
 ## Subtasks
 
-- [ ] [s06t1601](s06t1601-attach-a-uniquelymatching-untracked-skill.md): Attach a uniquely-matching untracked skill
-- [ ] [s06t1602](s06t1602-attach-ambiguity-handling-filter-integration.md): Attach ambiguity handling & filter integration
+- [x] [s06t1601](s06t1601-attach-a-uniquelymatching-untracked-skill.md): Attach a uniquely-matching untracked skill
+- [x] [s06t1602](s06t1602-attach-ambiguity-handling-filter-integration.md): Attach ambiguity handling & filter integration
+- [x] [s06t1603](s06t1603-attach-refactor-filterscoped-pullattach-semantics.md): Attach refactor + filter-scoped pull/attach semantics

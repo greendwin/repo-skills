@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from repo_skills.cli import app
 from repo_skills.config import (
+    Baseline,
     InstalledSkill,
     SkillManifest,
     SourceConfig,
@@ -98,7 +99,7 @@ class FakeGitRepo:
             return self.branch_commits.get((rel_path, branch), "")
         return self.commits.get(rel_path, "")
 
-    def verify_commit_content(self, commit: str, rel_path: str) -> bool:
+    def verify_commit_content(self, _commit: str, rel_path: str) -> bool:
         return self.verified.get(rel_path, True)
 
     def log_commits(self, path: str, max_count: int) -> list[str]:
@@ -327,3 +328,124 @@ def register_provider(name: str, install_dir: str) -> None:
     reg = load_provider_registry()
     reg.register(name, install_dir)
     save_provider_registry(reg)
+
+
+OTHER_REPO_ROOT = Path("/repos/other-project")
+OTHER_SKILLS_DIR = OTHER_REPO_ROOT / "skills"
+
+
+@dataclass
+class _SkillEntry:
+    name: str
+    source_name: str
+    source_root: Path
+    source_content: str
+    installed_content: str
+    commit: str
+    detached: bool
+    has_baseline: bool
+
+
+class SkillSetup:
+    def __init__(self, fs: FakeFilesystem, git_repo: Path) -> None:
+        self._fs = fs
+        self._git_repo = git_repo
+        self._entries: list[_SkillEntry] = []
+        self._extra_sources: dict[str, Path] = {}
+
+    def add_source(self, name: str, root: Path | None = None) -> SkillSetup:
+        if root is None:
+            root = self._git_repo
+        self._extra_sources[name] = root
+        return self
+
+    def add_skill(
+        self,
+        name: str,
+        *,
+        source_content: str = "# skill",
+        installed_content: str = "# skill",
+        source_name: str = "my-project",
+        source_root: Path | None = None,
+        commit: str = "old",
+        detached: bool = False,
+        has_baseline: bool = True,
+    ) -> SkillSetup:
+        if source_root is None:
+            source_root = self._git_repo
+        self._entries.append(
+            _SkillEntry(
+                name=name,
+                source_name=source_name,
+                source_root=source_root,
+                source_content=source_content,
+                installed_content=installed_content,
+                commit=commit,
+                detached=detached,
+                has_baseline=has_baseline,
+            )
+        )
+        return self
+
+    def build(self) -> dict[str, dict[str, str]]:
+        self._register_sources()
+
+        hashes: dict[str, dict[str, str]] = {}
+        manifest_skills: dict[str, InstalledSkill] = {}
+
+        for entry in self._entries:
+            skills_dir = entry.source_root / "skills"
+            create_source_skill(
+                self._fs,
+                entry.name,
+                content=entry.source_content,
+                root=skills_dir,
+            )
+            h = install_skill(
+                self._fs,
+                entry.name,
+                content=entry.installed_content,
+            )
+            hashes[entry.name] = h
+
+            baseline = None
+            if entry.has_baseline:
+                baseline = Baseline(commit=entry.commit, files=h)
+
+            manifest_skills[entry.name] = InstalledSkill(
+                source=entry.source_name,
+                baseline=baseline,
+                detached=entry.detached,
+            )
+
+        save_manifest(manifest_skills)
+        return hashes
+
+    def _register_sources(self) -> None:
+        seen: dict[str, Path] = {}
+        for name, root in self._extra_sources.items():
+            seen[name] = root
+        for entry in self._entries:
+            if entry.source_name in seen:
+                continue
+            seen[entry.source_name] = entry.source_root
+
+        for root in seen.values():
+            if not (root / ".git").exists():
+                self._fs.create_dir(root / ".git")
+
+        if len(seen) == 1:
+            name, root = next(iter(seen.items()))
+            register_source(root, name=name)
+            return
+
+        registry = SourceRegistry()
+        for name, root in seen.items():
+            registry.register_source(name, root)
+
+        save_source_registry(registry)
+        for name, root in seen.items():
+            save_source_config(
+                SourceConfig(name=name, skills_dir="skills", branch=""),
+                root,
+            )

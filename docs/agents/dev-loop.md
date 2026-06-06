@@ -53,18 +53,13 @@ similarity — only flag cases where a single point of change is clearly better.
 each as a finding with location, rationale, and an inline `suggested-fix`. Do not edit
 code; propose only.
 
-### deep-modules
+### thermo-nuclear-code-quality
 
-Review the change for shallow modules — a large interface over thin implementation,
-pass-through wrappers, and abstractions that leak their internals. Push toward modules
-whose interface is small relative to the functionality they provide: collapse a
-needless wrapper, hide complexity behind a smaller interface, or fold a one-call helper
-into its caller. Report each as a finding with location, rationale, and an inline
-`suggested-fix`. Do not edit code; propose only.
-
-### simplification
-
-Review the change for control-flow complexity — deep nesting, arrow code, redundant
-conditionals, and branches that a guard clause or early return would flatten. Propose
-the flattened form. Report each as a finding with location, rationale, and an inline
-`suggested-fix`. Do not edit code; propose only.
+Invoke the `/thermo-nuclear-code-quality-review` skill over the change under review.
+Focus on structural code-quality regressions, missed opportunities for dramatic
+simplification or code-judo restructuring, spaghetti growth from ad-hoc conditionals,
+abstraction quality (thin wrappers, identity layers, leaked internals), file-size
+explosions past 1k lines, and logic living in the wrong layer. Push hard for
+restructurings that delete whole categories of complexity rather than rearranging it.
+Report each as a finding with location, rationale, and an inline `suggested-fix`. Do
+not edit code; propose only.

@@ -23,7 +23,7 @@ status: pending
 - [ ] [s06t13](s06t13-allow-to-omit-skill-name.md): Allow to omit skill name when only one skill is modified
 - [x] [s06t14](s06t14-inconsistent-status-command/): Inconsistent 'status' command -
 - [ ] [s06t15](s06t15-rework-statuspy-internals-to-typed.md): Rework `_status.py` internals to typed structures
-- [ ] [s06t16](s06t16-autoattach-untracked-skills-on-update/): Auto-attach untracked skills on `update` when they match source exactly
+- [x] [s06t16](s06t16-autoattach-untracked-skills-on-update/): Auto-attach untracked skills on `update` when they match source exactly
 - [ ] [s06t17](s06t17-group-skills-when-installed-from.md): Group skills when installed from same source
 - [x] [s06t18](s06t18-update-specific-source/): Update specific source
 - [ ] [s06t19](s06t19-allow-to-edit-source-skills/): Allow to edit `source` skills directory

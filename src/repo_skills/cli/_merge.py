@@ -23,6 +23,7 @@ from repo_skills.config import (
     load_provider_registry,
     load_skill_manifest,
     load_source_registry,
+    make_baseline,
     save_skill_manifest,
 )
 from repo_skills.console import console, fmt_command, fmt_data, fmt_ident, fmt_path
@@ -30,16 +31,10 @@ from repo_skills.errors import AppError, FileNotInCommitError, NoopError
 from repo_skills.git import GitRepo, ensure_on_branch
 
 from ._app import app
+from ._context import CommandContext
 from ._deps import resolve_git_repo
 
 MERGE_BRANCH_PREFIX = "skill-merge/"
-
-
-@dataclass
-class _MergeContext:
-    provider_registry: ProviderRegistry
-    source_registry: SourceRegistry
-    manifest: SkillManifest
 
 
 @app.command(help="Merge provider edits back into a source repo.")
@@ -94,7 +89,7 @@ def merge(
             f" {fmt_command('--continue')} together."
         )
 
-    ctx = _MergeContext(
+    ctx = CommandContext(
         provider_registry=load_provider_registry(),
         source_registry=load_source_registry(),
         manifest=load_skill_manifest(),
@@ -127,7 +122,7 @@ def merge(
 
 
 def _merge_start(
-    ctx: _MergeContext,
+    ctx: CommandContext,
     skill_name: str,
     *,
     from_provider: str | None,
@@ -290,17 +285,14 @@ def _merge_start(
 
 
 def _finalyze_in_sync_skill(
-    ctx: _MergeContext,
+    ctx: CommandContext,
     git: GitRepo,
     source: Source,
     skill: SourceSkill,
     base_commit: str,
     installed_path: Path,
 ) -> None:
-    baseline = Baseline(
-        commit=base_commit,
-        files=compute_file_hashes(installed_path),
-    )
+    baseline = make_baseline(base_commit, installed_path)
     ctx.manifest.register_skill(
         skill.name,
         source_name=source.name,
@@ -325,9 +317,9 @@ def _reattach_installed_skill(
     skill: SourceSkill,
     git: GitRepo,
 ) -> None:
-    baseline = Baseline(
-        commit=git.get_skill_commit(skill.rel_path),
-        files=compute_file_hashes(source.repo_root / skill.rel_path),
+    baseline = make_baseline(
+        git.get_skill_commit(skill.rel_path),
+        source.repo_root / skill.rel_path,
     )
     manifest.register_skill(
         skill.name,
@@ -345,7 +337,7 @@ class _UntrackedSkill:
 
 
 def _resolve_untracked(
-    ctx: _MergeContext,
+    ctx: CommandContext,
     *,
     provider: Provider | None,
     skill_name: str,
@@ -383,7 +375,7 @@ def _resolve_untracked(
 
 
 def _merge_orphan(
-    ctx: _MergeContext,
+    ctx: CommandContext,
     skill_name: str,
     *,
     provider: Provider | None,
@@ -415,10 +407,7 @@ def _merge_orphan(
     manifest.register_skill(
         skill_name,
         source_name=source.name,
-        baseline=Baseline(
-            commit=git.get_skill_commit(skill_rel_path),
-            files=compute_file_hashes(skill_dst),
-        ),
+        baseline=make_baseline(git.get_skill_commit(skill_rel_path), skill_dst),
     )
     save_skill_manifest(manifest)
 
@@ -624,7 +613,7 @@ def _find_base_commit(
     )
 
 
-def _merge_continue(ctx: _MergeContext) -> None:
+def _merge_continue(ctx: CommandContext) -> None:
     git = _detect_merge_repo(ctx)
     branch = _detect_merge_branch(git)
     provider_name, skill_name = _parse_merge_branch(branch)
@@ -646,7 +635,7 @@ def _merge_continue(ctx: _MergeContext) -> None:
 
 
 def _finalize(
-    ctx: _MergeContext,
+    ctx: CommandContext,
     git: GitRepo,
     provider: Provider,
     skill_name: str,
@@ -697,7 +686,7 @@ def _finalize(
     console.print(f"Merge complete for {fmt_ident(skill_name)}.")
 
 
-def _merge_abort(ctx: _MergeContext) -> None:
+def _merge_abort(ctx: CommandContext) -> None:
     git = _detect_merge_repo(ctx)
     branch = _detect_merge_branch(git)
     _, skill_name = _parse_merge_branch(branch)
@@ -719,7 +708,7 @@ def _merge_abort(ctx: _MergeContext) -> None:
     console.print(f"Merge aborted for {fmt_ident(skill_name)}.")
 
 
-def _detect_merge_repo(ctx: _MergeContext) -> GitRepo:
+def _detect_merge_repo(ctx: CommandContext) -> GitRepo:
     cwd = Path.cwd()
     candidates: list[GitRepo] = []
     for source in ctx.source_registry.sources.values():

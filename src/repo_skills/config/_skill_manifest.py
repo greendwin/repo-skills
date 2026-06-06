@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from pydantic import BaseModel
 
@@ -9,7 +10,7 @@ from repo_skills.console import console
 from repo_skills.errors import ConfigBrokenError
 from repo_skills.utils import load_config, save_config
 
-from ._utils import RelPathHashes, default_config_path
+from ._utils import RelPathHashes, compute_file_hashes, default_config_path
 
 SKILL_MANIFEST_FILE = "skill-manifest.json"
 
@@ -32,6 +33,10 @@ class _SkillManifestConfig(BaseModel):
 class Baseline:
     commit: str
     files: dict[str, str] = field(default_factory=dict)
+
+
+def make_baseline(commit: str, skill_path: Path) -> Baseline:
+    return Baseline(commit=commit, files=compute_file_hashes(skill_path))
 
 
 @dataclass

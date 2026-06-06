@@ -1,7 +1,7 @@
 ---
 id: s06t23
 slug: support-s-alias-for-source
-status: pending
+status: done
 ---
 
 # Support `-s` alias for `--source`

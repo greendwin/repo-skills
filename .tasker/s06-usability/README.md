@@ -30,5 +30,5 @@ status: pending
 - [ ] [s06t20](s06t20-multiple-source-support.md): Multiple source support
 - [ ] [s06t21](s06t21-ignore-uncommitted-changes-when-they.md): Ignore uncommitted changes when they do not relate to skills
 - [ ] [s06t22](s06t22-support-projectlevel-skills.md): Support project-level skills
-- [ ] [s06t23](s06t23-support-s-alias-for-source.md): Support `-s` alias for `--source`
+- [x] [s06t23](s06t23-support-s-alias-for-source.md): Support `-s` alias for `--source`
 - [ ] [s06t24](s06t24-align-branches-in-column-in.md): Align branches in column in 'source list'

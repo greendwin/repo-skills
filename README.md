@@ -135,9 +135,10 @@ skills install <name> --offline      # skip git pull
 ### `skills update`
 
 ```bash
-skills update            # update all installed skills
-skills update <name>     # update a specific skill
-skills update --offline  # skip git pull
+skills update                    # update all installed skills
+skills update <name> [<name>…]   # update specific skills
+skills update -s <source>        # update only skills from a source
+skills update --offline          # skip git pull
 ```
 
 ### `skills uninstall`
@@ -153,6 +154,7 @@ Merge provider-side edits back into the source repo.
 ```bash
 skills merge               # merge all modified skills
 skills merge <name>        # merge a specific skill
+skills merge -s <source>   # merge skills from a specific source
 skills merge --from <provider>  # specify provider (when ambiguous)
 skills merge --no-commit   # stage changes without committing
 skills merge --continue    # finalize an in-progress merge
@@ -206,6 +208,13 @@ Configuration files are stored in `~/.config/repo-skills/`:
 [MIT](LICENSE)
 
 ## Release Notes
+
+### v0.10.0
+
+- `skills update` accepts multiple skill names and `-s/--source` filter to narrow by source
+- Auto-attach untracked skills during `update` when they uniquely match a source by content
+- `-s` alias for `--source` on `skills merge`
+- CRLF-agnostic content hashing and POSIX-canonical paths for Windows compatibility
 
 ### v0.9.0
 

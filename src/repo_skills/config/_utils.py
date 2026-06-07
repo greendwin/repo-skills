@@ -4,6 +4,8 @@ from pathlib import Path
 
 from typing_extensions import TypeAlias
 
+from repo_skills.utils import normalize_line_endings, rel_posix
+
 
 def default_config_path(*parts: str) -> Path:
     xdg = os.environ.get("XDG_CONFIG_HOME")
@@ -23,8 +25,9 @@ def compute_file_hashes(skill_dir: Path) -> RelPathHashes:
     for dirpath, _, filenames in os.walk(skill_dir):
         for fname in sorted(filenames):
             full = Path(dirpath) / fname
-            rel = str(full.relative_to(skill_dir))
-            sha = hashlib.sha256(full.read_bytes()).hexdigest()
+            rel = rel_posix(full, skill_dir)
+            raw = normalize_line_endings(full.read_bytes())
+            sha = hashlib.sha256(raw).hexdigest()
             result[rel] = f"sha256:{sha}"
 
     return result

@@ -57,4 +57,7 @@ from ._source_registry import (
     load_source_registry,
     save_source_registry,
 )
-from ._utils import compute_file_hashes, default_config_path
+from ._utils import (
+    compute_file_hashes,
+    default_config_path,
+)

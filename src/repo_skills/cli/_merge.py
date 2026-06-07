@@ -29,6 +29,7 @@ from repo_skills.config import (
 from repo_skills.console import console, fmt_command, fmt_data, fmt_ident, fmt_path
 from repo_skills.errors import AppError, FileNotInCommitError, NoopError
 from repo_skills.git import GitRepo, ensure_on_branch
+from repo_skills.utils import normalize_line_endings
 
 from ._app import app
 from ._context import CommandContext
@@ -785,15 +786,15 @@ def _compute_distance(
     file_paths: set[str],
 ) -> int:
     total = 0
-    all_paths = file_paths
 
-    for rel_path in all_paths:
+    for rel_path in file_paths:
         commit_data = git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
-        commit_lines = commit_data.decode(errors="replace").splitlines(True)
+        commit_lines = commit_data.decode(errors="replace").splitlines()
 
         local_file = installed_path / rel_path
         if local_file.exists():
-            installed_lines = local_file.read_text().splitlines(True)
+            local_bytes = normalize_line_endings(local_file.read_bytes())
+            installed_lines = local_bytes.decode(errors="replace").splitlines()
         else:
             installed_lines = []
 

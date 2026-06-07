@@ -25,7 +25,9 @@ from repo_skills.config import (
     save_source_config,
     save_source_registry,
 )
+from repo_skills.config._source import _collect_source_skills
 from repo_skills.errors import AppError
+from repo_skills.utils import rel_posix, to_posix_path
 from tests.cli.helper import FakeGitRepo
 
 # -- Source.get_branch --
@@ -343,3 +345,76 @@ class TestComputeFileHashes:
         hex_part = value.split(":")[1]
         assert len(hex_part) == 64
         assert all(c in "0123456789abcdef" for c in hex_part)
+
+    def test_crlf_and_lf_produce_same_hash(self, fs: FakeFilesystem) -> None:
+        lf_dir = Path("/skills/lf")
+        crlf_dir = Path("/skills/crlf")
+        fs.create_file(lf_dir / "SKILL.md", contents="line1\nline2\n")
+        fs.create_file(
+            crlf_dir / "SKILL.md",
+            contents=b"line1\r\nline2\r\n",
+        )
+
+        lf_hashes = compute_file_hashes(lf_dir)
+        crlf_hashes = compute_file_hashes(crlf_dir)
+        assert lf_hashes["SKILL.md"] == crlf_hashes["SKILL.md"]
+
+    def test_keys_use_forward_slashes(self, fs: FakeFilesystem) -> None:
+        skill_dir = Path("/skills/tdd")
+        fs.create_file(skill_dir / "sub" / "nested" / "file.md", contents="deep")
+
+        hashes = compute_file_hashes(skill_dir)
+        keys = list(hashes.keys())
+        assert len(keys) == 1
+        assert keys[0] == "sub/nested/file.md"
+        assert "\\" not in keys[0]
+
+
+# -- to_posix_path --
+
+
+class TestToPosixPath:
+    def test_converts_backslashes(self) -> None:
+        assert to_posix_path("sub\\nested\\file.md") == "sub/nested/file.md"
+
+    def test_leaves_forward_slashes_unchanged(self) -> None:
+        assert to_posix_path("sub/nested/file.md") == "sub/nested/file.md"
+
+    def test_mixed_slashes(self) -> None:
+        assert to_posix_path("sub\\nested/file.md") == "sub/nested/file.md"
+
+    def test_empty_string(self) -> None:
+        assert to_posix_path("") == ""
+
+    def test_no_slashes(self) -> None:
+        assert to_posix_path("file.md") == "file.md"
+
+
+# -- rel_posix --
+
+
+class TestRelPosix:
+    def test_basic(self) -> None:
+        assert rel_posix(Path("/repo/skills/tdd"), Path("/repo")) == "skills/tdd"
+
+    def test_single_component(self) -> None:
+        assert rel_posix(Path("/repo/file.md"), Path("/repo")) == "file.md"
+
+    def test_same_path(self) -> None:
+        assert rel_posix(Path("/repo"), Path("/repo")) == "."
+
+
+# -- _collect_source_skills posix paths --
+
+
+class TestCollectSourceSkillsPosixPaths:
+    def test_rel_path_uses_forward_slashes(self, fs: FakeFilesystem) -> None:
+        repo_root = Path("/repo")
+        fs.create_file(repo_root / "skills" / "tdd" / "SKILL.md", contents="# TDD")
+
+        skills = _collect_source_skills(repo_root, "skills")
+        assert "tdd" in skills
+        rel = skills["tdd"].rel_path
+        assert "/" in rel or "\\" not in rel
+        assert "\\" not in rel
+        assert rel == "skills/tdd"

@@ -1,7 +1,7 @@
 ---
 id: s08t29
 slug: windows-support
-status: pending
+status: done
 ---
 
 # Windows support
@@ -35,5 +35,5 @@ The CLI hashes skill file bytes (`compute_file_hashes`) and compares working-tre
 
 ## Subtasks
 
-- [ ] [s08t2901](s08t2901-crlfagnostic-content-hashing.md): CR/LF-agnostic content hashing
-- [ ] [s08t2902](s08t2902-posixcanonical-paths.md): POSIX-canonical paths
+- [x] [s08t2901](s08t2901-crlfagnostic-content-hashing.md): CR/LF-agnostic content hashing
+- [x] [s08t2902](s08t2902-posixcanonical-paths.md): POSIX-canonical paths

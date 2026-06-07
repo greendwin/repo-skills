@@ -207,3 +207,65 @@ def test_verify_commit_content_mismatch(repo: Path) -> None:
 
     git = RealGitRepo(repo)
     assert git.verify_commit_content(commit, "skills/tdd") is False
+
+
+def test_get_file_at_commit_normalizes_crlf(repo: Path) -> None:
+    """get_file_at_commit returns LF-only bytes even when blob has CRLF."""
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_bytes(b"line1\r\nline2\r\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "add tdd with crlf")
+
+    commit = _git(repo, "log", "-1", "--format=%H")
+
+    git = RealGitRepo(repo)
+    data = git.get_file_at_commit(commit, "skills/tdd/SKILL.md")
+    assert b"\r\n" not in data
+    assert data == b"line1\nline2\n"
+
+
+def test_verify_commit_content_crlf_matches_lf(repo: Path) -> None:
+    """CRLF local file should match LF content from git."""
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("line1\nline2\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "add tdd")
+
+    commit = _git(repo, "log", "-1", "--format=%H")
+
+    # Simulate Windows checkout: rewrite with CRLF
+    (skills_dir / "SKILL.md").write_bytes(b"line1\r\nline2\r\n")
+
+    git = RealGitRepo(repo)
+    assert git.verify_commit_content(commit, "skills/tdd") is True
+
+
+def test_verify_commit_content_committed_crlf_matches_local_crlf(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Committed CRLF content should match local CRLF after normalization."""
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("line1\nline2\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "add tdd")
+
+    commit = _git(repo, "log", "-1", "--format=%H")
+
+    # Simulate Windows: local file has CRLF
+    (skills_dir / "SKILL.md").write_bytes(b"line1\r\nline2\r\n")
+
+    git = RealGitRepo(repo)
+
+    # Patch _run_bytes to return CRLF content (simulating core.autocrlf=false)
+    original_run_bytes = git._run_bytes
+
+    def _crlf_run_bytes(*args: str) -> bytes:
+        result = original_run_bytes(*args)
+        # Inject CRLF into the committed content
+        return result.replace(b"\n", b"\r\n")
+
+    monkeypatch.setattr(git, "_run_bytes", _crlf_run_bytes)
+    assert git.verify_commit_content(commit, "skills/tdd") is True

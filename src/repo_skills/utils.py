@@ -19,6 +19,18 @@ def write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def to_posix_path(path: str) -> str:
+    return path.replace("\\", "/")
+
+
+def rel_posix(path: Path, base: Path) -> str:
+    return to_posix_path(str(path.relative_to(base)))
+
+
+def normalize_line_endings(data: bytes) -> bytes:
+    return data.replace(b"\r\n", b"\n")
+
+
 def load_config(cls: type[_T], path: Path) -> _T | None:
     if not os.path.exists(path):
         return None

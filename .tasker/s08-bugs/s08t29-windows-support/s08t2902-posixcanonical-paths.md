@@ -1,7 +1,7 @@
 ---
 id: s08t2902
 slug: posixcanonical-paths
-status: pending
+status: done
 ---
 
 # POSIX-canonical paths

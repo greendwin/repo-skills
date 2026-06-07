@@ -8,6 +8,7 @@ from rich.markup import escape
 from repo_skills.console import console, fmt_command, fmt_ident, fmt_path
 from repo_skills.errors import AppError, FileNotInCommitError
 from repo_skills.git import GitRepo
+from repo_skills.utils import normalize_line_endings, rel_posix
 
 
 def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> AppError:
@@ -124,11 +125,12 @@ class RealGitRepo:
 
     def get_file_at_commit(self, commit: str, path: str) -> bytes:
         try:
-            return self._run_bytes("show", f"{commit}:{path}")
+            data = self._run_bytes("show", f"{commit}:{path}")
         except AppError as exc:
             if "not exist" in exc.message:
                 raise FileNotInCommitError(commit, path) from exc
             raise
+        return normalize_line_endings(data)
 
     def create_branch(self, name: str, from_commit: str) -> None:
         self._run("checkout", "-b", name, from_commit)
@@ -244,19 +246,15 @@ class RealGitRepo:
             if not local_file.exists():
                 return False
 
-            committed_content = self._run_bytes("show", f"{commit}:{file_path}")
-            if local_file.read_bytes() != committed_content:
+            committed_content = self.get_file_at_commit(commit, file_path)
+            local_bytes = normalize_line_endings(local_file.read_bytes())
+            if local_bytes != committed_content:
                 return False
 
         local_files = {
-            str(f.relative_to(self._path))
-            for f in working_dir.rglob("*")
-            if f.is_file()
+            rel_posix(f, self._path) for f in working_dir.rglob("*") if f.is_file()
         }
-        if local_files != set(committed_files):
-            return False
-
-        return True
+        return local_files == set(committed_files)
 
 
 def _check_implements_protocol(_: GitRepo) -> None:

@@ -38,4 +38,4 @@ Fix TODO-documented bugs and issues across the CLI.
 - [ ] [s08t26](s08t26-misleading-already-synced-message.md): Misleading "already synced" message
 - [ ] [s08t27](s08t27-missing-provider-in-commit-message.md): Missing provider in commit message on skill merge
 - [ ] [s08t28](s08t28-inconsistent-new-lines-between-groups.md): Inconsistent new lines between groups
-- [ ] [s08t29](s08t29-windows-support/): Windows support
+- [x] [s08t29](s08t29-windows-support/): Windows support

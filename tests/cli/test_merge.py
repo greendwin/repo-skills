@@ -9,6 +9,8 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 import repo_skills.cli._deps as deps_mod
 import repo_skills.cli._merge as merge_mod
 from repo_skills.cli._merge import (
+    _compute_distance,
+    _find_base_commit,
     _FindBestCommitResult,
     _resolve_base_commit,
     _ResolveBaseResult,
@@ -1727,3 +1729,104 @@ class TestExactMatchEarlyExit:
         assert entry.baseline is not None
         assert entry.baseline.commit == "exact-commit"
         assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "tdd")
+
+
+class TestComputeDistanceCRLF:
+    """splitlines() strips line endings, so CRLF vs LF never affects distance."""
+
+    def test_crlf_local_matches_lf_commit(self, fs: FakeFilesystem) -> None:
+        installed = Path("/installed/tdd")
+        fs.create_file(installed / "SKILL.md", contents=b"line1\r\nline2\r\n")
+
+        git = FakeGitRepo(
+            files_at_commit={
+                ("abc", "skills/tdd/SKILL.md"): b"line1\nline2\n",
+            },
+        )
+
+        distance = _compute_distance(
+            git,
+            commit="abc",
+            skill_rel="skills/tdd",
+            installed_path=installed,
+            file_paths={"SKILL.md"},
+        )
+        assert distance == 0
+
+    def test_crlf_commit_matches_crlf_local(self, fs: FakeFilesystem) -> None:
+        installed = Path("/installed/tdd")
+        fs.create_file(installed / "SKILL.md", contents=b"line1\r\nline2\r\n")
+
+        git = FakeGitRepo(
+            files_at_commit={
+                ("abc", "skills/tdd/SKILL.md"): b"line1\r\nline2\r\n",
+            },
+        )
+
+        distance = _compute_distance(
+            git,
+            commit="abc",
+            skill_rel="skills/tdd",
+            installed_path=installed,
+            file_paths={"SKILL.md"},
+        )
+        assert distance == 0
+
+    def test_crlf_commit_matches_lf_local(self, fs: FakeFilesystem) -> None:
+        installed = Path("/installed/tdd")
+        fs.create_file(installed / "SKILL.md", contents=b"line1\nline2\n")
+
+        git = FakeGitRepo(
+            files_at_commit={
+                ("abc", "skills/tdd/SKILL.md"): b"line1\r\nline2\r\n",
+            },
+        )
+
+        distance = _compute_distance(
+            git,
+            commit="abc",
+            skill_rel="skills/tdd",
+            installed_path=installed,
+            file_paths={"SKILL.md"},
+        )
+        assert distance == 0
+
+    def test_actual_content_diff_still_counted(self, fs: FakeFilesystem) -> None:
+        installed = Path("/installed/tdd")
+        fs.create_file(installed / "SKILL.md", contents=b"line1\r\nchanged\r\n")
+
+        git = FakeGitRepo(
+            files_at_commit={
+                ("abc", "skills/tdd/SKILL.md"): b"line1\nline2\n",
+            },
+        )
+
+        distance = _compute_distance(
+            git,
+            commit="abc",
+            skill_rel="skills/tdd",
+            installed_path=installed,
+            file_paths={"SKILL.md"},
+        )
+        assert distance == 2  # 1 removal + 1 addition
+
+
+class TestFindBaseCommitCRLF:
+    """CRLF normalization in _find_base_commit hash comparison."""
+
+    def test_crlf_commit_matches_crlf_installed(self, fs: FakeFilesystem) -> None:
+        """Committed CRLF content should hash-match installed CRLF files."""
+        installed = Path("/installed/tdd")
+        fs.create_file(installed / "SKILL.md", contents=b"line1\r\nline2\r\n")
+
+        git = FakeGitRepo(
+            commit_logs={"skills/tdd": ["abc"]},
+            files_at_commit={
+                ("abc", "skills/tdd/SKILL.md"): b"line1\r\nline2\r\n",
+            },
+        )
+
+        result = _find_base_commit(git, "skills/tdd", installed)
+        assert result is not None
+        assert result.commit == "abc"
+        assert result.distance == 0

@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from repo_skills.console import fmt_ident, fmt_path
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
-from repo_skills.utils import load_config, save_config
+from repo_skills.utils import load_config, rel_posix, save_config
 
 REPO_SKILLS_DIR = ".repo-skills"
 SOURCE_CONFIG_PATH = f"{REPO_SKILLS_DIR}/source.json"
@@ -93,7 +93,7 @@ def _collect_source_skills(repo_root: Path, skills_dir: str) -> dict[str, Source
         name = os.path.basename(dirpath)
         result[name] = SourceSkill(
             name=name,
-            rel_path=os.path.relpath(dirpath, repo_root),
+            rel_path=rel_posix(Path(dirpath), repo_root),
         )
 
     return result

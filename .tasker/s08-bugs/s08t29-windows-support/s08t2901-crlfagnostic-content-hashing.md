@@ -1,7 +1,7 @@
 ---
 id: s08t2901
 slug: crlfagnostic-content-hashing
-status: pending
+status: done
 ---
 
 # CR/LF-agnostic content hashing

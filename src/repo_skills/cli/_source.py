@@ -19,7 +19,7 @@ from repo_skills.config import (
 from repo_skills.console import console, fmt_data, fmt_ident, fmt_path
 from repo_skills.discovery import detect_skills_dir
 from repo_skills.errors import AppError, NoopError
-from repo_skills.utils import write_text
+from repo_skills.utils import rel_posix, write_text
 
 from ._app import app
 from ._deps import resolve_git_repo
@@ -61,7 +61,7 @@ def source_init(
 
     skills_dir = detect_skills_dir(git.root)
     if skills_dir is not None:
-        rel_skills = str(skills_dir.relative_to(git.root))
+        rel_skills = rel_posix(skills_dir, git.root)
     else:
         rel_skills = DEFAULT_SKILLS_DIR
         write_text(git.root / rel_skills / GIT_KEEP_FILE, "")

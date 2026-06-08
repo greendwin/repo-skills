@@ -209,6 +209,12 @@ Configuration files are stored in `~/.config/repo-skills/`:
 
 ## Release Notes
 
+### v0.10.1
+
+- Orphan merges now commit as ``feat: add `<name>` skill`` with the skill's `SKILL.md` description as the body
+- Error out instead of silently loading when a manifest or provider registry was written by a newer tool version
+- Consistent blank-line separation between source groups and the untracked section in `skills status`
+
 ### v0.10.0
 
 - `skills update` accepts multiple skill names and `-s/--source` filter to narrow by source

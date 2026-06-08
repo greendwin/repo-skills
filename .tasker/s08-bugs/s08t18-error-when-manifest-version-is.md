@@ -1,7 +1,7 @@
 ---
 id: s08t18
 slug: error-when-manifest-version-is
-status: pending
+status: done
 ---
 
 # Error when manifest version is higher than supported

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,13 @@ from repo_skills.config import (
     save_skill_manifest,
     save_source_config,
     save_source_registry,
+)
+from repo_skills.config._provider_registry import (
+    CURRENT_VERSION as PROVIDER_CURRENT_VERSION,
+)
+from repo_skills.config._skill_manifest import (
+    CURRENT_VERSION,
+    SKILL_MANIFEST_FILE,
 )
 from repo_skills.config._source import _collect_source_skills
 from repo_skills.errors import AppError
@@ -188,6 +196,22 @@ class TestProviderRegistry:
         assert reg.is_registered("custom")
         assert reg.is_registered("claude")
 
+    def test_load_newer_version_raises(
+        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HOME", "/home/user")
+        path = default_config_path("providers.json")
+        data = {
+            "version": PROVIDER_CURRENT_VERSION + 1,
+            "providers": {"custom": {"install_dir": "/custom/path"}},
+        }
+        fs.create_file(path, contents=json.dumps(data))
+
+        with pytest.raises(AppError) as exc:
+            load_provider_registry()
+
+        assert str(PROVIDER_CURRENT_VERSION + 1) in exc.value.message
+
 
 # -- SourceRegistry --
 
@@ -255,17 +279,54 @@ class TestSkillManifest:
     def test_version_gating_returns_empty_for_missing_version(
         self, fs: FakeFilesystem
     ) -> None:
-        from repo_skills.config._skill_manifest import SKILL_MANIFEST_FILE
-        from repo_skills.config._utils import default_config_path
-
         path = default_config_path(SKILL_MANIFEST_FILE)
-        import json
-
         data = {"skills": {"tdd": {"source": "my-repo", "commit": "abc"}}}
         fs.create_file(path, contents=json.dumps(data))
 
         loaded = load_skill_manifest()
         assert dict(loaded.skills) == {}
+
+    def test_version_gating_returns_empty_for_older_version(
+        self, fs: FakeFilesystem
+    ) -> None:
+        path = default_config_path(SKILL_MANIFEST_FILE)
+        data = {
+            "version": CURRENT_VERSION - 1,
+            "skills": {"tdd": {"source": "my-repo", "commit": "abc"}},
+        }
+        fs.create_file(path, contents=json.dumps(data))
+
+        loaded = load_skill_manifest()
+        assert dict(loaded.skills) == {}
+
+    def test_version_gating_raises_for_newer_version(self, fs: FakeFilesystem) -> None:
+        path = default_config_path(SKILL_MANIFEST_FILE)
+        data = {
+            "version": CURRENT_VERSION + 1,
+            "skills": {"tdd": {"source": "my-repo", "commit": "abc"}},
+        }
+        fs.create_file(path, contents=json.dumps(data))
+
+        with pytest.raises(AppError) as exc:
+            load_skill_manifest()
+
+        assert str(CURRENT_VERSION + 1) in exc.value.message
+        assert str(CURRENT_VERSION) in exc.value.message
+
+    def test_version_gating_loads_for_current_version(self, fs: FakeFilesystem) -> None:
+        path = default_config_path(SKILL_MANIFEST_FILE)
+        data = {
+            "version": CURRENT_VERSION,
+            "skills": {"tdd": {"source": "my-repo", "commit": "abc"}},
+        }
+        fs.create_file(path, contents=json.dumps(data))
+
+        loaded = load_skill_manifest()
+        assert "tdd" in loaded.skills
+        entry = loaded.skills["tdd"]
+        assert entry.source == "my-repo"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "abc"
 
     def test_register_skill(self) -> None:
         manifest = SkillManifest()
@@ -286,8 +347,6 @@ class TestSkillManifest:
         assert "tdd" not in manifest.skills
 
     def test_skills_property_returns_mapping(self) -> None:
-        from collections.abc import Mapping
-
         manifest = SkillManifest()
         manifest.register_skill("tdd", source_name="my-repo")
         assert isinstance(manifest.skills, Mapping)

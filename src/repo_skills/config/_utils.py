@@ -1,10 +1,74 @@
 import hashlib
 import os
+from dataclasses import dataclass
+from enum import Enum, auto
 from pathlib import Path
+from typing import Generic, TypeVar
 
+from pydantic import BaseModel
 from typing_extensions import TypeAlias
 
-from repo_skills.utils import normalize_line_endings, rel_posix
+from repo_skills.console import console
+from repo_skills.errors import AppError, ConfigBrokenError
+from repo_skills.utils import load_config, normalize_line_endings, rel_posix
+
+
+class VersionedConfig(BaseModel):
+    version: int = 0
+
+
+_C = TypeVar("_C", bound=VersionedConfig)
+
+
+class ConfigState(Enum):
+    # version matches; `cfg` is ready to use as-is
+    OK = auto()
+    # no config file on disk
+    MISSING = auto()
+    # config file could not be parsed (a warning was already printed)
+    BROKEN = auto()
+    # version is older than supported; `cfg` holds the old data to migrate
+    OUTDATED = auto()
+
+
+@dataclass
+class LoadedConfig(Generic[_C]):
+    state: ConfigState
+    # always populated: the loaded config, or a fresh default when there was
+    # nothing valid to load (MISSING / BROKEN), so callers never null-check
+    cfg: _C
+
+
+def load_versioned_config(
+    model: type[_C], path: Path, current_version: int
+) -> LoadedConfig[_C]:
+    try:
+        cfg = load_config(model, path)
+    except ConfigBrokenError:
+        if console.debug:
+            console.print_exception()
+
+        console.print(f"[yellow]Warning[/yellow]: broken config file: {path}")
+        return LoadedConfig(ConfigState.BROKEN, model())
+
+    if cfg is None:
+        return LoadedConfig(ConfigState.MISSING, model())
+
+    if cfg.version > current_version:
+        raise AppError(
+            "Config was written by a newer version of the tool",
+            hint="Update the tool to the latest version.",
+            props={
+                "path": str(path),
+                "found": str(cfg.version),
+                "supported": str(current_version),
+            },
+        )
+
+    if cfg.version < current_version:
+        return LoadedConfig(ConfigState.OUTDATED, cfg)
+
+    return LoadedConfig(ConfigState.OK, cfg)
 
 
 def default_config_path(*parts: str) -> Path:

@@ -6,11 +6,16 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from repo_skills.console import console, fmt_ident
-from repo_skills.errors import AppError, ConfigBrokenError
-from repo_skills.utils import load_config, save_config
+from repo_skills.console import fmt_ident
+from repo_skills.errors import AppError
+from repo_skills.utils import save_config
 
-from ._utils import default_config_path
+from ._utils import (
+    ConfigState,
+    VersionedConfig,
+    default_config_path,
+    load_versioned_config,
+)
 
 PROVIDERS_REGISTRY_FILE = "providers.json"
 CURRENT_VERSION = 1
@@ -24,8 +29,7 @@ class _ProviderEntryDesc(BaseModel):
     install_dir: str = ""
 
 
-class _ProviderRegistryConfig(BaseModel):
-    version: int = 0
+class _ProviderRegistryConfig(VersionedConfig):
     providers: dict[str, _ProviderEntryDesc] = {}
 
 
@@ -74,27 +78,16 @@ def _apply_defaults(cfg: _ProviderRegistryConfig) -> _ProviderRegistryConfig:
 
 def load_provider_registry() -> ProviderRegistry:
     path = default_config_path(PROVIDERS_REGISTRY_FILE)
+    result = load_versioned_config(_ProviderRegistryConfig, path, CURRENT_VERSION)
 
-    cfg = None
-    broken = False
-    try:
-        cfg = load_config(_ProviderRegistryConfig, path)
-    except ConfigBrokenError:
-        if console.debug:
-            console.print_exception()
-
-        console.print(f"[yellow]Warning[/yellow]: broken config file: {path}")
-        broken = True
-
-    if cfg is None:
-        cfg = _apply_defaults(_ProviderRegistryConfig())
-
-        # don't overwrite immediately broken config
-        if not broken:
-            save_config(cfg, path)
-    elif cfg.version < CURRENT_VERSION:
+    cfg = result.cfg
+    if result.state is not ConfigState.OK:
+        # missing / broken / outdated: inject defaults onto whatever we have
         cfg = _apply_defaults(cfg)
-        save_config(cfg, path)
+        # persist the result, but never overwrite a broken file the user may
+        # still want to recover
+        if result.state is not ConfigState.BROKEN:
+            save_config(cfg, path)
 
     reg = ProviderRegistry()
     for name, entry in cfg.providers.items():

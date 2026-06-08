@@ -27,7 +27,7 @@ Fix TODO-documented bugs and issues across the CLI.
 - [x] [s08t15](s08t15-wrong-base-commit-is-taken/): Wrong base commit is taken
 - [x] [s08t16](s08t16-status-report-synced-for-outdated/): Status report 'synced' for outdated install
 - [x] [s08t17](s08t17-git-fails-when-nothing-to/): Git fails when nothing to merge
-- [ ] [s08t18](s08t18-error-when-manifest-version-is.md): Error when manifest version is higher than supported
+- [x] [s08t18](s08t18-error-when-manifest-version-is.md): Error when manifest version is higher than supported
 - [ ] s08t19: Make sure that 'skill update' don't touch in-merge skills, show also 'status' for such skills
 - [ ] s08t20: Use 'feat' prefix when merging orphan branch and 'ref' when updating existing one
 - [ ] [s08t22](s08t22-pulling-failure-must-not-stop.md): Pulling failure must not stop update
@@ -38,3 +38,4 @@ Fix TODO-documented bugs and issues across the CLI.
 - [ ] [s08t28](s08t28-inconsistent-new-lines-between-groups.md): Inconsistent new lines between groups
 - [x] [s08t29](s08t29-windows-support/): Windows support
 - [ ] [s08t30](s08t30-align-branches-in-column-in.md): Align branches in column in 'source list'
+- [x] [s08t31](s08t31-add-newerversion-guard-to-provider.md): Add newer-version guard to provider registry loader; extract shared versioned-config loader

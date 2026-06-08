@@ -6,11 +6,16 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from repo_skills.console import console
-from repo_skills.errors import ConfigBrokenError
-from repo_skills.utils import load_config, save_config
+from repo_skills.utils import save_config
 
-from ._utils import RelPathHashes, compute_file_hashes, default_config_path
+from ._utils import (
+    ConfigState,
+    RelPathHashes,
+    VersionedConfig,
+    compute_file_hashes,
+    default_config_path,
+    load_versioned_config,
+)
 
 SKILL_MANIFEST_FILE = "skill-manifest.json"
 
@@ -24,8 +29,7 @@ class _InstalledSkillDesc(BaseModel):
     detached: bool = False
 
 
-class _SkillManifestConfig(BaseModel):
-    version: int = 0
+class _SkillManifestConfig(VersionedConfig):
     skills: dict[str, _InstalledSkillDesc] = {}
 
 
@@ -79,25 +83,14 @@ class SkillManifest:
 
 def load_skill_manifest() -> SkillManifest:
     path = default_config_path(SKILL_MANIFEST_FILE)
-    try:
-        cfg = load_config(_SkillManifestConfig, path)
-    except ConfigBrokenError:
-        if console.debug:
-            console.print_exception()
+    result = load_versioned_config(_SkillManifestConfig, path, CURRENT_VERSION)
 
-        console.print(f"[yellow]Warning[/yellow]: broken config file: {path}")
-        return SkillManifest()
-
-    if cfg is None:
-        return SkillManifest()
-
-    # TODO: config version can be *higher* then current,
-    #       we should stop then and ask to update
-    if cfg.version != CURRENT_VERSION:
+    # missing / broken / outdated manifests start empty
+    if result.state is not ConfigState.OK:
         return SkillManifest()
 
     manifest = SkillManifest()
-    for name, entry in cfg.skills.items():
+    for name, entry in result.cfg.skills.items():
         baseline: Baseline | None = None
         if entry.commit is not None:
             baseline = Baseline(commit=entry.commit, files=dict(entry.files))

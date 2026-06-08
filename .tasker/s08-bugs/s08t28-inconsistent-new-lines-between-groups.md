@@ -1,7 +1,7 @@
 ---
 id: s08t28
 slug: inconsistent-new-lines-between-groups
-status: pending
+status: done
 ---
 
 # Inconsistent new lines between groups

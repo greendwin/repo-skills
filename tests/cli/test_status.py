@@ -11,7 +11,6 @@ from repo_skills.config import (
     SourceRegistry,
     default_config_path,
     load_source_config,
-    load_source_registry,
     save_source_config,
     save_source_registry,
 )
@@ -20,8 +19,10 @@ from repo_skills.config._skill_manifest import SKILL_MANIFEST_FILE
 from repo_skills.config._source_registry import SOURCES_REGISTRY_FILE
 from tests.cli.helper import (
     INSTALL_DIR,
+    OTHER_REPO_ROOT,
     SOURCE_REPO_ROOT,
     FakeGitRepo,
+    SkillSetup,
     assert_invoke,
     assert_words_in_message,
     install_skill,
@@ -29,6 +30,30 @@ from tests.cli.helper import (
     register_source,
     save_manifest,
 )
+
+
+def install_two_sources(fs: FakeFilesystem, git_repo: Path) -> None:
+    SkillSetup(fs, git_repo).add_skill(
+        "tdd", source_name="my-project", commit="abc"
+    ).add_skill(
+        "review",
+        source_name="other-project",
+        source_root=OTHER_REPO_ROOT,
+        commit="def",
+    ).build()
+
+
+def assert_single_blank_before(lines: list[str], index: int) -> None:
+    assert lines[index - 1] == ""
+    assert lines[index - 2] != ""
+
+
+def source_header_indices(lines: list[str]) -> list[int]:
+    return [i for i, line in enumerate(lines) if line.startswith("Source")]
+
+
+def untracked_header_index(lines: list[str]) -> int:
+    return next(i for i, line in enumerate(lines) if line.startswith("Untracked"))
 
 
 class TestStatusSynced:
@@ -94,25 +119,7 @@ class TestStatusMissing:
 
 class TestStatusGrouping:
     def test_groups_skills_by_source(self, fs: FakeFilesystem, git_repo: Path) -> None:
-        register_source(git_repo)
-        other_source = Path("/repos/other-project")
-        fs.create_dir(other_source / ".git")
-        registry = load_source_registry()
-        registry.register_source("other-project", other_source)
-        save_source_registry(registry)
-
-        h1 = install_skill(fs, "tdd")
-        h2 = install_skill(fs, "review")
-        save_manifest(
-            {
-                "tdd": InstalledSkill(
-                    source="my-project", baseline=Baseline(commit="abc", files=h1)
-                ),
-                "review": InstalledSkill(
-                    source="other-project", baseline=Baseline(commit="def", files=h2)
-                ),
-            }
-        )
+        install_two_sources(fs, git_repo)
 
         result = assert_invoke("status")
 
@@ -125,6 +132,77 @@ class TestStatusGrouping:
             and "modified" not in line.lower()
         ]
         assert len(source_lines) == 2
+
+
+class TestStatusBlankLineSeparation:
+    def test_one_blank_line_between_sources(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        install_two_sources(fs, git_repo)
+
+        result = assert_invoke("status")
+
+        lines = result.output.split("\n")
+        header_indices = source_header_indices(lines)
+        assert len(header_indices) == 2
+        # exactly one blank line precedes the second source header
+        assert_single_blank_before(lines, header_indices[1])
+        # no leading blank line at the very top
+        assert lines[0].startswith("Source")
+
+    def test_one_blank_line_before_untracked_after_sources(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="abc", files=hashes)
+                )
+            }
+        )
+        fs.create_file(INSTALL_DIR / "mystery" / "SKILL.md", contents="# mystery")
+
+        result = assert_invoke("status")
+
+        lines = result.output.split("\n")
+        untracked_index = untracked_header_index(lines)
+        assert_single_blank_before(lines, untracked_index)
+
+    def test_no_leading_blank_when_only_untracked(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        fs.create_file(INSTALL_DIR / "mystery" / "SKILL.md", contents="# mystery")
+
+        result = assert_invoke("status")
+
+        lines = result.output.split("\n")
+        assert lines[0].startswith("Untracked")
+
+    def test_combined_sources_and_untracked_layout(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        install_two_sources(fs, git_repo)
+        fs.create_file(INSTALL_DIR / "mystery" / "SKILL.md", contents="# mystery")
+
+        result = assert_invoke("status")
+
+        lines = result.output.split("\n")
+        # first source has no leading blank line at the top
+        assert lines[0].startswith("Source")
+        # exactly two source headers with one blank line before the second
+        header_indices = source_header_indices(lines)
+        assert len(header_indices) == 2
+        assert_single_blank_before(lines, header_indices[1])
+        # exactly one blank line precedes the untracked header
+        untracked_index = untracked_header_index(lines)
+        assert_single_blank_before(lines, untracked_index)
+        # no two consecutive blank lines appear anywhere
+        assert not any(
+            lines[i] == "" and lines[i + 1] == "" for i in range(len(lines) - 1)
+        )
 
 
 class TestStatusMultiProvider:

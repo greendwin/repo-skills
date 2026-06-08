@@ -88,7 +88,13 @@ def status(
         outdated=outdated,
     )
 
-    has_output |= _print_untracked_section(untracked, name_width, provider_width)
+    # collect orphans
+    orphans = sorted((p for p in untracked if not p.source_match), key=lambda x: x.name)
+    if orphans:
+        if has_output:
+            console.print("")
+        _print_untracked_section(orphans, name_width, provider_width)
+        has_output = True
 
     if not has_output:
         raise NoopError("[dim]No skills found.[/dim]")
@@ -267,6 +273,9 @@ def _print_source_sections(
     has_output = False
 
     for source_name in all_sources:
+        if has_output:
+            console.print("")
+
         try:
             _ = source_registry.get_source(source_name, load_skills=False)
             console.print(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
@@ -302,20 +311,15 @@ def _print_source_sections(
 
 
 def _print_untracked_section(
-    untracked: list[UntrackedEntry],
+    orphans: list[UntrackedEntry],
     name_width: int,
     provider_width: int,
-) -> bool:
-    orphans = sorted((e for e in untracked if not e.source_match), key=lambda e: e.name)
-    if not orphans:
-        return False
-
+) -> None:
     # group orphans by skill name to collect providers
     orphan_providers: defaultdict[str, list[str]] = defaultdict(list)
     for entry in orphans:
         orphan_providers[entry.name].append(entry.provider)
 
-    console.print("")
     console.print("[yellow]Untracked[/yellow]")
     for skill_name, providers in orphan_providers.items():
         _print_skill_rows(
@@ -324,8 +328,6 @@ def _print_untracked_section(
             name_width,
             provider_width,
         )
-
-    return True
 
 
 def _check_divergence(installed_path: Path, baseline: Baseline | None) -> str:

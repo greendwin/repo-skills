@@ -5,6 +5,7 @@ __all__ = [
     "InstalledSkill",
     "Provider",
     "ProviderRegistry",
+    "SKILL_FILE",
     "SkillManifest",
     "SourceBrokenError",
     "Source",
@@ -19,6 +20,7 @@ __all__ = [
     "save_source_config",
     "load_source_registry",
     "make_baseline",
+    "read_skill_description",
     "save_provider_registry",
     "save_skill_manifest",
     "save_source_registry",
@@ -39,6 +41,10 @@ from ._skill_manifest import (
     load_skill_manifest,
     make_baseline,
     save_skill_manifest,
+)
+from ._skill_md import (
+    SKILL_FILE,
+    read_skill_description,
 )
 from ._source import (
     REPO_SKILLS_DIR,

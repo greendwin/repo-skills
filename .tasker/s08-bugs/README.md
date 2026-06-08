@@ -34,8 +34,12 @@ Fix TODO-documented bugs and issues across the CLI.
 - [ ] [s08t23](s08t23-bad-skills-directory-detection-on.md): Bad skills directory detection on `source init`
 - [ ] [s08t25](s08t25-git-output-overwrite-update-header.md): Git output overwrite update header
 - [ ] [s08t26](s08t26-misleading-already-synced-message.md): Misleading "already synced" message
-- [ ] [s08t27](s08t27-missing-provider-in-commit-message.md): Missing provider in commit message on skill merge
+- [x] [s08t27](s08t27-missing-provider-in-commit-message.md): Missing provider in commit message on skill merge
 - [x] [s08t28](s08t28-inconsistent-new-lines-between-groups.md): Inconsistent new lines between groups
 - [x] [s08t29](s08t29-windows-support/): Windows support
 - [ ] [s08t30](s08t30-align-branches-in-column-in.md): Align branches in column in 'source list'
 - [x] [s08t31](s08t31-add-newerversion-guard-to-provider.md): Add newer-version guard to provider registry loader; extract shared versioned-config loader
+- [x] [s08t32](s08t32-reduce-scaffolding-duplication-in-testreadskilldescription.md): Reduce scaffolding duplication in TestReadSkillDescription
+- [x] [s08t33](s08t33-add-cli-orphanmerge-test-for.md): Add CLI orphan-merge test for frontmatter-present-but-no-description
+- [x] [s08t34](s08t34-relocate-skillmd-frontmatter-reader-and.md): Relocate SKILL.md frontmatter reader and dedup SKILL.md constant
+- [x] [s08t35](s08t35-harden-skillmd-description-parsing-for.md): Harden SKILL.md description parsing for quoted and block-scalar values

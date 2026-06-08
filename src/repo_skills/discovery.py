@@ -3,11 +3,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from .config import SKILL_FILE
 from .manifest import Manifest, default_install_dir, default_manifest_path
 
 _MAX_DETECT_DEPTH = 3
 _GIT_DIR = ".git"
-_SKILL_FILE = "SKILL.md"
 
 
 def find_git_root(start: Path) -> Path | None:
@@ -37,7 +37,7 @@ def detect_skills_dir(git_root: Path) -> Path | None:
             dirnames.clear()
             continue
 
-        if _SKILL_FILE in filenames:
+        if SKILL_FILE in filenames:
             skill_dirs.append(path)
 
     if not skill_dirs:

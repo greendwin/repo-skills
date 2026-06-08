@@ -9,9 +9,10 @@ from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
 from repo_skills.utils import load_config, rel_posix, save_config
 
+from ._skill_md import SKILL_FILE
+
 REPO_SKILLS_DIR = ".repo-skills"
 SOURCE_CONFIG_PATH = f"{REPO_SKILLS_DIR}/source.json"
-SKILL_FILE = "SKILL.md"
 
 
 class SourceBrokenError(AppError):

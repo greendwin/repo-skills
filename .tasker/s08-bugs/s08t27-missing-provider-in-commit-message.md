@@ -1,7 +1,7 @@
 ---
 id: s08t27
 slug: missing-provider-in-commit-message
-status: pending
+status: done
 ---
 
 # Missing provider in commit message on skill merge

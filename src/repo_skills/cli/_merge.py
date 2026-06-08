@@ -24,6 +24,7 @@ from repo_skills.config import (
     load_skill_manifest,
     load_source_registry,
     make_baseline,
+    read_skill_description,
     save_skill_manifest,
 )
 from repo_skills.console import console, fmt_command, fmt_data, fmt_ident, fmt_path
@@ -402,7 +403,10 @@ def _merge_orphan(
         console.print("Files copied to source repo. Review and commit manually.")
         return
 
-    git.commit_all(f"chore: add `{skill_name}` from provider")
+    subject = f"feat: add `{skill_name}` skill"
+    description = read_skill_description(installed_path)
+    message = f"{subject}\n\n{description}" if description else subject
+    git.commit_all(message)
 
     manifest = load_skill_manifest()
     manifest.register_skill(

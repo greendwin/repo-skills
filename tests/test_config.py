@@ -21,6 +21,7 @@ from repo_skills.config import (
     load_skill_manifest,
     load_source_config,
     load_source_registry,
+    read_skill_description,
     save_provider_registry,
     save_skill_manifest,
     save_source_config,
@@ -477,3 +478,156 @@ class TestCollectSourceSkillsPosixPaths:
         assert "/" in rel or "\\" not in rel
         assert "\\" not in rel
         assert rel == "skills/tdd"
+
+
+def _write_skill(fs: FakeFilesystem, contents: str) -> Path:
+    skill_dir = Path("/skills/tdd")
+    fs.create_file(skill_dir / "SKILL.md", contents=contents)
+    return skill_dir
+
+
+class TestReadSkillDescription:
+    @pytest.mark.parametrize(
+        "contents, expected",
+        [
+            pytest.param(
+                (
+                    "---\n"
+                    "name: tdd\n"
+                    "description: Do the thing well.\n"
+                    "disable-model-invocation: true\n"
+                    "---\n\n# tdd\n"
+                ),
+                "Do the thing well.",
+                id="present",
+            ),
+            pytest.param(
+                "---\nname: tdd\n---\n\n# tdd\n",
+                None,
+                id="no-description",
+            ),
+            pytest.param(
+                "# brand new\n",
+                None,
+                id="no-frontmatter",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription:\n---\n\n# tdd\n",
+                None,
+                id="empty",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription:    \n---\n\n# tdd\n",
+                None,
+                id="whitespace-only",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription:    Spaced out   \n---\n\n# tdd\n",
+                "Spaced out",
+                id="trimmed",
+            ),
+            pytest.param(
+                (
+                    "---\r\n"
+                    "name: tdd\r\n"
+                    "description: Does a thing.\r\n"
+                    "---\r\n\r\n# tdd\r\n"
+                ),
+                "Does a thing.",
+                id="crlf",
+            ),
+            pytest.param(
+                '---\nname: tdd\ndescription: "Does X"\n---\n\n# tdd\n',
+                "Does X",
+                id="double-quoted",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription: 'Does Y'\n---\n\n# tdd\n",
+                "Does Y",
+                id="single-quoted",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription: >\n---\n\n# tdd\n",
+                None,
+                id="block-scalar-fold",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription: |\n---\n\n# tdd\n",
+                None,
+                id="block-scalar-literal",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription: >-\n---\n\n# tdd\n",
+                None,
+                id="block-scalar-fold-strip",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription: |-\n---\n\n# tdd\n",
+                None,
+                id="block-scalar-literal-strip",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription: >+\n---\n\n# tdd\n",
+                None,
+                id="block-scalar-fold-keep",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription: |+\n---\n\n# tdd\n",
+                None,
+                id="block-scalar-literal-keep",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription: >2\n---\n\n# tdd\n",
+                None,
+                id="block-scalar-fold-indent",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription: |1\n---\n\n# tdd\n",
+                None,
+                id="block-scalar-literal-indent",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription: >-2\n---\n\n# tdd\n",
+                None,
+                id="block-scalar-strip-indent",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription: |\n  Real body line\n---\n\n# tdd\n",
+                None,
+                id="block-scalar-populated-body",
+            ),
+            pytest.param(
+                '---\nname: tdd\ndescription: "oops\n---\n\n# tdd\n',
+                '"oops',
+                id="unterminated-quote",
+            ),
+            pytest.param(
+                '---\nname: tdd\ndescription: ""\n---\n\n# tdd\n',
+                None,
+                id="quoted-empty",
+            ),
+            pytest.param(
+                '---\nname: tdd\ndescription: He said "hi"\n---\n\n# tdd\n',
+                'He said "hi"',
+                id="inner-quote",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription: >foo\n---\n\n# tdd\n",
+                ">foo",
+                id="not-block-scalar-leading-fold",
+            ),
+            pytest.param(
+                "---\nname: tdd\ndescription: |bar\n---\n\n# tdd\n",
+                "|bar",
+                id="not-block-scalar-leading-literal",
+            ),
+        ],
+    )
+    def test_reads_description(
+        self, fs: FakeFilesystem, contents: str, expected: str | None
+    ) -> None:
+        skill_dir = _write_skill(fs, contents)
+        assert read_skill_description(skill_dir) == expected
+
+    def test_returns_none_when_file_missing(self, fs: FakeFilesystem) -> None:
+        assert read_skill_description(Path("/skills/missing")) is None

@@ -803,6 +803,54 @@ class TestMergeOrphan:
         manifest = load_manifest()
         assert "my-new-skill" not in manifest.skills
 
+    def test_orphan_commit_message(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        install_skill(fs, "my-new-skill", content="# brand new")
+
+        assert_invoke("merge", "my-new-skill", "--offline")
+
+        assert len(_fake_git.committed_messages) == 1
+        assert _fake_git.committed_messages[0] == "feat: add `my-new-skill` skill"
+
+    def test_orphan_commit_message_with_description(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        install_skill(
+            fs,
+            "my-new-skill",
+            content=(
+                "---\n"
+                "name: my-new-skill\n"
+                "description: Does a useful thing.\n"
+                "---\n\n# my-new-skill\n"
+            ),
+        )
+
+        assert_invoke("merge", "my-new-skill", "--offline")
+
+        assert len(_fake_git.committed_messages) == 1
+        assert _fake_git.committed_messages[0] == (
+            "feat: add `my-new-skill` skill\n\nDoes a useful thing."
+        )
+
+    def test_orphan_commit_message_with_frontmatter_but_no_description(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        install_skill(
+            fs,
+            "my-new-skill",
+            content="---\nname: my-new-skill\n---\n\n# my-new-skill\n",
+        )
+
+        assert_invoke("merge", "my-new-skill", "--offline")
+
+        assert len(_fake_git.committed_messages) == 1
+        assert _fake_git.committed_messages[0] == "feat: add `my-new-skill` skill"
+
     def test_manifest_has_correct_commit_and_hashes(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:

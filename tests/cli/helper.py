@@ -99,7 +99,7 @@ class FakeGitRepo:
             return self.branch_commits.get((rel_path, branch), "")
         return self.commits.get(rel_path, "")
 
-    def verify_commit_content(self, _commit: str, rel_path: str) -> bool:
+    def verify_commit_content(self, commit: str, rel_path: str) -> bool:
         return self.verified.get(rel_path, True)
 
     def log_commits(self, path: str, max_count: int) -> list[str]:

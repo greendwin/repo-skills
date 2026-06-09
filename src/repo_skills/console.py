@@ -53,7 +53,8 @@ class Console:
     def running(self, prefix: str, *, tty_subprocess: bool = False) -> Generator[None]:
         if self._active_prefix is not None:
             raise AssertionError(
-                f"running({prefix!r}) cannot nest inside running({self._active_prefix!r})"
+                f"running({prefix!r}) cannot nest inside"
+                f" running({self._active_prefix!r})"
             )
 
         self._finish_eoln()

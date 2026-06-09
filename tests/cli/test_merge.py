@@ -211,7 +211,7 @@ class TestMergeProviderResolution:
 
         result = assert_invoke("merge", "tdd", "--offline")
 
-        assert_words_in_message(result.output, "synced", "nothing to merge")
+        assert_words_in_message(result.output, "already", "synced", "nothing to merge")
 
     def test_errors_when_multiple_providers_have_untracked_skill(
         self, fs: FakeFilesystem, git_repo: Path
@@ -617,7 +617,60 @@ class TestMergeUntracked:
 
         result = assert_invoke("merge", "tdd", "--offline")
 
-        assert_words_in_message(result.output, "synced")
+        assert_words_in_message(result.output, "tracked", "in sync")
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert not entry.detached
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "reattached-commit"
+
+    def test_first_attach_tracked_baseline_less_skill_when_all_in_sync(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=None,
+                    detached=False,
+                )
+            }
+        )
+        _fake_git.commits["skills/tdd"] = "reattached-commit"
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        assert_words_in_message(result.output, "tracked", "in sync")
+        assert _fake_git.created_branches == {}
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "reattached-commit"
+
+    def test_reattaches_detached_skill_with_from_provider(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit=COMMIT, files=hashes),
+                    detached=True,
+                )
+            }
+        )
+        register_provider("cursor", str(CURSOR_DIR))
+        _fake_git.commits["skills/tdd"] = "reattached-commit"
+
+        result = assert_invoke("merge", "tdd", "--from", "cursor", "--offline")
+
+        assert_words_in_message(result.output, "tracked", "in sync")
+        assert _fake_git.created_branches == {}
         manifest = load_manifest()
         entry = manifest.skills["tdd"]
         assert not entry.detached

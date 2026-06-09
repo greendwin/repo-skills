@@ -5,7 +5,7 @@ import hashlib
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, NoReturn, Optional
 
 import typer
 from rich.markup import escape
@@ -178,12 +178,8 @@ def _merge_start(
     if provider is not None:
         current_hashes = compute_file_hashes(provider.install_path / skill_name)
         if installed.match_files(current_hashes):
-            if installed.detached:
-                _reattach_installed_skill(ctx.manifest, source, skill, git)
-
-            raise NoopError(
-                f"{fmt_ident(skill_name)} is already synced. Nothing to merge."
-            )
+            # match_files implies baseline is not None, so detached alone is enough
+            _raise_in_sync(ctx, source, skill, git, reattached=installed.detached)
 
     # if no provider, search for provider that has skill that not in sync
     if provider is None:
@@ -193,11 +189,13 @@ def _merge_start(
 
         # no diverged providers -- all in sync
         if provider is None:
-            if installed.detached or not installed.baseline:
-                _reattach_installed_skill(ctx.manifest, source, skill, git)
-
-            raise NoopError(
-                f"{fmt_ident(skill_name)} is already synced. Nothing to merge."
+            # no match_files guard, so a missing baseline must also trigger reattach
+            _raise_in_sync(
+                ctx,
+                source,
+                skill,
+                git,
+                reattached=installed.detached or not installed.baseline,
             )
 
     branch_name = f"skill-merge/{provider.name}/{skill_name}"
@@ -305,6 +303,23 @@ def _finalyze_in_sync_skill(
     console.print(
         f"{fmt_ident(skill.name)} matches a previous version.\n"
         f"Run {fmt_command('skills update')} to pull the latest changes."
+    )
+
+
+def _raise_in_sync(
+    ctx: ConfigContext,
+    source: Source,
+    skill: SourceSkill,
+    git: GitRepo,
+    *,
+    reattached: bool,
+) -> NoReturn:
+    if not reattached:
+        raise NoopError(f"{fmt_ident(skill.name)} is already synced. Nothing to merge.")
+
+    _reattach_installed_skill(ctx.manifest, source, skill, git)
+    raise NoopError(
+        f"{fmt_ident(skill.name)} is now tracked and in sync. Nothing to merge."
     )
 
 

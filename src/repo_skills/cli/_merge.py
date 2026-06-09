@@ -12,6 +12,7 @@ from rich.markup import escape
 
 from repo_skills.config import (
     Baseline,
+    ConfigContext,
     InstalledSkill,
     Provider,
     ProviderRegistry,
@@ -20,9 +21,8 @@ from repo_skills.config import (
     SourceRegistry,
     SourceSkill,
     compute_file_hashes,
-    load_provider_registry,
+    load_config_context,
     load_skill_manifest,
-    load_source_registry,
     make_baseline,
     read_skill_description,
     save_skill_manifest,
@@ -33,7 +33,6 @@ from repo_skills.git import GitRepo, ensure_on_branch
 from repo_skills.utils import normalize_line_endings
 
 from ._app import app
-from ._context import CommandContext
 from ._deps import resolve_git_repo
 
 MERGE_BRANCH_PREFIX = "skill-merge/"
@@ -91,11 +90,7 @@ def merge(
             f" {fmt_command('--continue')} together."
         )
 
-    ctx = CommandContext(
-        provider_registry=load_provider_registry(),
-        source_registry=load_source_registry(),
-        manifest=load_skill_manifest(),
-    )
+    ctx = load_config_context()
 
     if abort:
         _merge_abort(ctx)
@@ -124,7 +119,7 @@ def merge(
 
 
 def _merge_start(
-    ctx: CommandContext,
+    ctx: ConfigContext,
     skill_name: str,
     *,
     from_provider: str | None,
@@ -287,7 +282,7 @@ def _merge_start(
 
 
 def _finalyze_in_sync_skill(
-    ctx: CommandContext,
+    ctx: ConfigContext,
     git: GitRepo,
     source: Source,
     skill: SourceSkill,
@@ -339,7 +334,7 @@ class _UntrackedSkill:
 
 
 def _resolve_untracked(
-    ctx: CommandContext,
+    ctx: ConfigContext,
     *,
     provider: Provider | None,
     skill_name: str,
@@ -377,7 +372,7 @@ def _resolve_untracked(
 
 
 def _merge_orphan(
-    ctx: CommandContext,
+    ctx: ConfigContext,
     skill_name: str,
     *,
     provider: Provider | None,
@@ -618,7 +613,7 @@ def _find_base_commit(
     )
 
 
-def _merge_continue(ctx: CommandContext) -> None:
+def _merge_continue(ctx: ConfigContext) -> None:
     git = _detect_merge_repo(ctx)
     branch = _detect_merge_branch(git)
     provider_name, skill_name = _parse_merge_branch(branch)
@@ -640,7 +635,7 @@ def _merge_continue(ctx: CommandContext) -> None:
 
 
 def _finalize(
-    ctx: CommandContext,
+    ctx: ConfigContext,
     git: GitRepo,
     provider: Provider,
     skill_name: str,
@@ -691,7 +686,7 @@ def _finalize(
     console.print(f"Merge complete for {fmt_ident(skill_name)}.")
 
 
-def _merge_abort(ctx: CommandContext) -> None:
+def _merge_abort(ctx: ConfigContext) -> None:
     git = _detect_merge_repo(ctx)
     branch = _detect_merge_branch(git)
     _, skill_name = _parse_merge_branch(branch)
@@ -713,7 +708,7 @@ def _merge_abort(ctx: CommandContext) -> None:
     console.print(f"Merge aborted for {fmt_ident(skill_name)}.")
 
 
-def _detect_merge_repo(ctx: CommandContext) -> GitRepo:
+def _detect_merge_repo(ctx: ConfigContext) -> GitRepo:
     cwd = Path.cwd()
     candidates: list[GitRepo] = []
     for source in ctx.source_registry.sources.values():

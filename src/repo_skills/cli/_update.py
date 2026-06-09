@@ -10,13 +10,12 @@ from rich.markup import escape
 
 from repo_skills.config import (
     Baseline,
+    ConfigContext,
     InstalledSkill,
     SkillManifest,
     SourceRegistry,
     compute_file_hashes,
-    load_provider_registry,
-    load_skill_manifest,
-    load_source_registry,
+    load_config_context,
     save_skill_manifest,
 )
 from repo_skills.console import console, fmt_data, fmt_ident
@@ -24,7 +23,6 @@ from repo_skills.errors import AppError, NoopError
 from repo_skills.git import ensure_on_branch
 
 from ._app import app
-from ._context import CommandContext
 from ._deps import resolve_git_repo
 from ._update_attach import (
     AttachCandidate,
@@ -67,11 +65,7 @@ def update(
         typer.Option("--offline", help="Skip git pull."),
     ] = False,
 ) -> None:
-    ctx = CommandContext(
-        provider_registry=load_provider_registry(),
-        source_registry=load_source_registry(),
-        manifest=load_skill_manifest(),
-    )
+    ctx = load_config_context()
 
     targets = _collect_targets(
         ctx,
@@ -107,7 +101,7 @@ class _Targets:
 
 
 def _collect_targets(
-    ctx: CommandContext,
+    ctx: ConfigContext,
     *,
     skill_names: list[str] | None,
     source_names: list[str] | None,
@@ -188,7 +182,9 @@ def _pull_sources(
         git = resolve_git_repo(registered.repo_root)
         branch = registered.get_branch(git)
 
-        with console.running(f"Pulling {fmt_data(source_name)}"):
+        with console.running(
+            f"Pulling {fmt_data(source_name)}", tty_subprocess=not offline
+        ):
             ensure_on_branch(git, branch, pull=not offline)
             source_branches[source_name] = branch
             if offline:
@@ -209,7 +205,7 @@ class _SkillReport:
 
 
 def _run_updates(
-    ctx: CommandContext,
+    ctx: ConfigContext,
     skills: dict[str, InstalledSkill],
     source_branches: dict[str, str],
 ) -> None:
@@ -241,7 +237,7 @@ def _run_updates(
 
 
 def _update_skill(
-    ctx: CommandContext,
+    ctx: ConfigContext,
     skill_name: str,
     entry: InstalledSkill,
     source_branches: dict[str, str],

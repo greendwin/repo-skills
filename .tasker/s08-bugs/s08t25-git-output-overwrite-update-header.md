@@ -1,7 +1,7 @@
 ---
 id: s08t25
 slug: git-output-overwrite-update-header
-status: pending
+status: done
 ---
 
 # Git output overwrite update header

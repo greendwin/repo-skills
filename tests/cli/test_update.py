@@ -16,6 +16,7 @@ from tests.cli.helper import (
     FakeGitRepoManager,
     SkillSetup,
     assert_invoke,
+    assert_status_line,
     assert_words_in_message,
     create_source_skill,
     install_skill,
@@ -134,6 +135,16 @@ class TestUpdatePull:
 
         assert_words_in_message(result.output, "Pulling", "done")
 
+    def test_pull_announcement_terminated_before_online_pull(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        SkillSetup(fs, git_repo).add_skill("tdd", commit="abc").build()
+
+        result = assert_invoke("update")
+
+        assert_status_line(result.output, "Pulling my-project")
+        assert_status_line(result.output, "Pulling my-project", "done")
+
     def test_pull_skipped_message_when_offline(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
@@ -142,6 +153,16 @@ class TestUpdatePull:
         result = assert_invoke("update", "--offline")
 
         assert_words_in_message(result.output, "Pulling", "skipped")
+
+    def test_pull_announcement_stays_inline_when_offline(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        SkillSetup(fs, git_repo).add_skill("tdd", commit="abc").build()
+
+        result = assert_invoke("update", "--offline")
+
+        assert_status_line(result.output, "Pulling my-project", "skipped")
+        assert_status_line(result.output, "Pulling my-project", present=False)
 
     def test_each_owning_source_gets_own_pull_line(
         self, fs: FakeFilesystem, git_repo: Path

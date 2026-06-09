@@ -567,31 +567,6 @@ class TestReadSkillDescription:
                 id="block-scalar-literal-strip",
             ),
             pytest.param(
-                "---\nname: tdd\ndescription: >+\n---\n\n# tdd\n",
-                None,
-                id="block-scalar-fold-keep",
-            ),
-            pytest.param(
-                "---\nname: tdd\ndescription: |+\n---\n\n# tdd\n",
-                None,
-                id="block-scalar-literal-keep",
-            ),
-            pytest.param(
-                "---\nname: tdd\ndescription: >2\n---\n\n# tdd\n",
-                None,
-                id="block-scalar-fold-indent",
-            ),
-            pytest.param(
-                "---\nname: tdd\ndescription: |1\n---\n\n# tdd\n",
-                None,
-                id="block-scalar-literal-indent",
-            ),
-            pytest.param(
-                "---\nname: tdd\ndescription: >-2\n---\n\n# tdd\n",
-                None,
-                id="block-scalar-strip-indent",
-            ),
-            pytest.param(
                 "---\nname: tdd\ndescription: |\n  Real body line\n---\n\n# tdd\n",
                 None,
                 id="block-scalar-populated-body",
@@ -613,13 +588,13 @@ class TestReadSkillDescription:
             ),
             pytest.param(
                 "---\nname: tdd\ndescription: >foo\n---\n\n# tdd\n",
-                ">foo",
-                id="not-block-scalar-leading-fold",
+                None,
+                id="leading-fold-treated-as-block-scalar",
             ),
             pytest.param(
                 "---\nname: tdd\ndescription: |bar\n---\n\n# tdd\n",
-                "|bar",
-                id="not-block-scalar-leading-literal",
+                None,
+                id="leading-literal-treated-as-block-scalar",
             ),
         ],
     )

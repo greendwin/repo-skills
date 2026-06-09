@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
+from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Annotated, NamedTuple, TypeAlias
 
@@ -8,15 +11,14 @@ import typer
 
 from repo_skills.config import (
     Baseline,
+    ConfigContext,
     ProviderRegistry,
     SkillManifest,
     Source,
     SourceBrokenError,
     SourceRegistry,
     compute_file_hashes,
-    load_provider_registry,
-    load_skill_manifest,
-    load_source_registry,
+    load_config_context,
 )
 from repo_skills.console import console, fmt_data, fmt_ident
 from repo_skills.errors import AppError, NoopError
@@ -51,18 +53,18 @@ def status(
         typer.Option("--sync", help="Pull source repos before checking."),
     ] = False,
 ) -> None:
-    manifest = load_skill_manifest()
-    source_registry = load_source_registry()
-    provider_registry = load_provider_registry()
+    ctx = load_config_context()
 
     # TODO: rework all this method to typed structures (too many raw strings now)
     #       (e.g. don't store skill_name, but manifest entry itself, and so on)
-    installed_by_source = _group_installed_by_source(manifest)
+    installed_by_source = _group_installed_by_source(ctx.manifest)
     available_by_source, all_source_skills, loaded_sources = _scan_sources(
-        source_registry, installed_by_source, sync=sync
+        ctx.source_registry, installed_by_source, sync=sync
     )
-    outdated = _compute_outdated(manifest, installed_by_source, loaded_sources)
-    untracked = _collect_untracked(manifest, provider_registry, all_source_skills)
+    outdated = _compute_outdated(ctx.manifest, installed_by_source, loaded_sources)
+    untracked = _collect_untracked(
+        ctx.manifest, ctx.provider_registry, all_source_skills
+    )
 
     all_names: list[str] = []
     for names in installed_by_source.values():
@@ -73,31 +75,42 @@ def status(
         all_names.append(name)
 
     name_width = max((len(n) for n in all_names), default=0)
-    provider_names = [p.name for p in provider_registry.providers]
+    provider_names = [p.name for p in ctx.provider_registry.providers]
     provider_width = len(", ".join(provider_names)) if provider_names else 0
 
-    has_output = _print_source_sections(
-        provider_registry,
-        source_registry,
-        manifest,
+    view = _StatusView(
+        provider_registry=ctx.provider_registry,
+        source_registry=ctx.source_registry,
+        manifest=ctx.manifest,
         installed_by_source=installed_by_source,
         available_by_source=available_by_source,
         name_width=name_width,
         provider_width=provider_width,
-        untracked=untracked,
         outdated=outdated,
+        mergeable_providers=_mergeable_providers(untracked),
     )
 
-    # collect orphans
+    all_sources = sorted(
+        set(installed_by_source.keys()) | set(available_by_source.keys())
+    )
     orphans = sorted((p for p in untracked if not p.source_match), key=lambda x: x.name)
-    if orphans:
-        if has_output:
-            console.print("")
-        _print_untracked_section(orphans, name_width, provider_width)
-        has_output = True
 
-    if not has_output:
+    sections: list[Callable[[], None]] = [
+        partial(_render_source_section, view, source_name)
+        for source_name in all_sources
+    ]
+    if orphans:
+        sections.append(
+            partial(_print_untracked_section, orphans, name_width, provider_width)
+        )
+
+    if not sections:
         raise NoopError("[dim]No skills found.[/dim]")
+
+    for index, render_section in enumerate(sections):
+        if index:
+            console.print("")
+        render_section()
 
 
 def _group_installed_by_source(manifest: SkillManifest) -> SkillsBySource:
@@ -248,66 +261,55 @@ def _print_skill_rows(
         )
 
 
-def _print_source_sections(
-    provider_registry: ProviderRegistry,
-    source_registry: SourceRegistry,
-    manifest: SkillManifest,
-    *,
-    installed_by_source: SkillsBySource,
-    available_by_source: SkillsBySource,
-    name_width: int,
-    provider_width: int,
-    untracked: list[UntrackedEntry],
-    outdated: set[str],
-) -> bool:
-    all_sources = sorted(
-        set(installed_by_source.keys()) | set(available_by_source.keys())
-    )
+@dataclass
+class _StatusView(ConfigContext):
+    installed_by_source: SkillsBySource
+    available_by_source: SkillsBySource
+    name_width: int
+    provider_width: int
+    outdated: set[str]
+    mergeable_providers: dict[str, list[str]]
 
-    # build lookup: skill_name -> list of provider names (for mergeable skills)
-    mergeable_providers: defaultdict[str, list[str]] = defaultdict(list)
+
+def _mergeable_providers(untracked: list[UntrackedEntry]) -> dict[str, list[str]]:
+    # skill_name -> provider names, for orphans that match a known source skill
+    result: defaultdict[str, list[str]] = defaultdict(list)
     for name, pname, source_match in untracked:
         if source_match:
-            mergeable_providers[name].append(pname)
+            result[name].append(pname)
 
-    has_output = False
+    return result
 
-    for source_name in all_sources:
-        if has_output:
-            console.print("")
 
-        try:
-            _ = source_registry.get_source(source_name, load_skills=False)
-            console.print(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
-        except SourceBrokenError:
-            console.print(
-                f"[yellow]Source[/yellow] {fmt_ident(source_name)}  [red](broken)[/red]"
-            )
+def _render_source_section(view: _StatusView, source_name: str) -> None:
+    try:
+        _ = view.source_registry.get_source(source_name, load_skills=False)
+        console.print(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
+    except SourceBrokenError:
+        console.print(
+            f"[yellow]Source[/yellow] {fmt_ident(source_name)}  [red](broken)[/red]"
+        )
 
-        has_output = True
+    for skill_name in sorted(view.installed_by_source.get(source_name, [])):
+        entry = view.manifest.skills[skill_name]
+        pairs: list[tuple[str, str]] = []
+        for provider in view.provider_registry.providers:
+            installed_path = provider.install_path / skill_name
+            divergence = _check_divergence(installed_path, entry.baseline)
+            if skill_name in view.outdated and installed_path.exists():
+                divergence = f"{divergence}, {STATUS_OUTDATED}"
+            pairs.append((provider.name, divergence))
 
-        for skill_name in sorted(installed_by_source.get(source_name, [])):
-            entry = manifest.skills[skill_name]
-            pairs: list[tuple[str, str]] = []
-            for provider in provider_registry.providers:
-                installed_path = provider.install_path / skill_name
-                divergence = _check_divergence(installed_path, entry.baseline)
-                if skill_name in outdated and installed_path.exists():
-                    divergence = f"{divergence}, {STATUS_OUTDATED}"
-                pairs.append((provider.name, divergence))
+        _print_skill_rows(skill_name, pairs, view.name_width, view.provider_width)
 
-            _print_skill_rows(skill_name, pairs, name_width, provider_width)
+    for skill_name in sorted(view.available_by_source.get(source_name, [])):
+        providers = view.mergeable_providers.get(skill_name)
+        if providers:
+            pairs = [(p, STATUS_MERGEABLE) for p in providers]
+        else:
+            pairs = [("", STATUS_AVAILABLE)]
 
-        for skill_name in sorted(available_by_source.get(source_name, [])):
-            providers = mergeable_providers.get(skill_name)
-            if providers:
-                pairs = [(p, STATUS_MERGEABLE) for p in providers]
-            else:
-                pairs = [("", STATUS_AVAILABLE)]
-
-            _print_skill_rows(skill_name, pairs, name_width, provider_width)
-
-    return has_output
+        _print_skill_rows(skill_name, pairs, view.name_width, view.provider_width)
 
 
 def _print_untracked_section(

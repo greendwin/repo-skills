@@ -2,6 +2,7 @@ __all__ = [
     "REPO_SKILLS_DIR",
     "SOURCES_REGISTRY_FILE",
     "Baseline",
+    "ConfigContext",
     "InstalledSkill",
     "Provider",
     "ProviderRegistry",
@@ -13,6 +14,7 @@ __all__ = [
     "SourceEntry",
     "SourceSkill",
     "SourceRegistry",
+    "load_config_context",
     "load_provider_registry",
     "load_skill_manifest",
     "load_source",
@@ -28,6 +30,7 @@ __all__ = [
     "default_config_path",
 ]
 
+from ._config_context import ConfigContext, load_config_context
 from ._provider_registry import (
     Provider,
     ProviderRegistry,

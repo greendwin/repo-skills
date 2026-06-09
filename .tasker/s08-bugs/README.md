@@ -32,7 +32,7 @@ Fix TODO-documented bugs and issues across the CLI.
 - [ ] s08t20: Use 'feat' prefix when merging orphan branch and 'ref' when updating existing one
 - [ ] [s08t22](s08t22-pulling-failure-must-not-stop.md): Pulling failure must not stop update
 - [ ] [s08t23](s08t23-bad-skills-directory-detection-on/): Bad skills directory detection on `source init`
-- [ ] [s08t25](s08t25-git-output-overwrite-update-header.md): Git output overwrite update header
+- [x] [s08t25](s08t25-git-output-overwrite-update-header.md): Git output overwrite update header
 - [ ] [s08t26](s08t26-misleading-already-synced-message.md): Misleading "already synced" message
 - [x] [s08t27](s08t27-missing-provider-in-commit-message.md): Missing provider in commit message on skill merge
 - [x] [s08t28](s08t28-inconsistent-new-lines-between-groups.md): Inconsistent new lines between groups

@@ -75,6 +75,35 @@ class TestDebugOutput:
         assert captured.err == ""
 
 
+class TestRunningTtySubprocess:
+    def test_terminates_pending_running_line_up_front(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        console.no_color = True
+        # tty_subprocess=True flushes the in-place "... " line up front, so a
+        # subprocess writing to the tty cannot clobber it. Because the
+        # pending-eoln state is already cleared, finish() cannot complete the
+        # original line in-place; it pops the prefix stack and replays the whole
+        # "<prefix> ... done" line instead.
+        with console.running("Pulling x", tty_subprocess=True):
+            console.finish("done")
+
+        captured = capsys.readouterr()
+        lines = captured.out.splitlines()
+        # Trailing space is load-bearing: it proves the in-place status line was
+        # flushed verbatim and un-clobbered. Do not rstrip/strip it.
+        assert "Pulling x ... " in lines
+        assert "Pulling x ... done" in lines
+
+    def test_rejects_nested_running(self) -> None:
+        # finish() replays a single active prefix, so nesting would corrupt the
+        # status line; nesting is asserted against rather than silently mishandled.
+        with console.running("outer"):
+            with pytest.raises(AssertionError):
+                with console.running("inner"):
+                    pass
+
+
 class TestGitRealDebugIntegration:
     def test_run_prints_debug_when_enabled(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]

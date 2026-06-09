@@ -16,7 +16,7 @@ class Console:
         self._con = RichConsole(highlight=False)
         self._con_err = RichConsole(highlight=False, stderr=True)
         self._pending_eoln = False
-        self._prefixes: list[str] = []
+        self._active_prefix: str | None = None
 
     def print(self, message: str) -> None:
         self._finish_eoln()
@@ -50,18 +50,28 @@ class Console:
                 self._con_err.print(f"[dim]  stderr: {escape(line)}[/dim]")
 
     @contextmanager
-    def running(self, prefix: str) -> Generator[None]:
+    def running(self, prefix: str, *, tty_subprocess: bool = False) -> Generator[None]:
+        if self._active_prefix is not None:
+            raise AssertionError(
+                f"running({prefix!r}) cannot nest inside running({self._active_prefix!r})"
+            )
+
         self._finish_eoln()
         self._con.print(f"{prefix} ... ", end="")
         self._pending_eoln = True
 
-        self._prefixes.append(prefix)
+        self._active_prefix = prefix
+
+        if tty_subprocess:
+            self._finish_eoln()
 
         try:
             yield
         except Exception:
             self._finish_eoln()
             raise
+        finally:
+            self._active_prefix = None
 
     def finish(self, suffix: str) -> None:
         if self._pending_eoln:
@@ -69,10 +79,7 @@ class Console:
             self._pending_eoln = False
             return
 
-        prefix = ""
-        if self._prefixes:
-            prefix = self._prefixes.pop()
-
+        prefix = self._active_prefix or ""
         self._con.print(f"{prefix} ... {suffix}")
 
     @property

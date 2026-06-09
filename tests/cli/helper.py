@@ -246,6 +246,28 @@ def assert_words_in_message(output: str, *words: str) -> None:
         ), f"Expected {word!r} in output (case-insensitive).\nOutput: {output}"
 
 
+def assert_status_line(
+    output: str, prefix: str, suffix: str = "", *, present: bool = True
+) -> None:
+    """Assert a rendered ``"<prefix> ... <suffix>"`` status line in ``output``.
+
+    With ``suffix=""`` the expected line is the bare terminated status
+    ``"<prefix> ... "`` (the trailing space is load-bearing: it proves the
+    in-place status line was flushed verbatim and un-clobbered; do not
+    rstrip/strip it). A non-empty ``suffix`` yields ``"<prefix> ... <suffix>"``.
+    Membership is checked against ``output.splitlines()``; ``present=False``
+    asserts the line is absent.
+    """
+    line = f"{prefix} ... {suffix}" if suffix else f"{prefix} ... "
+    lines = output.splitlines()
+    if present:
+        assert line in lines, f"Expected {line!r} in output.\nOutput: {output}"
+    else:
+        assert (
+            line not in lines
+        ), f"Did not expect {line!r} in output.\nOutput: {output}"
+
+
 def _skill_md(name: str, description: str | None) -> str:
     if description:
         return f"---\nname: {name}\ndescription: {description}\n---\n"

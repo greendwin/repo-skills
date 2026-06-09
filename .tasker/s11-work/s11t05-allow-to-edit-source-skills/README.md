@@ -1,5 +1,5 @@
 ---
-id: s06t19
+id: s11t05
 slug: allow-to-edit-source-skills
 status: pending
 ---
@@ -30,6 +30,6 @@ Independent of t18/t16. Implementation order: **t18 → t16 → t19**.
 
 ## Subtasks
 
-- [ ] [s06t1901](s06t1901-extract-shared-idempotent-initconfig-implementation.md): Extract shared idempotent init/config implementation
-- [ ] [s06t1902](s06t1902-skillsdir-option-with-strict-validation.md): `--skills-dir` option with strict validation
-- [ ] [s06t1903](s06t1903-skills-init-skills-source-config.md): `skills init` + `skills source config` command surface
+- [ ] [s11t0501](s11t0501-extract-shared-idempotent-initconfig-implementation.md): Extract shared idempotent init/config implementation
+- [ ] [s11t0502](s11t0502-skillsdir-option-with-strict-validation.md): `--skills-dir` option with strict validation
+- [ ] [s11t0503](s11t0503-skills-init-skills-source-config.md): `skills init` + `skills source config` command surface

@@ -24,6 +24,5 @@ status: pending
 - [x] [s06t16](s06t16-autoattach-untracked-skills-on-update/): Auto-attach untracked skills on `update` when they match source exactly
 - [ ] [s06t17](s06t17-group-skills-when-installed-from.md): Group skills when installed from same source
 - [x] [s06t18](s06t18-update-specific-source/): Update specific source
-- [ ] [s06t19](s06t19-allow-to-edit-source-skills/): Allow to edit `source` skills directory
 - [ ] [s06t20](s06t20-multiple-source-support.md): Multiple source support
 - [x] [s06t23](s06t23-support-s-alias-for-source.md): Support `-s` alias for `--source`

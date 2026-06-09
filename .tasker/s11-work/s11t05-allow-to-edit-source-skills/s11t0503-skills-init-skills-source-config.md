@@ -1,5 +1,5 @@
 ---
-id: s06t1903
+id: s11t0503
 slug: skills-init-skills-source-config
 status: pending
 ---

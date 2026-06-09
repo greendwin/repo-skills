@@ -1,7 +1,7 @@
 ---
 id: s10t04
 slug: updating-concrete-skill-should-pull
-status: pending
+status: cancelled
 ---
 
 # Updating concrete skill should pull only its source

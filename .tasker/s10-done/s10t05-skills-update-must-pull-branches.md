@@ -1,7 +1,7 @@
 ---
 id: s10t05
 slug: skills-update-must-pull-branches
-status: pending
+status: cancelled
 ---
 
 # `skills update` must pull branches and perform auto-attach even when no skills are installed

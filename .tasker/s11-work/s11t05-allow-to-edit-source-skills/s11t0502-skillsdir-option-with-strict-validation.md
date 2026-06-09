@@ -1,5 +1,5 @@
 ---
-id: s06t1902
+id: s11t0502
 slug: skillsdir-option-with-strict-validation
 status: pending
 ---

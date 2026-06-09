@@ -1,5 +1,5 @@
 ---
-id: s06t1901
+id: s11t0501
 slug: extract-shared-idempotent-initconfig-implementation
 status: pending
 ---

@@ -7,7 +7,7 @@ import pytest
 
 from repo_skills.cli._app import app
 from repo_skills.console import console
-from repo_skills.errors import AppError
+from repo_skills.errors import AppError, render_error
 from repo_skills.main import main
 
 
@@ -112,3 +112,24 @@ def test_unhandled_exception_escapes_markup(run_main: RunMain) -> None:
     output, code = run_main("__test-raise-with-brackets")
     assert code == 1
     assert "[Errno 13]" in output
+
+
+def test_render_error_terminates_on_cyclic_cause_chain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out = StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", out)
+
+    a = RuntimeError("first")
+    b = RuntimeError("second")
+    a.__cause__ = b
+    b.__cause__ = a
+
+    render_error(a)
+
+    output = out.getvalue()
+    assert "Error:" in output
+    assert "first" in output
+    assert output.count("caused by: second") == 1
+    assert output.count("caused by: first") == 0

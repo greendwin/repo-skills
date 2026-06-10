@@ -75,6 +75,29 @@ class TestDebugOutput:
         assert captured.err == ""
 
 
+class TestDebugTraceback:
+    def test_prints_traceback_when_enabled(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        console.debug = True
+        try:
+            raise ValueError("boom")
+        except ValueError:
+            console.debug_traceback()
+
+        captured = capsys.readouterr()
+        assert "ValueError" in captured.err
+        assert "boom" in captured.err
+
+    def test_silent_when_disabled(self, capsys: pytest.CaptureFixture[str]) -> None:
+        try:
+            raise ValueError("boom")
+        except ValueError:
+            console.debug_traceback()
+        captured = capsys.readouterr()
+        assert captured.err == ""
+
+
 class TestRunningTtySubprocess:
     def test_terminates_pending_running_line_up_front(
         self, capsys: pytest.CaptureFixture[str]

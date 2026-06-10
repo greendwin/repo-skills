@@ -287,24 +287,45 @@ class TestUpdateValidation:
 
         assert_words_in_message(result.output, "tdd", "up-to-date")
 
-    def test_deny_dirty_repo_on_correct_branch(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    @pytest.mark.parametrize(
+        "wrong_branch",
+        [
+            pytest.param(False, id="correct-branch"),
+            pytest.param(True, id="wrong-branch"),
+        ],
+    )
+    def test_dirty_repo_is_reported_not_fatal(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+        wrong_branch: bool,
     ) -> None:
         _fake_git.clean = False
-        SkillSetup(fs, git_repo).add_skill("tdd", commit="abc").build()
+        if wrong_branch:
+            _fake_git.branch = "other"
+        hashes = (
+            SkillSetup(fs, git_repo)
+            .add_skill(
+                "tdd",
+                commit="abc",
+                source_content="# tdd v2",
+                installed_content="# tdd v1",
+            )
+            .build()
+        )
 
-        result = assert_invoke("update", "--offline", expect_error=True)
-        assert_words_in_message(result.exception.message, "uncommitted changes")
+        result = assert_invoke("update", "--offline")
 
-    def test_errors_when_dirty_and_wrong_branch(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
-    ) -> None:
-        _fake_git.clean = False
-        _fake_git.branch = "other"
-        SkillSetup(fs, git_repo).add_skill("tdd", commit="abc").build()
+        assert_status_line(result.output, "Pulling my-project", "failed")
+        assert_words_in_message(result.output, "uncommitted changes")
+        assert "[dim]" not in result.output
 
-        result = assert_invoke("update", "--offline", expect_error=True)
-        assert_words_in_message(result.exception.message, "uncommitted changes")
+        installed = (INSTALL_DIR / "tdd" / "SKILL.md").read_text()
+        assert installed == "# tdd v2"
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].baseline is not None
+        assert manifest.skills["tdd"].baseline.files != hashes["tdd"]
 
     def test_errors_when_skill_not_installed(
         self, fs: FakeFilesystem, git_repo: Path

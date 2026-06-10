@@ -78,8 +78,7 @@ def eligible_attach_sources(
                 load_skills=True,
             )
         except AppError as ex:
-            if console.debug:
-                console.print_exception()
+            console.debug_traceback()
 
             console.print(
                 f"[yellow]Warning[/yellow]: skipping broken source "

@@ -45,8 +45,7 @@ def load_versioned_config(
     try:
         cfg = load_config(model, path)
     except ConfigBrokenError:
-        if console.debug:
-            console.print_exception()
+        console.debug_traceback()
 
         console.print(f"[yellow]Warning[/yellow]: broken config file: {path}")
         return LoadedConfig(ConfigState.BROKEN, model())

@@ -57,6 +57,8 @@ class FakeGitRepo:
     main_branch: str = "main"
     branch: str = "main"
     clean: bool = True
+    pull_fails: bool = False
+    pull_cause: str = ""
     commits: dict[str, str] = field(default_factory=dict)
     branch_commits: dict[tuple[str, str], str] = field(default_factory=dict)
     verified: dict[str, bool] = field(default_factory=dict)
@@ -83,6 +85,18 @@ class FakeGitRepo:
     reachable_commits: set[str] = field(default_factory=set)
 
     def pull(self) -> None:
+        if self.pull_fails:
+            if self.pull_cause:
+                try:
+                    raise RuntimeError(self.pull_cause)
+                except RuntimeError as inner:
+                    raise AppError(
+                        "Failed to pull from remote.",
+                        props={"repo": str(self.root)},
+                    ) from inner
+            raise AppError(
+                "Failed to pull from remote.", props={"repo": str(self.root)}
+            )
         self.pulled = True
 
     def get_main_branch(self) -> str:

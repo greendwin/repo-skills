@@ -148,8 +148,7 @@ def _scan_sources(
         try:
             ensure_on_branch(git, target_branch, pull=sync, require_clean=False)
         except AppError:
-            if console.debug:
-                console.print_exception()
+            console.debug_traceback()
 
             console.print(
                 f"[yellow]Warning[/yellow]: {fmt_ident(source_name)} repo is dirty\n"

@@ -46,6 +46,24 @@ class NoopError(Exception):
         super().__init__(message)
 
 
+def render_error(ex: Exception) -> None:
+    console.debug_traceback()
+
+    if isinstance(ex, AppError):
+        rich_text = ex.message
+    else:
+        rich_text = escape(str(ex))
+
+    console.print(f"[red]Error:[/red] {rich_text}")
+
+    seen = {id(ex)}
+    cause = ex.__cause__ or ex.__context__
+    while cause is not None and id(cause) not in seen:
+        console.print(f"  caused by: {escape(str(cause))}")
+        seen.add(id(cause))
+        cause = cause.__cause__ or cause.__context__
+
+
 @contextmanager
 def error_handler() -> Generator[None]:
     try:
@@ -53,21 +71,6 @@ def error_handler() -> Generator[None]:
     except NoopError as ex:
         console.print(ex.message)
         raise SystemExit(0)
-    except AppError as ex:
-        if console.debug:
-            console.print_exception()
-            raise SystemExit(1)
-
-        console.print(f"[red]Error:[/red] {ex.message}")
-        raise SystemExit(1)
     except Exception as ex:
-        if console.debug:
-            console.print_exception()
-            raise SystemExit(1)
-
-        console.print(f"[red]Error:[/red] {escape(str(ex))}")
-        cause = ex.__cause__ or ex.__context__
-        while cause:
-            console.print(f"  caused by: {escape(str(cause))}")
-            cause = cause.__cause__ or cause.__context__
+        render_error(ex)
         raise SystemExit(1)

@@ -13,8 +13,11 @@ from repo_skills.config import (
 )
 from tests.cli.helper import (
     INSTALL_DIR,
+    FakeGitRepo,
+    FakeGitRepoManager,
     SkillSetup,
     assert_invoke,
+    assert_status_line,
     assert_words_in_message,
     create_source_skill,
     install_skill,
@@ -22,6 +25,9 @@ from tests.cli.helper import (
     register_source,
     save_manifest,
 )
+
+SOURCE_A_ROOT = Path("/repos/source-a")
+SOURCE_B_ROOT = Path("/repos/source-b")
 
 
 class TestUpdateErrorMessages:
@@ -99,12 +105,183 @@ class TestUpdateBatchResilience:
         assert_words_in_message(result.output, "review", "updated")
 
 
+class TestUpdatePullFailure:
+    def _setup_two_sources(
+        self,
+        fs: FakeFilesystem,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> dict[str, dict[str, str]]:
+        fake_git_manager.install(FakeGitRepo(root=SOURCE_A_ROOT, pull_fails=True))
+        fake_git_manager.install(FakeGitRepo(root=SOURCE_B_ROOT))
+
+        return (
+            SkillSetup(fs, SOURCE_A_ROOT)
+            .add_skill(
+                "alpha",
+                source_name="source-a",
+                source_root=SOURCE_A_ROOT,
+                source_content="# alpha v2",
+                installed_content="# alpha v1",
+            )
+            .add_skill(
+                "bravo",
+                source_name="source-b",
+                source_root=SOURCE_B_ROOT,
+                source_content="# bravo v2",
+                installed_content="# bravo v1",
+            )
+            .build()
+        )
+
+    def test_pull_failure_does_not_block_other_sources(
+        self,
+        fs: FakeFilesystem,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        hashes = self._setup_two_sources(fs, fake_git_manager)
+
+        result = assert_invoke("update")
+
+        assert_status_line(result.output, "Pulling source-a", "failed")
+        assert_words_in_message(result.output, "failed to pull")
+        assert_words_in_message(result.output, "bravo", "updated")
+
+        installed = (INSTALL_DIR / "bravo" / "SKILL.md").read_text()
+        assert installed == "# bravo v2"
+
+        manifest = load_manifest()
+        bravo = manifest.skills["bravo"]
+        assert bravo.baseline is not None
+        refreshed = compute_file_hashes(INSTALL_DIR / "bravo")
+        assert bravo.baseline.files == refreshed
+        assert bravo.baseline.files != hashes["bravo"]
+
+    def test_failed_source_skill_still_syncs_from_local_copy(
+        self,
+        fs: FakeFilesystem,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        hashes = self._setup_two_sources(fs, fake_git_manager)
+
+        assert_invoke("update")
+
+        installed = (INSTALL_DIR / "alpha" / "SKILL.md").read_text()
+        assert installed == "# alpha v2"
+
+        manifest = load_manifest()
+        alpha = manifest.skills["alpha"]
+        assert alpha.baseline is not None
+        refreshed = compute_file_hashes(INSTALL_DIR / "alpha")
+        assert alpha.baseline.files == refreshed
+        assert alpha.baseline.files != hashes["alpha"]
+
+    def test_failed_source_skip_detach_reconciliation(
+        self,
+        fs: FakeFilesystem,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        fake_a = FakeGitRepo(root=SOURCE_A_ROOT, pull_fails=True)
+        fake_b = FakeGitRepo(root=SOURCE_B_ROOT)
+        fake_a.ancestors[("c-alpha", "main")] = True
+        fake_b.ancestors[("c-bravo", "main")] = True
+        fake_git_manager.install(fake_a)
+        fake_git_manager.install(fake_b)
+
+        (
+            SkillSetup(fs, SOURCE_A_ROOT)
+            .add_skill(
+                "alpha",
+                source_name="source-a",
+                source_root=SOURCE_A_ROOT,
+                commit="c-alpha",
+                detached=True,
+            )
+            .add_skill(
+                "bravo",
+                source_name="source-b",
+                source_root=SOURCE_B_ROOT,
+                commit="c-bravo",
+                detached=True,
+            )
+            .build()
+        )
+
+        assert_invoke("update")
+
+        manifest = load_manifest()
+        assert manifest.skills["alpha"].detached is True
+        assert manifest.skills["bravo"].detached is False
+
+    def test_pull_failure_renders_cause_chain(
+        self,
+        fs: FakeFilesystem,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        fake_git_manager.install(
+            FakeGitRepo(
+                root=SOURCE_A_ROOT,
+                pull_fails=True,
+                pull_cause="ssh handshake refused",
+            )
+        )
+        fake_git_manager.install(FakeGitRepo(root=SOURCE_B_ROOT))
+
+        (
+            SkillSetup(fs, SOURCE_A_ROOT)
+            .add_skill(
+                "alpha",
+                source_name="source-a",
+                source_root=SOURCE_A_ROOT,
+                source_content="# alpha v2",
+                installed_content="# alpha v1",
+            )
+            .add_skill(
+                "bravo",
+                source_name="source-b",
+                source_root=SOURCE_B_ROOT,
+                source_content="# bravo v2",
+                installed_content="# bravo v1",
+            )
+            .build()
+        )
+
+        result = assert_invoke("update")
+
+        assert_words_in_message(result.output, "caused by:", "ssh handshake refused")
+        assert_words_in_message(result.output, "bravo", "updated")
+
+    def test_debug_flag_shows_traceback_for_pull_failure(
+        self,
+        fs: FakeFilesystem,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        self._setup_two_sources(fs, fake_git_manager)
+
+        result = assert_invoke("--debug", "update")
+
+        assert "Traceback" in result.output
+        assert "Error: Failed to pull from remote." in result.output.splitlines()
+
+    def test_no_traceback_without_debug_for_pull_failure(
+        self,
+        fs: FakeFilesystem,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        self._setup_two_sources(fs, fake_git_manager)
+
+        result = assert_invoke("update")
+
+        assert "Traceback" not in result.output
+
+
 class TestUpdateExceptionHandling:
     def _setup_two_skills(
         self,
         fs: FakeFilesystem,
         git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
+        *,
+        cause: str = "",
     ) -> tuple[dict[str, str], dict[str, str]]:
         hashes = (
             SkillSetup(fs, git_repo)
@@ -121,6 +298,11 @@ class TestUpdateExceptionHandling:
 
         def _bomb(path: Path) -> dict[str, str]:
             if "tdd" in str(path) and "skills/tdd" in str(path):
+                if cause:
+                    try:
+                        raise OSError(cause)
+                    except OSError as inner:
+                        raise RuntimeError("disk exploded") from inner
                 raise RuntimeError("disk exploded")
             return real_compute(path)
 
@@ -138,6 +320,19 @@ class TestUpdateExceptionHandling:
         result = assert_invoke("update", "--offline")
 
         assert_words_in_message(result.output, "error: disk exploded")
+        assert_words_in_message(result.output, "review", "updated")
+
+    def test_skill_failure_renders_cause_chain(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        self._setup_two_skills(fs, git_repo, monkeypatch, cause="inode gone")
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "caused by:", "inode gone")
         assert_words_in_message(result.output, "review", "updated")
 
     def test_manifest_not_updated_for_failed_skill(

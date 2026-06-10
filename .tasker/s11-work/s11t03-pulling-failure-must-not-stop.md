@@ -1,7 +1,7 @@
 ---
 id: s11t03
 slug: pulling-failure-must-not-stop
-status: pending
+status: done
 ---
 
 # Pulling failure must not stop update

@@ -22,7 +22,10 @@ class Console:
         self._finish_eoln()
         self._con.print(message)
 
-    def print_exception(self) -> None:
+    def debug_traceback(self) -> None:
+        if not self.debug:
+            return
+
         self._finish_eoln()
         self._con_err.print_exception()
 

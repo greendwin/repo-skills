@@ -64,8 +64,7 @@ def load_source_registry() -> SourceRegistry:
     try:
         cfg = load_config(_SourceRegistryConfig, path)
     except ConfigBrokenError:
-        if console.debug:
-            console.print_exception()
+        console.debug_traceback()
 
         console.print(f"[yellow]Warning[/yellow]: broken config file: {path}")
         return SourceRegistry()

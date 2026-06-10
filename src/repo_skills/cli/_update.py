@@ -6,7 +6,6 @@ from enum import Enum, auto
 from typing import Annotated, Optional
 
 import typer
-from rich.markup import escape
 
 from repo_skills.config import (
     Baseline,
@@ -19,7 +18,7 @@ from repo_skills.config import (
     save_skill_manifest,
 )
 from repo_skills.console import console, fmt_data, fmt_ident
-from repo_skills.errors import AppError, NoopError
+from repo_skills.errors import AppError, NoopError, render_error
 from repo_skills.git import ensure_on_branch
 
 from ._app import app
@@ -185,7 +184,13 @@ def _pull_sources(
         with console.running(
             f"Pulling {fmt_data(source_name)}", tty_subprocess=not offline
         ):
-            ensure_on_branch(git, branch, pull=not offline)
+            try:
+                ensure_on_branch(git, branch, pull=not offline)
+            except Exception as ex:
+                console.finish("[red]failed[/red]")
+                render_error(ex)
+                continue
+
             source_branches[source_name] = branch
             if offline:
                 console.finish("[dim]skipped[/dim]")
@@ -214,9 +219,8 @@ def _run_updates(
             try:
                 report = _update_skill(ctx, skill_name, entry, source_branches)
             except Exception as ex:
-                if console.debug:
-                    console.print_exception()
-                console.print(f"[red]Error[/red]: {escape(str(ex))}")
+                console.finish("[red]failed[/red]")
+                render_error(ex)
                 continue
 
             _print_skill_report(report)

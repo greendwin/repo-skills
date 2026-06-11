@@ -26,6 +26,30 @@ from tests.cli.helper import (
 )
 
 
+def _help_command_names(output: str) -> set[str]:
+    """Extract the command-name column from a Typer ``--help`` Commands panel.
+
+    Rich renders commands in a bordered panel; a command row places its name in a
+    fixed left column right after ``│ `` while wrapped description lines indent
+    their text further. Anchoring to that column (a non-space immediately after
+    the border) avoids matching description prose or substrings elsewhere.
+    """
+    names: set[str] = set()
+    in_commands = False
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("╭─") and "Commands" in stripped:
+            in_commands = True
+            continue
+        if in_commands and stripped.startswith("╰"):
+            break
+        if in_commands and stripped.startswith("│"):
+            row = stripped[1:]
+            if row.startswith(" ") and not row[1:2].isspace():
+                names.add(row.split()[0])
+    return names
+
+
 class TestSourceInitFreshRepo:
     def test_creates_source_config_and_registers(self, git_repo: Path) -> None:
         result = assert_invoke("source", "init")
@@ -229,14 +253,76 @@ class TestSourceInitRename:
         assert updated.skills["deploy"].source == "other-source"
 
 
-class TestInitRedirect:
-    def test_init_shows_redirect_to_source_init(self) -> None:
-        result = assert_invoke("init", expect_error=True)
-        assert_words_in_message(result.exception.message, "source init")
+class TestTopLevelInit:
+    def test_creates_source_config_and_registers(self, git_repo: Path) -> None:
+        result = assert_invoke("init")
 
-    def test_init_hidden_from_help(self) -> None:
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
+        assert source_cfg.name == "my-project"
+        assert source_cfg.skills_dir == "skills"
+        assert source_cfg.branch == "main"
+
+        assert (git_repo / "skills" / ".gitkeep").exists()
+
+        registry = load_source_registry()
+        assert "my-project" in registry.sources
+        assert registry.sources["my-project"].repo_root == Path(str(SOURCE_REPO_ROOT))
+
+        assert_words_in_message(result.output, "initialized", "source", "my-project")
+
+    def test_init_is_visible_in_top_level_help(self) -> None:
         result = assert_invoke("--help")
-        assert "init" not in result.output.lower()
+        assert "init" in _help_command_names(result.output)
+
+
+class TestSourceConfig:
+    def test_fresh_repo_creates_and_registers(self, git_repo: Path) -> None:
+        result = assert_invoke("source", "config")
+
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
+        assert source_cfg.name == "my-project"
+
+        registry = load_source_registry()
+        assert "my-project" in registry.sources
+
+        assert_words_in_message(result.output, "initialized", "source", "my-project")
+
+    def test_existing_source_edits_branch(
+        self, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        assert_invoke("source", "config")
+
+        _fake_git.branches = ["release"]
+        result = assert_invoke("source", "config", "--branch", "release")
+
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
+        assert source_cfg.branch == "release"
+
+        assert_words_in_message(result.output, "updated", "my-project")
+
+    @pytest.mark.usefixtures("git_repo")
+    def test_config_is_visible_in_source_help(self) -> None:
+        result = assert_invoke("source", "--help")
+        assert "config" in _help_command_names(result.output)
+
+
+class TestSourceInitAlias:
+    def test_hidden_alias_still_works(self, git_repo: Path) -> None:
+        result = assert_invoke("source", "init")
+
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
+        assert source_cfg.name == "my-project"
+
+        assert_words_in_message(result.output, "initialized", "source", "my-project")
+
+    @pytest.mark.usefixtures("git_repo")
+    def test_init_is_hidden_from_source_help(self) -> None:
+        result = assert_invoke("source", "--help")
+        assert "init" not in _help_command_names(result.output)
 
 
 class TestSourceInitErrors:
@@ -445,6 +531,49 @@ class TestSourceInitSkillsDir:
         assert_words_in_message(
             result.exception.message, "Skills dir", "not found", *extra_words
         )
+
+
+VISIBLE_COMMAND_PREFIXES = [
+    pytest.param(("init",), id="init"),
+    pytest.param(("source", "config"), id="source-config"),
+    pytest.param(("source", "init"), id="source-init-alias"),
+]
+
+
+class TestCommandSurface:
+    """Each command surface (``init``, ``source config``, hidden ``source init``)
+    shares one option declaration via ``Depends``; prove every surface reaches
+    create-or-edit and accepts ``--skills-dir``.
+    """
+
+    @pytest.mark.parametrize("prefix", VISIBLE_COMMAND_PREFIXES)
+    def test_fresh_create_with_skills_dir(
+        self, fs: FakeFilesystem, git_repo: Path, prefix: tuple[str, ...]
+    ) -> None:
+        fs.create_dir(git_repo / "my-skills")
+
+        result = assert_invoke(*prefix, "--skills-dir", "my-skills")
+
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
+        assert source_cfg.skills_dir == "my-skills"
+
+        assert_words_in_message(result.output, "initialized", "my-project")
+
+    @pytest.mark.parametrize("prefix", VISIBLE_COMMAND_PREFIXES)
+    def test_edit_existing_source_updates_branch(
+        self, git_repo: Path, _fake_git: FakeGitRepo, prefix: tuple[str, ...]
+    ) -> None:
+        assert_invoke(*prefix)
+
+        _fake_git.branches = ["release"]
+        result = assert_invoke(*prefix, "--branch", "release")
+
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
+        assert source_cfg.branch == "release"
+
+        assert_words_in_message(result.output, "updated", "my-project")
 
 
 class TestSourceInitBrokenSourceRegistry:

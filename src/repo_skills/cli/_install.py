@@ -140,7 +140,7 @@ def _resolve_source(
     if not source_registry.sources:
         raise AppError(
             "No sources registered.",
-            hint=f"Run {fmt_command('skills source init')} first.",
+            hint=f"Run {fmt_command('skills init')} first.",
         )
 
     if source_name is not None:

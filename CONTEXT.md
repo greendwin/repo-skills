@@ -2,7 +2,7 @@
 
 | Term | Definition |
 |------|-----------|
-| **Source** | A git repository registered as a skills provider via `skills source init`. Multiple sources can coexist; each is identified by name. Auto-derived from repo directory name, overridable with `--name`. |
+| **Source** | A git repository registered as a skills provider via `skills init` (configurable later via `skills source config`). Multiple sources can coexist; each is identified by name. Auto-derived from repo directory name, overridable with `--name`. |
 | **Source registry** | The collection of all registered sources, stored at `~/.config/repo-skills/sources.json`. Consulted by commands like `status`, `update`, and `merge` to locate skills across repos. |
 | **Skills dirs** | The one or more directories within a source that hold its skills. Skills are discovered by walking each for `SKILL.md` files at any depth. Auto-detected when the source is set up only if all skills share a single common directory below the repo root; when skills are spread across the repo root (e.g. `claude/skills` and `copilot`), the user must list the dirs explicitly. A source never assumes an empty default dir while skills exist in the repo. |
 | **Active skills dir** | The first of a source's skills dirs. Used as the destination when a merged orphan skill is written back into the source. |
@@ -14,6 +14,6 @@
 | **Available skill** | A skill present in a registered source but not yet installed (not in the manifest). Shown by `skills status` so the user knows what can be installed. |
 | **Orphan skill** | A directory inside a provider's install path that is not tracked in the manifest and does not match any skill in a registered source. Likely placed there manually. |
 | **Mergeable skill** | A directory inside a provider's install path that is not tracked in the manifest but matches a skill name in a registered source. Can be brought under management via `skills install --force`. |
-| **Pinned branch** | The branch captured at `source init` time that merge and other write operations target. Defaults to the current branch when `source init` runs. Replaces the need for `--any-branch`. |
+| **Pinned branch** | The branch captured at `skills init` time that merge and other write operations target. Defaults to the current branch when `skills init` runs. Replaces the need for `--any-branch`. |
 | **Detached skill** | An installed skill whose stored commit is no longer reachable from the pinned branch. Detected by `skills update`; the manifest entry is preserved (with a `detached` flag) so tracking can resume automatically — either when the stored commit becomes reachable again, or via [[safe-reattach]] when the installed content exactly matches a reachable historical commit. Displayed as mergeable or orphan by `skills status`. |
 | **Safe-reattach** | Reattaching a detached or untracked install by searching the pinned branch's history for a commit whose skill content exactly matches the installed copy; on an exact full-content match the baseline is re-pinned to that commit (and the install can then update normally). An installed copy matching no historical commit is a genuine modification and must be resolved via `skills merge`. |

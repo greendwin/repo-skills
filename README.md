@@ -31,14 +31,16 @@ Navigate to a git repository that contains a `skills/` directory and register it
 
 ```bash
 cd /path/to/your-skills-repo
-skills source init
+skills init
 ```
 
 This registers the current repo as a skill source, pinned to the current branch. You can override the name and branch:
 
 ```bash
-skills source init --name my-team --branch main
+skills init --name my-team --branch main
 ```
+
+Adjust a source's settings later with `skills source config`.
 
 ### 2. Check available skills
 
@@ -92,11 +94,11 @@ skills uninstall skill-a skill-b
 
 | Term               | Description                                                                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Source**         | A git repo registered via `skills source init`. Contains a `skills/` directory with one or more skills. Multiple sources can coexist.      |
+| **Source**         | A git repo registered via `skills init` (configurable later via `skills source config`). Contains a `skills/` directory with one or more skills. Multiple sources can coexist. |
 | **Skill**          | A directory containing a `SKILL.md` file inside a source's `skills/` tree. Identified by leaf directory name, regardless of nesting depth. |
 | **Provider**       | An agent platform with a known skills install directory. Claude Code is the built-in default.                                              |
 | **Installed copy** | A skill directory inside a provider's install path, editable by the user.                                                                  |
-| **Pinned branch**  | The branch captured at `source init` time. Merge and write operations target this branch.                                                  |
+| **Pinned branch**  | The branch captured at `skills init` time. Merge and write operations target this branch.                                                  |
 
 ## Commands
 
@@ -105,13 +107,17 @@ skills uninstall skill-a skill-b
 Manage skill sources (git repositories).
 
 ```bash
-skills source init             # register current repo as a source
-skills source init --name foo  # custom source name
-skills source init --branch dev  # pin to a specific branch
+skills init                    # register current repo as a source (first-time setup)
+skills init --name foo         # custom source name
+skills init --branch dev       # pin to a specific branch
+skills source config           # edit this repo's source settings later
+skills source config --branch dev  # re-pin to a different branch
 skills source list             # list all registered sources
 skills source remove <name>    # unregister a source
 skills source remove <name> --force  # remove even if skills are installed
 ```
+
+`skills source init` still works as a hidden alias of `skills source config`.
 
 ### `skills provider`
 
@@ -237,7 +243,7 @@ Configuration files are stored in `~/.config/repo-skills/`:
 
 ### v0.2.0
 
-- Multi-source architecture: register skill sources (`source init/list/remove`), pin to a branch
+- Multi-source architecture: register skill sources (`init`, `source config/list/remove`), pin to a branch
 - Provider management: add, list, and remove agent platforms (Claude Code built-in)
 - Install, update, and uninstall skills across sources and providers
 - `skills merge` — push provider-side edits back to source repos with `--continue`, `--abort`, `--no-commit`

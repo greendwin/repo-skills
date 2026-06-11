@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Annotated, Optional
 
 import typer
-from typer_di import TyperDI
+from typer_di import Depends, TyperDI
 
 from repo_skills.config import (
     REPO_SKILLS_DIR,
@@ -38,34 +39,64 @@ source_app = TyperDI(
 app.add_typer(source_app, name="source")
 
 
-@app.command(name="init", hidden=True)
-def init_redirect() -> None:
-    raise AppError("Did you mean [blue]skills source init[/blue]?")
+_INIT_HELP = (
+    "Set up a skill source in the current repo (first-time setup); "
+    "creates the source if absent or edits it if present."
+)
+_CONFIG_HELP = (
+    "Edit this repo's skill source settings; "
+    "creates the source if absent or edits it if present."
+)
 
 
 @dataclass(frozen=True)
 class _RequestedChanges:
-    """Source settings requested on the command line; ``None`` means "leave as is"."""
-
     name: str | None = None
     branch: str | None = None
     skills_dir: str | None = None
 
 
-@source_app.command(name="init", help="Initialize a skill source in the current repo.")
-def source_init(
-    name: str | None = typer.Option(None, "--name", help="Source name override."),
-    branch: str | None = typer.Option(None, "--branch", help="Pin to this branch."),
-    skills_dir: str | None = typer.Option(
-        None, "--skills-dir", help="Skills root directory (must already exist)."
-    ),
+def _resolve_requested_changes(
+    name: Annotated[
+        Optional[str],
+        typer.Option("--name", help="Source name override."),
+    ] = None,
+    branch: Annotated[
+        Optional[str],
+        typer.Option("--branch", help="Pin to this branch."),
+    ] = None,
+    skills_dir: Annotated[
+        Optional[str],
+        typer.Option(
+            "--skills-dir", help="Skills root directory (must already exist)."
+        ),
+    ] = None,
+) -> _RequestedChanges:
+    return _RequestedChanges(name=name, branch=branch, skills_dir=skills_dir)
+
+
+@app.command(name="init", help=_INIT_HELP)
+def init(
+    requested: _RequestedChanges = Depends(_resolve_requested_changes),
 ) -> None:
-    git = resolve_git_repo(Path.cwd())
-    requested = _RequestedChanges(name=name, branch=branch, skills_dir=skills_dir)
-    _init_or_update_source(git, requested)
+    _init_or_config_source(resolve_git_repo(Path.cwd()), requested)
 
 
-def _init_or_update_source(git: GitRepo, requested: _RequestedChanges) -> None:
+@source_app.command(name="config", help=_CONFIG_HELP)
+def source_config(
+    requested: _RequestedChanges = Depends(_resolve_requested_changes),
+) -> None:
+    _init_or_config_source(resolve_git_repo(Path.cwd()), requested)
+
+
+@source_app.command(name="init", hidden=True, help=_CONFIG_HELP)
+def source_init(
+    requested: _RequestedChanges = Depends(_resolve_requested_changes),
+) -> None:
+    _init_or_config_source(resolve_git_repo(Path.cwd()), requested)
+
+
+def _init_or_config_source(git: GitRepo, requested: _RequestedChanges) -> None:
     if requested.branch is not None and not git.list_branches(requested.branch):
         raise AppError(
             f"Branch {fmt_ident(requested.branch)} not found.",
@@ -133,17 +164,18 @@ def _handle_reinit(
         cfg_changed = True
         changes.append(f"  name: {fmt_data(old_name)} → {fmt_data(effective_name)}")
 
-    for field, requested_value in (
-        ("branch", requested.branch),
-        ("skills_dir", requested.skills_dir),
-    ):
-        current = getattr(config, field)
-        if requested_value is not None and requested_value != current:
-            changes.append(
-                f"  {field}: {fmt_data(current)} → {fmt_data(requested_value)}"
-            )
-            setattr(config, field, requested_value)
-            cfg_changed = True
+    if requested.branch is not None and requested.branch != config.branch:
+        changes.append(
+            f"  branch: {fmt_data(config.branch)} → {fmt_data(requested.branch)}"
+        )
+        config.branch = requested.branch
+        cfg_changed = True
+
+    if requested.skills_dir is not None and requested.skills_dir != config.skills_dir:
+        old_dir, new_dir = fmt_data(config.skills_dir), fmt_data(requested.skills_dir)
+        changes.append(f"  skills_dir: {old_dir} → {new_dir}")
+        config.skills_dir = requested.skills_dir
+        cfg_changed = True
 
     if cfg_changed:
         save_source_config(config, git_root)

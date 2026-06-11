@@ -141,6 +141,8 @@ class TestInstallSourceResolution:
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
 
         assert_words_in_message(result.exception.message, "no sources")
+        assert_words_in_message(result.exception.message, "skills init")
+        assert "source init" not in result.exception.message
 
     def test_auto_resolves_when_skill_in_one_source(
         self, fs: FakeFilesystem, git_repo: Path

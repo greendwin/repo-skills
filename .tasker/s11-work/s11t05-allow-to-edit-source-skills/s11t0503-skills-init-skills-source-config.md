@@ -1,7 +1,7 @@
 ---
 id: s11t0503
 slug: skills-init-skills-source-config
-status: pending
+status: done
 ---
 
 # `skills init` + `skills source config` command surface

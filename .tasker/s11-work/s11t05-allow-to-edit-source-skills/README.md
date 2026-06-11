@@ -1,7 +1,7 @@
 ---
 id: s11t05
 slug: allow-to-edit-source-skills
-status: pending
+status: done
 ---
 
 # Allow to edit `source` skills directory
@@ -32,4 +32,4 @@ Independent of t18/t16. Implementation order: **t18 → t16 → t19**.
 
 - [x] [s11t0501](s11t0501-extract-shared-idempotent-initconfig-implementation.md): Extract shared idempotent init/config implementation
 - [x] [s11t0502](s11t0502-skillsdir-option-with-strict-validation.md): `--skills-dir` option with strict validation
-- [ ] [s11t0503](s11t0503-skills-init-skills-source-config.md): `skills init` + `skills source config` command surface
+- [x] [s11t0503](s11t0503-skills-init-skills-source-config.md): `skills init` + `skills source config` command surface

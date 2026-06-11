@@ -380,6 +380,7 @@ class _SkillEntry:
     commit: str
     detached: bool
     has_baseline: bool
+    user_edited: str | None
 
 
 class SkillSetup:
@@ -406,6 +407,7 @@ class SkillSetup:
         commit: str = "old",
         detached: bool = False,
         has_baseline: bool = True,
+        user_edited: str | None = None,
     ) -> SkillSetup:
         if source_root is None:
             source_root = self._git_repo
@@ -419,6 +421,7 @@ class SkillSetup:
                 commit=commit,
                 detached=detached,
                 has_baseline=has_baseline,
+                user_edited=user_edited,
             )
         )
         return self
@@ -453,6 +456,9 @@ class SkillSetup:
                 baseline=baseline,
                 detached=entry.detached,
             )
+
+            if entry.user_edited is not None:
+                (INSTALL_DIR / entry.name / "SKILL.md").write_text(entry.user_edited)
 
         save_manifest(manifest_skills)
         return hashes

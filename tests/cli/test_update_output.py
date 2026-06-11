@@ -103,19 +103,20 @@ class TestUpdatePerProviderOutput:
     def test_per_provider_lines_with_recovered(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
+        # claude copy matches source (up-to-date); cursor is absent (fresh install).
+        # Both providers are in sync, so the formerly-detached skill recovers.
         SkillSetup(fs, git_repo).add_skill(
             "tdd",
-            source_content="# tdd v2",
-            installed_content="# tdd v1",
+            source_content="# tdd",
+            installed_content="# tdd",
             commit="abc123",
             detached=True,
         ).build()
 
         cursor_dir = Path("/home/user/.cursor/skills")
         register_provider("cursor", str(cursor_dir))
-        install_skill(fs, "tdd", content="# user edit", install_dir=cursor_dir)
 
-        _fake_git.ancestors[("abc123", "main")] = True
+        _fake_git.branch_commits[("skills/tdd", "main")] = "newcommit"
 
         result = assert_invoke("update", "--offline")
 
@@ -124,6 +125,6 @@ class TestUpdatePerProviderOutput:
         cursor_lines = [line for line in lines if "cursor" in line]
         assert len(claude_lines) == 1
         assert len(cursor_lines) == 1
-        assert_words_in_message(claude_lines[0], "claude", "updated")
-        assert_words_in_message(cursor_lines[0], "cursor", "skipped")
+        assert_words_in_message(claude_lines[0], "claude", "up-to-date")
+        assert_words_in_message(cursor_lines[0], "cursor", "updated")
         assert_words_in_message(result.output, "recovered")

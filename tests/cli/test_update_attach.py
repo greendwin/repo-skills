@@ -186,7 +186,7 @@ class TestUpdateAttach:
                 )
             }
         )
-        _fake_git.ancestors[("abc123", "main")] = True
+        _fake_git.branch_commits[("skills/tdd", "main")] = "newcommit"
 
         result = assert_invoke("update", "--offline")
 

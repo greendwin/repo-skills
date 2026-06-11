@@ -1,7 +1,7 @@
 ---
 id: s08t37
 slug: showing-outdated-even-though-its
-status: pending
+status: in-progress
 ---
 
 # Showing 'outdated' even though it's up-to-date
@@ -31,6 +31,24 @@ status: pending
 
 - **Multi-provider: require provider agreement** — the manifest holds one baseline (one commit) per skill, so safe-reattach needs a single content fingerprint: only attempt it when all of a skill's installed copies are byte-identical; divergent copies are treated as modified → `merge`. *Rejected: matching per provider independently (would force splitting the one-baseline-per-skill manifest model).*
 
+## Decisions — baseline invariant hardening
+
+These refine the "advance atomically" decisions above by making the `Baseline(commit, files)` invariant non-negotiable. They supersede s08t3701's edge-case handling for an unresolvable commit ("keep prior behavior"), which copied files while leaving a stale/mismatched baseline — a half-applied update that breaks the invariant.
+
+- **The baseline invariant is sacred** — `Baseline(commit, files)` must always satisfy: the skill's content at `commit` hashes exactly to `files`. A file copy may only be performed when a matching baseline can be constructed; we cannot refresh hashes without a commit, or a commit without matching hashes.
+
+- **Resolve the verified commit before copying** — `_update_skill` resolves `latest_commit` up front, before the provider copy loop, so the side-effecting copy never runs unless a valid baseline is constructible. *Rejected: copying first then rolling back when the commit turns out unresolvable (fragile restore of files we should never have touched).*
+
+- **Committed-but-dirty source → error** — when the source working tree matches no commit for the skill's path (uncommitted/extra/missing files) or no commit touches the path, this is an actionable per-skill error: `resolve_verified_commit` raises `AppError`, which in `update` propagates to the existing failed / `render_error` path, leaving files AND baseline untouched (skill not re-registered). *Rejected: silently keeping the old baseline after the copy (the original half-apply bug).*
+
+- **Precise verification detail via a result object** — `verify_commit_content` returns a `CommitVerification` dataclass (`matches: bool`, `reason: str | None` display message, `props: dict[str, str]` extras) instead of a bare `bool`. It reports only the FIRST offending file (`not present in commit` / `missing file` / `file differs` / `untracked file`) so the friendly message stays compact, with `props` (offending file, repo path) passed straight into `AppError(props=...)`. *Rejected: bare bool (no actionable detail); encoding ok/fail in a `str | None` (state in a primitive — the authoritative flag is `matches`).*
+
+- **`resolve_verified_commit` raises instead of returning `None`** — install and update both want the error; `_install._resolve_commit` simplifies to a direct call (its hand-built message removed). `_update_attach` keeps its intentional "try-or-skip" probe by catching the `AppError` and returning `None`, logging it via `console.debug_traceback()` so the reason still surfaces under `--debug`.
+
+- **Source unavailable (pull failed) → skip, not error** — when a skill's source repo/branch is absent because `_pull_sources` hit a pull failure (already reported once at source level), short-circuit before the copy loop and report `skipped (source unavailable)` — never `up-to-date`, and never a redundant per-skill error. Files and baseline are left untouched (invariant-safe). *Rejected: a per-skill `AppError` for every skill of the failed source (N duplicate errors burying the one real cause).*
+
+- **`_advance_baseline` simplification** — with resolve-before-copy plus the raise, the `in_sync and latest_commit is None` branch becomes unreachable; remove it.
+
 ## Documentation captured
 
 - `CONTEXT.md` — rewrote **Baseline** (now commit + per-file hashes, advanced atomically on content-sync), updated **Detached skill** (names both recovery paths), added **Safe-reattach**.
@@ -44,8 +62,11 @@ None.
 
 - Changing `skills status`'s commit-based outdated detection — the fix is entirely on the `update` side.
 - Changing `skills merge` — modified / divergent / no-match installs continue to route to the existing merge flow unchanged.
+- Enumerating *all* offending files in a verification failure — only the first is reported (compact message); broaden later if too coarse.
 
 ## Subtasks
 
-- [ ] [s08t3701](s08t3701-update-advances-the-baseline-atomically.md): Update advances the baseline atomically on content-sync
+- [~] [s08t3701](s08t3701-update-advances-the-baseline-atomically.md): **review** Update advances the baseline atomically on content-sync
 - [ ] [s08t3702](s08t3702-safereattach-by-content-search.md): Safe-reattach by content search
+- [ ] [s08t3703](s08t3703-commitverification-result-object-pinpoints-the.md): CommitVerification result object pinpoints the first content mismatch
+- [ ] [s08t3704](s08t3704-enforce-the-baseline-invariant-in.md): Enforce the baseline invariant in update and install

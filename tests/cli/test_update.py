@@ -47,6 +47,178 @@ class TestUpdateSynced:
         assert manifest.skills["tdd"].baseline.files != hashes["tdd"]
 
 
+class TestUpdateAdvancesBaseline:
+    def test_advances_commit_so_status_is_synced(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        SkillSetup(fs, git_repo).add_skill(
+            "tdd",
+            commit="old",
+            source_content="# tdd v2",
+            installed_content="# tdd v1",
+        ).build()
+        _fake_git.branch_commits[("skills/tdd", "main")] = "newcommit"
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "tdd", "updated")
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].baseline is not None
+        assert manifest.skills["tdd"].baseline.commit == "newcommit"
+
+        status = assert_invoke("status")
+        assert "outdated" not in status.output.lower()
+
+    def test_up_to_date_skill_advances_commit(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        SkillSetup(fs, git_repo).add_skill(
+            "tdd",
+            commit="old",
+            source_content="# tdd",
+            installed_content="# tdd",
+        ).build()
+        _fake_git.branch_commits[("skills/tdd", "main")] = "newcommit"
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "tdd", "up-to-date")
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].baseline is not None
+        assert manifest.skills["tdd"].baseline.commit == "newcommit"
+
+        status = assert_invoke("status")
+        assert "outdated" not in status.output.lower()
+
+    def test_unresolvable_commit_does_not_advance(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        hashes = (
+            SkillSetup(fs, git_repo)
+            .add_skill(
+                "tdd",
+                commit="old",
+                source_content="# tdd v2",
+                installed_content="# tdd v1",
+            )
+            .build()
+        )
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "tdd", "updated")
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].baseline is not None
+        assert manifest.skills["tdd"].baseline.commit == "old"
+        # files refreshed to source hashes even when commit unresolvable
+        assert manifest.skills["tdd"].baseline.files != hashes["tdd"]
+
+    def test_skipped_skill_leaves_baseline_untouched(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        hashes = (
+            SkillSetup(fs, git_repo)
+            .add_skill(
+                "tdd",
+                commit="old",
+                source_content="# tdd v2",
+                installed_content="# tdd v1",
+                user_edited="# user edit",
+            )
+            .build()
+        )
+        _fake_git.branch_commits[("skills/tdd", "main")] = "newcommit"
+        _fake_git.ancestors[("old", "main")] = True
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "tdd", "skipped")
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].baseline is not None
+        assert manifest.skills["tdd"].baseline.commit == "old"
+        assert manifest.skills["tdd"].baseline.files == hashes["tdd"]
+        assert manifest.skills["tdd"].detached is False
+
+        status = assert_invoke("status")
+        assert_words_in_message(status.output, "modified", "outdated")
+
+    def test_unmodified_outdated_skill_is_never_detached(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        SkillSetup(fs, git_repo).add_skill(
+            "tdd",
+            commit="old",
+            source_content="# tdd",
+            installed_content="# tdd",
+        ).build()
+        _fake_git.branch_commits[("skills/tdd", "main")] = "new456"
+        # old baseline commit is unreachable from the pinned branch tip
+        _fake_git.ancestors[("old", "main")] = False
+
+        result = assert_invoke("update")
+
+        assert "detached" not in result.output.lower()
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].detached is False
+        assert manifest.skills["tdd"].baseline is not None
+        assert manifest.skills["tdd"].baseline.commit == "new456"
+
+    def test_unverified_latest_commit_does_not_advance(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        hashes = (
+            SkillSetup(fs, git_repo)
+            .add_skill(
+                "tdd",
+                commit="old",
+                source_content="# tdd v2",
+                installed_content="# tdd v1",
+            )
+            .build()
+        )
+        _fake_git.branch_commits[("skills/tdd", "main")] = "new456"
+        # latest commit exists but its content cannot be verified
+        _fake_git.verified["skills/tdd"] = False
+
+        assert_invoke("update")
+
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].baseline is not None
+        # unverified commit is never written as the baseline
+        assert manifest.skills["tdd"].baseline.commit == "old"
+        # files still refreshed to source hashes
+        assert manifest.skills["tdd"].baseline.files != hashes["tdd"]
+        assert manifest.skills["tdd"].detached is False
+
+    def test_multi_provider_skipped_leaves_baseline_untouched(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        hashes = (
+            SkillSetup(fs, git_repo)
+            .add_skill(
+                "tdd",
+                commit="old",
+                source_content="# tdd v2",
+                installed_content="# tdd v1",
+                user_edited="# user edit",
+            )
+            .build()
+        )
+        cursor_dir = Path("/home/user/.cursor/skills")
+        register_provider("cursor", str(cursor_dir))
+        # cursor copy is in sync (matches source); claude copy is user-edited
+        fs.create_file(cursor_dir / "tdd" / "SKILL.md", contents="# tdd v2")
+        _fake_git.branch_commits[("skills/tdd", "main")] = "newcommit"
+        _fake_git.ancestors[("old", "main")] = True
+
+        assert_invoke("update", "--offline")
+
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].baseline is not None
+        assert manifest.skills["tdd"].baseline.commit == "old"
+        assert manifest.skills["tdd"].baseline.files == hashes["tdd"]
+
+
 class TestUpdateSkipsModified:
     def test_skips_when_installed_copy_was_edited(
         self, fs: FakeFilesystem, git_repo: Path

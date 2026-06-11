@@ -182,8 +182,7 @@ class TestUpdatePullFailure:
     ) -> None:
         fake_a = FakeGitRepo(root=SOURCE_A_ROOT, pull_fails=True)
         fake_b = FakeGitRepo(root=SOURCE_B_ROOT)
-        fake_a.ancestors[("c-alpha", "main")] = True
-        fake_b.ancestors[("c-bravo", "main")] = True
+        fake_b.branch_commits[("skills/bravo", "main")] = "newcommit"
         fake_git_manager.install(fake_a)
         fake_git_manager.install(fake_b)
 

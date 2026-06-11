@@ -1,7 +1,7 @@
 ---
 id: s08t3701
 slug: update-advances-the-baseline-atomically
-status: pending
+status: in-review
 ---
 
 # Update advances the baseline atomically on content-sync

@@ -1,7 +1,7 @@
 ---
 id: s08
 slug: bugs
-status: pending
+status: in-progress
 ---
 
 # Bugs
@@ -40,4 +40,4 @@ Fix TODO-documented bugs and issues across the CLI.
 - [x] [s08t34](s08t34-relocate-skillmd-frontmatter-reader-and.md): Relocate SKILL.md frontmatter reader and dedup SKILL.md constant
 - [x] [s08t35](s08t35-harden-skillmd-description-parsing-for.md): Harden SKILL.md description parsing for quoted and block-scalar values
 - [ ] [s08t36](s08t36-allow-to-merge-a-skill.md): Allow to merge a skill to *another* skill source
-- [ ] [s08t37](s08t37-showing-outdated-even-though-its/): Showing 'outdated' even though it's up-to-date
+- [~] [s08t37](s08t37-showing-outdated-even-though-its/): Showing 'outdated' even though it's up-to-date

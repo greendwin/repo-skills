@@ -52,6 +52,18 @@ def detect_skills_dir(git_root: Path) -> Path | None:
     return common
 
 
+def resolve_skills_dir(git_root: Path, skills_dir: str) -> Path | None:
+    candidate = Path(skills_dir)
+    if candidate.is_absolute():
+        return None
+
+    target = (git_root / candidate).resolve()
+    if git_root.resolve() not in target.parents or not target.is_dir():
+        return None
+
+    return target
+
+
 def find_repo_skills_dir(
     cwd: Path | None = None,
     manifest_path: Path | None = None,

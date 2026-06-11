@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import typer
@@ -17,7 +18,7 @@ from repo_skills.config import (
     save_source_registry,
 )
 from repo_skills.console import console, fmt_data, fmt_ident, fmt_path
-from repo_skills.discovery import detect_skills_dir
+from repo_skills.discovery import detect_skills_dir, resolve_skills_dir
 from repo_skills.errors import AppError, NoopError
 from repo_skills.git import GitRepo
 from repo_skills.utils import rel_posix, write_text
@@ -42,30 +43,60 @@ def init_redirect() -> None:
     raise AppError("Did you mean [blue]skills source init[/blue]?")
 
 
+@dataclass(frozen=True)
+class _RequestedChanges:
+    """Source settings requested on the command line; ``None`` means "leave as is"."""
+
+    name: str | None = None
+    branch: str | None = None
+    skills_dir: str | None = None
+
+
 @source_app.command(name="init", help="Initialize a skill source in the current repo.")
 def source_init(
     name: str | None = typer.Option(None, "--name", help="Source name override."),
     branch: str | None = typer.Option(None, "--branch", help="Pin to this branch."),
+    skills_dir: str | None = typer.Option(
+        None, "--skills-dir", help="Skills root directory (must already exist)."
+    ),
 ) -> None:
     git = resolve_git_repo(Path.cwd())
-    if branch is not None and not git.list_branches(branch):
-        raise AppError(f"Branch {fmt_ident(branch)} not found.")
+    requested = _RequestedChanges(name=name, branch=branch, skills_dir=skills_dir)
+    _init_or_update_source(git, requested)
+
+
+def _init_or_update_source(git: GitRepo, requested: _RequestedChanges) -> None:
+    if requested.branch is not None and not git.list_branches(requested.branch):
+        raise AppError(
+            f"Branch {fmt_ident(requested.branch)} not found.",
+            props={"repo": fmt_path(git.root)},
+        )
+
+    if requested.skills_dir is not None:
+        resolved = resolve_skills_dir(git.root, requested.skills_dir)
+        if resolved is None:
+            raise AppError(
+                f"Skills dir {fmt_data(requested.skills_dir)} not found in repo.",
+                props={"repo": fmt_path(git.root)},
+            )
+        requested = replace(requested, skills_dir=rel_posix(resolved, git.root))
 
     cfg = load_source_config(git.root)
     if cfg is None:
-        _handle_fresh_init(git, name=name, branch=branch)
+        _handle_fresh_init(git, requested)
         return
 
-    _handle_reinit(git.root, cfg, name=name, branch=branch)
+    _handle_reinit(git.root, cfg, requested)
 
 
-def _handle_fresh_init(git: GitRepo, *, name: str | None, branch: str | None) -> None:
-    source_name = name or git.root.name
-    effective_branch = branch or git.current_branch()
+def _handle_fresh_init(git: GitRepo, requested: _RequestedChanges) -> None:
+    source_name = requested.name or git.root.name
+    effective_branch = requested.branch or git.current_branch()
 
-    skills_dir = detect_skills_dir(git.root)
-    if skills_dir is not None:
-        rel_skills = rel_posix(skills_dir, git.root)
+    if requested.skills_dir is not None:
+        rel_skills = requested.skills_dir
+    elif (detected := detect_skills_dir(git.root)) is not None:
+        rel_skills = rel_posix(detected, git.root)
     else:
         rel_skills = DEFAULT_SKILLS_DIR
         write_text(git.root / rel_skills / GIT_KEEP_FILE, "")
@@ -88,12 +119,10 @@ def _handle_fresh_init(git: GitRepo, *, name: str | None, branch: str | None) ->
 
 
 def _handle_reinit(
-    git_root: Path, config: SourceConfig, *, name: str | None, branch: str | None
+    git_root: Path, config: SourceConfig, requested: _RequestedChanges
 ) -> None:
     old_name = config.name
-    old_branch = config.branch
-
-    effective_name = name if name is not None else old_name
+    effective_name = requested.name if requested.name is not None else old_name
     is_rename = effective_name != old_name
     cfg_changed = False
     changes: list[str] = []
@@ -104,10 +133,17 @@ def _handle_reinit(
         cfg_changed = True
         changes.append(f"  name: {fmt_data(old_name)} → {fmt_data(effective_name)}")
 
-    if branch is not None and branch != config.branch:
-        changes.append(f"  branch: {fmt_data(old_branch)} → {fmt_data(branch)}")
-        config.branch = branch
-        cfg_changed = True
+    for field, requested_value in (
+        ("branch", requested.branch),
+        ("skills_dir", requested.skills_dir),
+    ):
+        current = getattr(config, field)
+        if requested_value is not None and requested_value != current:
+            changes.append(
+                f"  {field}: {fmt_data(current)} → {fmt_data(requested_value)}"
+            )
+            setattr(config, field, requested_value)
+            cfg_changed = True
 
     if cfg_changed:
         save_source_config(config, git_root)

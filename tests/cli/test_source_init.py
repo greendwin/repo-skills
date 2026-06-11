@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -273,6 +274,177 @@ class TestSourceInitAutoDetect:
         source_cfg = load_source_config(git_repo)
         assert source_cfg is not None
         assert source_cfg.skills_dir == "skills"
+
+
+class TestSourceInitSkillsDir:
+    def test_fresh_init_with_skills_dir_uses_it_and_skips_bootstrap(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        fs.create_dir(git_repo / "my-skills")
+
+        result = assert_invoke("source", "init", "--skills-dir", "my-skills")
+
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
+        assert source_cfg.name == "my-project"
+        assert source_cfg.skills_dir == "my-skills"
+        assert source_cfg.branch == "main"
+
+        assert not (git_repo / "skills").exists()
+        assert not (git_repo / "my-skills" / ".gitkeep").exists()
+
+        registry = load_source_registry()
+        assert "my-project" in registry.sources
+
+        gitignore = git_repo / REPO_SKILLS_DIR / ".gitignore"
+        assert gitignore.exists()
+        assert "*" in gitignore.read_text()
+
+        assert_words_in_message(result.output, "initialized", "my-project")
+
+    def test_skills_dir_overrides_auto_detection(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        create_repo_skill(fs, "tdd", root=git_repo / "auto-skills")
+        fs.create_dir(git_repo / "chosen-skills")
+
+        assert_invoke("source", "init", "--skills-dir", "chosen-skills")
+
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
+        assert source_cfg.skills_dir == "chosen-skills"
+
+    def test_skills_dir_is_normalized_before_storing(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        fs.create_dir(git_repo / "my-skills")
+
+        assert_invoke("source", "init", "--skills-dir", "./my-skills/")
+
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
+        assert source_cfg.skills_dir == "my-skills"
+
+    def test_explicit_default_name_still_requires_existing_dir(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        result = assert_invoke(
+            "source", "init", "--skills-dir", "skills", expect_error=True
+        )
+
+        assert_words_in_message(
+            result.exception.message, "Skills dir", "skills", "not found"
+        )
+        assert not (git_repo / "skills").exists()
+
+    def test_reinit_with_skills_dir_updates_value_and_emits_change(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        assert_invoke("source", "init")
+        fs.create_dir(git_repo / "new-skills")
+
+        result = assert_invoke("source", "init", "--skills-dir", "new-skills")
+
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
+        assert source_cfg.skills_dir == "new-skills"
+
+        assert_words_in_message(
+            result.output, "updated", "skills_dir", "skills", "new-skills"
+        )
+
+    def test_reinit_with_name_branch_and_skills_dir_together(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        assert_invoke("source", "init", "--name", "old-name")
+
+        fs.create_dir(git_repo / "new-skills")
+        _fake_git.branches = ["develop"]
+
+        result = assert_invoke(
+            "source",
+            "init",
+            "--name",
+            "new-name",
+            "--branch",
+            "develop",
+            "--skills-dir",
+            "new-skills",
+        )
+
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
+        assert source_cfg.name == "new-name"
+        assert source_cfg.branch == "develop"
+        assert source_cfg.skills_dir == "new-skills"
+
+        registry = load_source_registry()
+        assert "new-name" in registry.sources
+        assert "old-name" not in registry.sources
+
+        assert_words_in_message(result.output, "updated", "new-name")
+        assert "name:" in result.output.lower()
+        assert "branch:" in result.output.lower()
+        assert "skills_dir:" in result.output.lower()
+
+    def test_reinit_with_same_skills_dir_emits_no_change(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        assert_invoke("source", "init")
+
+        result = assert_invoke("source", "init", "--skills-dir", "skills")
+
+        assert_words_in_message(result.output, "already initialized", "my-project")
+        assert "skills_dir:" not in result.output
+
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
+        assert source_cfg.skills_dir == "skills"
+
+    @pytest.mark.parametrize(
+        ("skills_dir", "setup", "extra_words"),
+        [
+            pytest.param("missing", lambda fs: None, ("missing",), id="non-existent"),
+            pytest.param(
+                "/elsewhere",
+                lambda fs: fs.create_dir("/elsewhere"),
+                ("/elsewhere",),
+                id="absolute",
+            ),
+            pytest.param(
+                "../sibling",
+                lambda fs: fs.create_dir("/repos/sibling"),
+                ("../sibling",),
+                id="escaping",
+            ),
+            pytest.param(
+                "not-a-dir.txt",
+                lambda fs: fs.create_file(
+                    SOURCE_REPO_ROOT / "not-a-dir.txt", contents=""
+                ),
+                ("not-a-dir.txt",),
+                id="path-is-file",
+            ),
+            pytest.param(".", lambda fs: None, (), id="repo-root"),
+        ],
+    )
+    @pytest.mark.usefixtures("git_repo")
+    def test_error_invalid_skills_dir(
+        self,
+        fs: FakeFilesystem,
+        skills_dir: str,
+        setup: Callable[[FakeFilesystem], object],
+        extra_words: tuple[str, ...],
+    ) -> None:
+        setup(fs)
+
+        result = assert_invoke(
+            "source", "init", "--skills-dir", skills_dir, expect_error=True
+        )
+
+        assert_words_in_message(
+            result.exception.message, "Skills dir", "not found", *extra_words
+        )
 
 
 class TestSourceInitBrokenSourceRegistry:

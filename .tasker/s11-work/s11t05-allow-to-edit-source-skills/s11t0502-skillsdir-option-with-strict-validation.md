@@ -1,7 +1,7 @@
 ---
 id: s11t0502
 slug: skillsdir-option-with-strict-validation
-status: pending
+status: done
 ---
 
 # `--skills-dir` option with strict validation

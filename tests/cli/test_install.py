@@ -136,7 +136,8 @@ class TestInstallMultipleSkills:
 
 
 class TestInstallSourceResolution:
-    def test_errors_when_no_sources(self, fs: FakeFilesystem, git_repo: Path) -> None:
+    @pytest.mark.usefixtures("fs", "git_repo")
+    def test_errors_when_no_sources(self) -> None:
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
 
         assert_words_in_message(result.exception.message, "no sources")
@@ -192,9 +193,8 @@ class TestInstallSourceResolution:
 
         assert_words_in_message(result.output, "installed", "tdd")
 
-    def test_errors_when_source_not_found(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_errors_when_source_not_found(self, git_repo: Path) -> None:
         register_source(git_repo)
 
         result = assert_invoke(

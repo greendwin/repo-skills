@@ -1,7 +1,7 @@
 ---
 id: s11t0501
 slug: extract-shared-idempotent-initconfig-implementation
-status: pending
+status: done
 ---
 
 # Extract shared idempotent init/config implementation

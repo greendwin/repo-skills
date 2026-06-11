@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from repo_skills.config import (
     load_provider_registry,
     save_provider_registry,
@@ -13,7 +15,8 @@ from tests.cli.helper import (
 
 
 class TestProviderAdd:
-    def test_adds_new_provider(self, git_repo: Path) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_adds_new_provider(self) -> None:
         result = assert_invoke(
             "provider", "add", "cursor", "--install-dir", "/home/user/.cursor/skills"
         )
@@ -23,7 +26,8 @@ class TestProviderAdd:
         assert reg.require("cursor").install_path == Path("/home/user/.cursor/skills")
         assert_words_in_message(result.output, "added", "cursor")
 
-    def test_error_when_duplicate_name(self, git_repo: Path) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_error_when_duplicate_name(self) -> None:
         reg = load_provider_registry()
         reg.register("cursor", "/home/user/.cursor/skills")
         save_provider_registry(reg)
@@ -39,7 +43,8 @@ class TestProviderAdd:
 
         assert_words_in_message(result.exception.message, "already exists")
 
-    def test_error_when_adding_builtin_name(self, git_repo: Path) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_error_when_adding_builtin_name(self) -> None:
         result = assert_invoke(
             "provider",
             "add",

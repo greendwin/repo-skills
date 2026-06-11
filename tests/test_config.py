@@ -66,16 +66,14 @@ class TestGetBranch:
 
 
 class TestDefaultConfigDir:
-    def test_returns_xdg_when_set(
-        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_returns_xdg_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("XDG_CONFIG_HOME", "/custom/config")
         result = default_config_path()
         assert result == Path("/custom/config/repo-skills")
 
-    def test_falls_back_to_dot_config(
-        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_falls_back_to_dot_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         monkeypatch.setenv("HOME", "/home/testuser")
         result = default_config_path()
@@ -86,11 +84,13 @@ class TestDefaultConfigDir:
 
 
 class TestSourceConfig:
-    def test_load_missing_returns_none(self, fs: FakeFilesystem) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_load_missing_returns_none(self) -> None:
         cfg = load_source_config(Path("/nonexistent"))
         assert cfg is None
 
-    def test_save_and_load_round_trip(self, fs: FakeFilesystem) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_save_and_load_round_trip(self) -> None:
         repo_root = Path("/repo")
         cfg = SourceConfig(name="my-repo", skills_dir="custom/skills", branch="develop")
         save_source_config(cfg, repo_root)
@@ -110,7 +110,8 @@ class TestSourceConfig:
         assert cfg is not None
         assert cfg.branch == ""
 
-    def test_save_creates_parent_dirs(self, fs: FakeFilesystem) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_save_creates_parent_dirs(self) -> None:
         repo_root = Path("/deep/nested/dir")
         cfg = SourceConfig(name="test", skills_dir="skills")
         save_source_config(cfg, repo_root)
@@ -121,16 +122,18 @@ class TestSourceConfig:
 
 
 class TestProviderRegistry:
+    @pytest.mark.usefixtures("fs")
     def test_load_missing_file_creates_with_default_provider(
-        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("HOME", "/home/user")
         reg = load_provider_registry()
         assert reg.is_registered("claude")
         assert reg.require("claude").install_path == Path("/home/user/.claude/skills")
 
+    @pytest.mark.usefixtures("fs")
     def test_load_existing_v1_does_not_reinject_defaults(
-        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("HOME", "/home/user")
         reg = load_provider_registry()
@@ -140,17 +143,15 @@ class TestProviderRegistry:
         reloaded = load_provider_registry()
         assert not reloaded.is_registered("claude")
 
-    def test_install_path_resolves_tilde(
-        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_install_path_resolves_tilde(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("HOME", "/home/user")
         reg = ProviderRegistry()
         prov = reg.register("test", "~/my-skills")
         assert prov.install_path == Path("/home/user/my-skills")
 
-    def test_save_and_load_round_trip(
-        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_save_and_load_round_trip(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("HOME", "/home/user")
         reg = load_provider_registry()
         reg.register("cursor", "/opt/cursor/skills")
@@ -218,11 +219,13 @@ class TestProviderRegistry:
 
 
 class TestSourceRegistry:
-    def test_empty_registry_has_no_sources(self, fs: FakeFilesystem) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_empty_registry_has_no_sources(self) -> None:
         reg = SourceRegistry()
         assert reg.sources == {}
 
-    def test_save_and_load_round_trip(self, fs: FakeFilesystem) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_save_and_load_round_trip(self) -> None:
         reg = SourceRegistry()
         reg.register_source("my-repo", Path("/home/user/projects/my-repo"))
         reg.register_source("other", Path("/opt/other"))
@@ -240,11 +243,13 @@ class TestSourceRegistry:
 
 
 class TestSkillManifest:
-    def test_load_missing_file_returns_empty(self, fs: FakeFilesystem) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_load_missing_file_returns_empty(self) -> None:
         manifest = load_skill_manifest()
         assert dict(manifest.skills) == {}
 
-    def test_save_and_load_round_trip(self, fs: FakeFilesystem) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_save_and_load_round_trip(self) -> None:
         manifest = SkillManifest()
         manifest.register_skill(
             "tdd",
@@ -264,9 +269,8 @@ class TestSkillManifest:
         assert entry.baseline.commit == "abc1234"
         assert entry.baseline.files == {"SKILL.md": "sha256:deadbeef"}
 
-    def test_save_and_load_round_trip_with_none_baseline(
-        self, fs: FakeFilesystem
-    ) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_save_and_load_round_trip_with_none_baseline(self) -> None:
         manifest = SkillManifest()
         manifest.register_skill("tdd", source_name="my-repo", baseline=None)
         save_skill_manifest(manifest)
@@ -604,5 +608,6 @@ class TestReadSkillDescription:
         skill_dir = _write_skill(fs, contents)
         assert read_skill_description(skill_dir) == expected
 
-    def test_returns_none_when_file_missing(self, fs: FakeFilesystem) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_returns_none_when_file_missing(self) -> None:
         assert read_skill_description(Path("/skills/missing")) is None

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import Baseline, InstalledSkill
@@ -56,7 +57,8 @@ class TestUninstall:
         assert not (INSTALL_DIR / "tdd").exists()
         assert not (cursor_dir / "tdd").exists()
 
-    def test_errors_when_not_in_manifest(self, fs: FakeFilesystem) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_errors_when_not_in_manifest(self) -> None:
         save_manifest({})
 
         result = assert_invoke("uninstall", "nope", expect_error=True)

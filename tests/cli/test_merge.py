@@ -919,9 +919,8 @@ class TestMergeOrphan:
         assert entry.baseline.commit == "orphan-commit-123"
         assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "my-new-skill")
 
-    def test_errors_when_not_in_any_provider(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_errors_when_not_in_any_provider(self, git_repo: Path) -> None:
         register_source(git_repo)
 
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)

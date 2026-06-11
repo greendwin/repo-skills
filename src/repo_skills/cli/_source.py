@@ -19,6 +19,7 @@ from repo_skills.config import (
 from repo_skills.console import console, fmt_data, fmt_ident, fmt_path
 from repo_skills.discovery import detect_skills_dir
 from repo_skills.errors import AppError, NoopError
+from repo_skills.git import GitRepo
 from repo_skills.utils import rel_posix, write_text
 
 from ._app import app
@@ -47,15 +48,18 @@ def source_init(
     branch: str | None = typer.Option(None, "--branch", help="Pin to this branch."),
 ) -> None:
     git = resolve_git_repo(Path.cwd())
-
     if branch is not None and not git.list_branches(branch):
         raise AppError(f"Branch {fmt_ident(branch)} not found.")
 
     cfg = load_source_config(git.root)
-    if cfg is not None:
-        _handle_reinit(git.root, cfg, name=name, branch=branch)
+    if cfg is None:
+        _handle_fresh_init(git, name=name, branch=branch)
         return
 
+    _handle_reinit(git.root, cfg, name=name, branch=branch)
+
+
+def _handle_fresh_init(git: GitRepo, *, name: str | None, branch: str | None) -> None:
     source_name = name or git.root.name
     effective_branch = branch or git.current_branch()
 
@@ -74,7 +78,7 @@ def source_init(
     save_source_config(config, git.root)
 
     gitignore = git.root / REPO_SKILLS_DIR / GIT_IGNORE_FILE
-    gitignore.write_text("*\n")
+    write_text(gitignore, "*\n")
 
     registry = load_source_registry()
     registry.register_source(source_name, git.root)
@@ -118,17 +122,15 @@ def _handle_reinit(
     save_source_registry(registry)
 
     source_label = fmt_ident(effective_name)
-    if changes:
-        if was_registered:
-            console.print(f"Updated source {source_label}.")
-        else:
-            console.print(f"Registered source {source_label}.")
-        for change in changes:
-            console.print(change)
-    elif not was_registered:
+    if not was_registered:
         console.print(f"Registered source {source_label}.")
+    elif changes:
+        console.print(f"Updated source {source_label}.")
     else:
         console.print(f"Source {source_label} already initialized.")
+
+    for change in changes:
+        console.print(change)
 
 
 def _rename_installed_skills(old_name: str, new_name: str) -> None:

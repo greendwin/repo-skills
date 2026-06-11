@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pyfakefs.fake_filesystem import FakeFilesystem
+import pytest
 
 from repo_skills.config import (
     InstalledSkill,
@@ -19,9 +19,8 @@ from tests.cli.helper import (
 
 
 class TestSourceRemove:
-    def test_removes_source_from_registry(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_removes_source_from_registry(self, git_repo: Path) -> None:
         register_source(git_repo, name="alpha")
         registry = load_source_registry()
         registry.register_source("beta", Path("/repos/beta"))
@@ -35,14 +34,14 @@ class TestSourceRemove:
 
         assert_words_in_message(result.output, "removed", "alpha")
 
-    def test_error_when_source_not_found(self, git_repo: Path) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_error_when_source_not_found(self) -> None:
         result = assert_invoke("source", "remove", "nonexistent", expect_error=True)
 
         assert_words_in_message(result.exception.message, "not found")
 
-    def test_blocked_when_skills_installed(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_blocked_when_skills_installed(self, git_repo: Path) -> None:
         register_source(git_repo, name="alpha")
 
         save_manifest({"tdd": InstalledSkill(source="alpha")})
@@ -54,9 +53,8 @@ class TestSourceRemove:
         updated = load_source_registry()
         assert "alpha" in updated.sources
 
-    def test_force_removes_source_and_clears_manifest(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_force_removes_source_and_clears_manifest(self, git_repo: Path) -> None:
         register_source(git_repo, name="alpha")
 
         save_manifest(
@@ -75,9 +73,8 @@ class TestSourceRemove:
         assert "tdd" not in manifest.skills
         assert "review" not in manifest.skills
 
-    def test_force_without_installed_skills(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_force_without_installed_skills(self, git_repo: Path) -> None:
         register_source(git_repo, name="alpha")
 
         result = assert_invoke("source", "remove", "alpha", "--force")
@@ -86,7 +83,8 @@ class TestSourceRemove:
         assert "alpha" not in updated.sources
         assert_words_in_message(result.output, "removed", "alpha")
 
-    def test_force_output_message(self, fs: FakeFilesystem, git_repo: Path) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_force_output_message(self, git_repo: Path) -> None:
         register_source(git_repo, name="alpha")
 
         save_manifest(

@@ -73,8 +73,9 @@ class TestSourceInitBranch:
         assert source_cfg is not None
         assert source_cfg.branch == "develop"
 
+    @pytest.mark.usefixtures("git_repo")
     def test_branch_flag_errors_when_branch_missing(
-        self, git_repo: Path, _fake_git: FakeGitRepo
+        self, _fake_git: FakeGitRepo
     ) -> None:
         _fake_git.branches = []
         result = assert_invoke(
@@ -275,7 +276,8 @@ class TestSourceInitAutoDetect:
 
 
 class TestSourceInitBrokenSourceRegistry:
-    def test_broken_registry_warns_and_initializes(self, git_repo: Path) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_broken_registry_warns_and_initializes(self) -> None:
         source_path = default_config_path(SOURCES_REGISTRY_FILE)
         source_path.parent.mkdir(parents=True, exist_ok=True)
         source_path.write_text("{{{invalid")

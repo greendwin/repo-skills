@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+import pytest
 
 from repo_skills.config import (
     load_provider_registry,
@@ -13,12 +13,14 @@ from tests.cli.helper import (
 
 
 class TestProviderList:
-    def test_shows_default_provider(self, git_repo: Path) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_shows_default_provider(self) -> None:
         result = assert_invoke("provider", "list")
 
         assert_words_in_message(result.output, "claude")
 
-    def test_shows_all_providers(self, git_repo: Path) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_shows_all_providers(self) -> None:
         reg = load_provider_registry()
         reg.register("cursor", "/home/user/.cursor/skills")
         save_provider_registry(reg)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
@@ -96,9 +97,8 @@ class TestStatusModified:
 
 
 class TestStatusMissing:
-    def test_shows_missing_when_not_on_disk(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    @pytest.mark.usefixtures("fs")
+    def test_shows_missing_when_not_on_disk(self, git_repo: Path) -> None:
         register_source(git_repo)
         save_manifest(
             {
@@ -352,16 +352,16 @@ class TestStatusAvailableExcludesInstalled:
 
 
 class TestStatusEmpty:
-    def test_shows_no_skills_message(self, fs: FakeFilesystem, git_repo: Path) -> None:
+    @pytest.mark.usefixtures("fs", "git_repo")
+    def test_shows_no_skills_message(self) -> None:
         result = assert_invoke("status")
 
         assert_words_in_message(result.output, "no skills found")
 
 
 class TestStatusSourceNotFound:
-    def test_shows_warning_for_missing_source_repo(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    @pytest.mark.usefixtures("fs", "git_repo")
+    def test_shows_warning_for_missing_source_repo(self) -> None:
         registry = SourceRegistry()
         registry.register_source("gone-project", Path("/repos/gone-project"))
         save_source_registry(registry)
@@ -372,9 +372,8 @@ class TestStatusSourceNotFound:
 
 
 class TestStatusBrokenSource:
-    def test_shows_broken_for_source_without_config(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_shows_broken_for_source_without_config(self, fs: FakeFilesystem) -> None:
         broken_path = Path("/repos/broken-project")
         fs.create_dir(broken_path / ".git")
 
@@ -386,9 +385,8 @@ class TestStatusBrokenSource:
 
         assert_words_in_message(result.output, "broken-project", "broken")
 
-    def test_broken_source_label_uses_parentheses(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_broken_source_label_uses_parentheses(self, fs: FakeFilesystem) -> None:
         broken_path = Path("/repos/broken-project")
         fs.create_dir(broken_path / ".git")
 
@@ -400,9 +398,8 @@ class TestStatusBrokenSource:
 
         assert "(broken)" in result.output.lower()
 
-    def test_broken_source_shows_installed_skills(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_broken_source_shows_installed_skills(self, fs: FakeFilesystem) -> None:
         broken_path = Path("/repos/broken-project")
         fs.create_dir(broken_path / ".git")
 
@@ -668,8 +665,9 @@ class TestStatusBranchSwitch:
         assert_words_in_message(result.output, "review", "available")
         assert_words_in_message(result.output, "dirty", "feature-x", "release")
 
+    @pytest.mark.usefixtures("fs")
     def test_dirty_repo_wrong_branch_missing_skill_not_shown(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         register_source(git_repo, branch="release")
         _fake_git.branch = "feature-x"
@@ -764,9 +762,8 @@ class TestStatusBrokenManifest:
 
 
 class TestStatusBrokenSourceRegistry:
-    def test_broken_source_registry_shows_warning(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    @pytest.mark.usefixtures("fs", "git_repo")
+    def test_broken_source_registry_shows_warning(self) -> None:
         source_path = default_config_path(SOURCES_REGISTRY_FILE)
         source_path.parent.mkdir(parents=True, exist_ok=True)
         source_path.write_text("{{{invalid json")
@@ -861,9 +858,8 @@ class TestStatusOutdated:
 
         assert "outdated" not in result.output.lower()
 
-    def test_no_outdated_when_broken_source(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
-    ) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_no_outdated_when_broken_source(self, fs: FakeFilesystem) -> None:
         broken_path = Path("/repos/broken-project")
         fs.create_dir(broken_path / ".git")
         registry = SourceRegistry()
@@ -884,7 +880,7 @@ class TestStatusOutdated:
         assert "outdated" not in result.output.lower()
 
     def test_no_outdated_when_get_skill_commit_empty(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         _setup_installed_skill(fs, git_repo)
 

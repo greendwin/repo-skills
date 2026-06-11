@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+import pytest
 
 from repo_skills.config import (
     load_provider_registry,
@@ -13,7 +13,8 @@ from tests.cli.helper import (
 
 
 class TestProviderRemove:
-    def test_removes_provider(self, git_repo: Path) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_removes_provider(self) -> None:
         reg = load_provider_registry()
         reg.register("cursor", "/home/user/.cursor/skills")
         save_provider_registry(reg)
@@ -24,12 +25,14 @@ class TestProviderRemove:
         assert not updated.is_registered("cursor")
         assert_words_in_message(result.output, "removed", "cursor")
 
-    def test_error_when_not_found(self, git_repo: Path) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_error_when_not_found(self) -> None:
         result = assert_invoke("provider", "remove", "nonexistent", expect_error=True)
 
         assert_words_in_message(result.exception.message, "not found")
 
-    def test_allows_removing_claude(self, git_repo: Path) -> None:
+    @pytest.mark.usefixtures("git_repo")
+    def test_allows_removing_claude(self) -> None:
         result = assert_invoke("provider", "remove", "claude")
 
         updated = load_provider_registry()

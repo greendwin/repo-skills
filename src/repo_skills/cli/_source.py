@@ -255,7 +255,8 @@ def source_remove(
     source_registry = load_source_registry()
 
     try:
-        repo_root = source_registry.get_source(source_name, load_skills=False).repo_root
+        # TODO: do we need this `get_source_no_skills` invokation at all?
+        repo_root = source_registry.get_source_no_skills(source_name).repo_root
     except SourceBrokenError:
         # silently ignore broken sources, just remove them from the registry
         repo_root = source_registry.sources[source_name].repo_root

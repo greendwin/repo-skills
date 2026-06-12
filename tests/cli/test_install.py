@@ -273,14 +273,16 @@ class TestInstallGitValidation:
 
         assert_words_in_message(result.output, "installed", "tdd")
 
-    def test_allows_dirty_repo_on_correct_branch(
+    def test_errors_when_dirty_on_correct_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _fake_git.clean = False
         register_source(git_repo)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
-        assert_invoke("install", "tdd", "--offline")
+        result = assert_invoke("install", "tdd", "--offline", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "uncommitted changes")
 
     def test_errors_when_dirty_and_wrong_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

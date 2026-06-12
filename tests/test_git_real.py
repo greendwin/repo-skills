@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from repo_skills.errors import AppError
+from repo_skills.git import CommitVerificationError
 from repo_skills.git_real import RealGitRepo
 
 
@@ -151,7 +152,7 @@ def test_verify_commit_content_matches(repo: Path) -> None:
     commit = _git(repo, "log", "-1", "--format=%H")
 
     git = RealGitRepo(repo)
-    assert git.verify_commit_content(commit, "skills/tdd") is True
+    git.verify_commit_content(commit, "skills/tdd")  # matches: does not raise
 
 
 def test_is_ancestor_true_when_reachable(repo: Path) -> None:
@@ -206,7 +207,126 @@ def test_verify_commit_content_mismatch(repo: Path) -> None:
     (skills_dir / "SKILL.md").write_text("# tdd modified")
 
     git = RealGitRepo(repo)
-    assert git.verify_commit_content(commit, "skills/tdd") is False
+    with pytest.raises(CommitVerificationError) as exc:
+        git.verify_commit_content(commit, "skills/tdd")
+    assert exc.value.reason == "file 'skills/tdd/SKILL.md' differs"
+    assert exc.value.file == "skills/tdd/SKILL.md"
+    assert exc.value.repo == str(repo)
+
+
+def test_verify_commit_content_missing_file(repo: Path) -> None:
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("# tdd")
+    (skills_dir / "extra.md").write_text("# extra")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "add tdd")
+
+    commit = _git(repo, "log", "-1", "--format=%H")
+
+    (skills_dir / "extra.md").unlink()
+
+    git = RealGitRepo(repo)
+    with pytest.raises(CommitVerificationError) as exc:
+        git.verify_commit_content(commit, "skills/tdd")
+    assert exc.value.reason == "missing file 'skills/tdd/extra.md'"
+    assert exc.value.file == "skills/tdd/extra.md"
+    assert exc.value.repo == str(repo)
+
+
+def test_verify_commit_content_untracked_extra_file(repo: Path) -> None:
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("# tdd")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "add tdd")
+
+    commit = _git(repo, "log", "-1", "--format=%H")
+
+    (skills_dir / "extra.md").write_text("# extra")
+
+    git = RealGitRepo(repo)
+    with pytest.raises(CommitVerificationError) as exc:
+        git.verify_commit_content(commit, "skills/tdd")
+    assert exc.value.reason == "untracked file 'skills/tdd/extra.md'"
+    assert exc.value.file == "skills/tdd/extra.md"
+    assert exc.value.repo == str(repo)
+
+
+def test_verify_commit_content_reports_first_differing_file(repo: Path) -> None:
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "a.md").write_text("# a")
+    (skills_dir / "b.md").write_text("# b")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "add tdd")
+
+    commit = _git(repo, "log", "-1", "--format=%H")
+    first = _git(
+        repo, "ls-tree", "-r", "--name-only", commit, "skills/tdd"
+    ).splitlines()[0]
+
+    (skills_dir / "a.md").write_text("# a modified")
+    (skills_dir / "b.md").write_text("# b modified")
+
+    git = RealGitRepo(repo)
+    with pytest.raises(CommitVerificationError) as exc:
+        git.verify_commit_content(commit, "skills/tdd")
+    assert exc.value.reason == f"file '{first}' differs"
+    assert exc.value.file == first
+
+
+def test_verify_commit_content_missing_wins_over_untracked(repo: Path) -> None:
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "a.md").write_text("# a")
+    (skills_dir / "b.md").write_text("# b")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "add tdd")
+
+    commit = _git(repo, "log", "-1", "--format=%H")
+
+    (skills_dir / "a.md").unlink()
+    (skills_dir / "extra.md").write_text("# extra")
+
+    git = RealGitRepo(repo)
+    with pytest.raises(CommitVerificationError) as exc:
+        git.verify_commit_content(commit, "skills/tdd")
+    assert exc.value.reason == "missing file 'skills/tdd/a.md'"
+    assert exc.value.file == "skills/tdd/a.md"
+
+
+def test_verify_commit_content_reports_first_untracked_file(repo: Path) -> None:
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("# tdd")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "add tdd")
+
+    commit = _git(repo, "log", "-1", "--format=%H")
+
+    # Create the lexically-later file first to rule out discovery ordering.
+    (skills_dir / "z-extra.md").write_text("# z")
+    (skills_dir / "a-extra.md").write_text("# a")
+
+    git = RealGitRepo(repo)
+    with pytest.raises(CommitVerificationError) as exc:
+        git.verify_commit_content(commit, "skills/tdd")
+    assert exc.value.reason == "untracked file 'skills/tdd/a-extra.md'"
+    assert exc.value.file == "skills/tdd/a-extra.md"
+
+
+def test_verify_commit_content_not_present(repo: Path) -> None:
+    commit = _git(repo, "log", "-1", "--format=%H")
+
+    git = RealGitRepo(repo)
+    with pytest.raises(CommitVerificationError) as exc:
+        git.verify_commit_content(commit, "skills/missing")
+    assert exc.value.reason is not None
+    assert "skills/missing" in exc.value.reason
+    assert "not present" in exc.value.reason
+    assert exc.value.file is None
+    assert exc.value.repo == str(repo)
 
 
 def test_get_file_at_commit_normalizes_crlf(repo: Path) -> None:
@@ -239,7 +359,7 @@ def test_verify_commit_content_crlf_matches_lf(repo: Path) -> None:
     (skills_dir / "SKILL.md").write_bytes(b"line1\r\nline2\r\n")
 
     git = RealGitRepo(repo)
-    assert git.verify_commit_content(commit, "skills/tdd") is True
+    git.verify_commit_content(commit, "skills/tdd")  # matches: does not raise
 
 
 def test_verify_commit_content_committed_crlf_matches_local_crlf(
@@ -268,4 +388,4 @@ def test_verify_commit_content_committed_crlf_matches_local_crlf(
         return result.replace(b"\n", b"\r\n")
 
     monkeypatch.setattr(git, "_run_bytes", _crlf_run_bytes)
-    assert git.verify_commit_content(commit, "skills/tdd") is True
+    git.verify_commit_content(commit, "skills/tdd")  # matches: does not raise

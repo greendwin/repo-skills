@@ -19,10 +19,10 @@ from repo_skills.config import (
 from repo_skills.config._source import SourceSkill
 from repo_skills.console import console, fmt_command, fmt_data, fmt_ident
 from repo_skills.errors import AppError
-from repo_skills.git import GitRepo, ensure_on_branch, resolve_verified_commit
+from repo_skills.git import SyncedRepo, resolve_verified_commit
 
 from ._app import app
-from ._deps import resolve_git_repo
+from ._deps import prepare_source_repo
 
 
 @app.command(help="Install a skill from a source.")
@@ -99,12 +99,9 @@ def _install_one(
 ) -> None:
     source = _resolve_source(source_registry, from_source, skill_name=skill_name)
 
-    git = resolve_git_repo(source.repo_root)
-    ensure_on_branch(
-        git,
-        source.get_branch(git),
+    repo = prepare_source_repo(
+        source,
         pull=not offline and source.name not in pulled_sources,
-        require_clean=False,  # if pull is not needed, it's ok to have dirty repo
     )
     pulled_sources.add(source.name)
 
@@ -116,7 +113,7 @@ def _install_one(
         )
 
     src = source.repo_root / skill.rel_path
-    commit = _resolve_commit(git, skill)
+    commit = _resolve_commit(repo, skill)
 
     provider_registry = load_provider_registry()
 
@@ -147,15 +144,15 @@ def _resolve_source(
         if source_name not in source_registry.sources:
             raise AppError(f"Source {fmt_ident(source_name)} not found.")
 
-        return source_registry.get_source(source_name, load_skills=True)
+        return source_registry.load_source(source_name)
 
     if len(source_registry.sources) == 1:
         only = next(iter(source_registry.sources))
-        return source_registry.get_source(only, load_skills=True)
+        return source_registry.load_source(only)
 
     matches: list[Source] = []
     for sn in source_registry.sources:
-        candidate = source_registry.get_source(sn, load_skills=True)
+        candidate = source_registry.load_source(sn)
         if skill_name in candidate.skills:
             matches.append(candidate)
 
@@ -171,12 +168,13 @@ def _resolve_source(
     )
 
 
-def _resolve_commit(git: GitRepo, skill: SourceSkill) -> str:
-    commit = resolve_verified_commit(git, skill.rel_path)
+def _resolve_commit(repo: SyncedRepo, skill: SourceSkill) -> str:
+    commit = resolve_verified_commit(repo, skill.rel_path)
     if commit is None:
+        # TODO: TBD: use helper func for commit printing (ugly `[:8]`)
         raise AppError(
             f"Skill {fmt_ident(skill.name)} content does not match "
-            f"commit {fmt_data(git.get_skill_commit(skill.rel_path)[:8])}."
+            f"commit {fmt_data(repo.git.get_skill_commit(skill.rel_path)[:8])}."
         )
 
     return commit

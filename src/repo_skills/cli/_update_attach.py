@@ -16,9 +16,7 @@ from repo_skills.config import (
 )
 from repo_skills.console import console, fmt_data, fmt_ident
 from repo_skills.errors import AppError
-from repo_skills.git import resolve_verified_commit
-
-from ._deps import resolve_git_repo
+from repo_skills.git import SyncedRepo, resolve_verified_commit
 
 
 @dataclass(frozen=True)
@@ -73,10 +71,7 @@ def eligible_attach_sources(
             continue
 
         try:
-            sources[source_name] = source_registry.get_source(
-                source_name,
-                load_skills=True,
-            )
+            sources[source_name] = source_registry.load_source(source_name)
         except AppError as ex:
             console.debug_traceback()
 
@@ -115,11 +110,11 @@ def find_attach_candidates(
 
 def attach_skills(
     candidates: list[AttachCandidate],
-    source_branches: dict[str, str],
+    source_repos: dict[str, SyncedRepo],
 ) -> dict[str, InstalledSkill]:
     attached: dict[str, InstalledSkill] = {}
     for candidate in candidates:
-        entry = _attach_skill(candidate, source_branches)
+        entry = _attach_skill(candidate, source_repos)
         if entry is not None:
             attached[candidate.skill_name] = entry
 
@@ -128,7 +123,7 @@ def attach_skills(
 
 def _attach_skill(
     candidate: AttachCandidate,
-    source_branches: dict[str, str],
+    source_repos: dict[str, SyncedRepo],
 ) -> InstalledSkill | None:
     matches: list[_SourceMatch] = []
     for source_name, source in candidate.sources.items():
@@ -154,14 +149,17 @@ def _attach_skill(
     match = matches[0]
     skill = match.source.skills[candidate.skill_name]
 
-    git = resolve_git_repo(match.source.repo_root)
-    branch = source_branches.get(match.source_name, "")
-    commit = resolve_verified_commit(git, skill.rel_path, branch=branch)
+    repo = source_repos.get(match.source_name)
+    if repo is None:
+        # cannot attach skill if its source is not fully synced
+        return None
+
+    commit = resolve_verified_commit(repo, skill.rel_path)
     if commit is None:
         return None
 
     console.print(
-        f"Attached skill {fmt_data(candidate.skill_name)} "
+        f"Attached skill {fmt_ident(candidate.skill_name)} "
         f"(matched source {fmt_data(match.source_name)})"
     )
     return InstalledSkill(

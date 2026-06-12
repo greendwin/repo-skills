@@ -23,6 +23,7 @@ from repo_skills.config import (
     save_source_registry,
 )
 from repo_skills.errors import AppError, FileNotInCommitError, NoopError
+from repo_skills.git import CommitVerificationError
 
 
 @dataclass
@@ -109,12 +110,16 @@ class FakeGitRepo:
         return self.clean
 
     def get_skill_commit(self, rel_path: str, *, branch: str = "") -> str:
-        if branch:
-            return self.branch_commits.get((rel_path, branch), "")
+        if branch and (rel_path, branch) in self.branch_commits:
+            return self.branch_commits[(rel_path, branch)]
+
+        # once a branch is checked out, its skill commit matches HEAD's;
+        # fall back to the branch-agnostic `commits` map
         return self.commits.get(rel_path, "")
 
-    def verify_commit_content(self, commit: str, rel_path: str) -> bool:
-        return self.verified.get(rel_path, True)
+    def verify_commit_content(self, commit: str, rel_path: str) -> None:
+        if not self.verified.get(rel_path, True):
+            raise CommitVerificationError("content mismatch", repo_path=str(self.root))
 
     def log_commits(self, path: str, max_count: int) -> list[str]:
         return self.commit_logs.get(path, [])[:max_count]

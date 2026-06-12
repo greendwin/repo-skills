@@ -137,7 +137,7 @@ def _scan_sources(
         try:
             # try to load source without skills parsing,
             # to make sure it's not broken
-            source = source_registry.get_source(source_name, load_skills=False)
+            source = source_registry.get_source_no_skills(source_name)
         except SourceBrokenError:
             available_by_source[source_name] = []
             all_source_skills[source_name] = set()
@@ -157,7 +157,7 @@ def _scan_sources(
             )
 
         # load skills on correct branch
-        source = source_registry.get_source(source_name, load_skills=True)
+        source = source_registry.load_source(source_name)
         loaded_sources[source_name] = source
 
         all_source_skills[source_name] = set(source.skills)
@@ -282,7 +282,7 @@ def _mergeable_providers(untracked: list[UntrackedEntry]) -> dict[str, list[str]
 
 def _render_source_section(view: _StatusView, source_name: str) -> None:
     try:
-        _ = view.source_registry.get_source(source_name, load_skills=False)
+        _ = view.source_registry.get_source_no_skills(source_name)
         console.print(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
     except SourceBrokenError:
         console.print(

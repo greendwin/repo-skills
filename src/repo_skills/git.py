@@ -1,10 +1,31 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .console import fmt_path
+from .console import console, fmt_path
 from .errors import AppError
+
+
+@dataclass
+class SyncedRepo:
+    git: GitRepo
+    branch: str
+
+
+class CommitVerificationError(AppError):
+    def __init__(
+        self, reason: str, *, repo_path: str, file_path: str | None = None
+    ) -> None:
+        props = {"repo": fmt_path(repo_path)}
+        if file_path is not None:
+            props["file"] = fmt_path(file_path)
+        super().__init__(reason, props=props)
+
+        self.reason = reason
+        self.repo = repo_path
+        self.file = file_path
 
 
 class GitRepo(Protocol):
@@ -15,7 +36,7 @@ class GitRepo(Protocol):
     def current_branch(self) -> str: ...
     def is_clean(self) -> bool: ...
     def get_skill_commit(self, rel_path: str, *, branch: str = "") -> str: ...
-    def verify_commit_content(self, commit: str, rel_path: str) -> bool: ...
+    def verify_commit_content(self, commit: str, rel_path: str) -> None: ...
     def log_commits(self, path: str, max_count: int) -> list[str]: ...
     def get_file_at_commit(self, commit: str, path: str) -> bytes: ...
     def create_branch(self, name: str, from_commit: str) -> None: ...
@@ -39,16 +60,19 @@ class GitRepo(Protocol):
 
 
 def resolve_verified_commit(
-    git: GitRepo,
+    repo: SyncedRepo,
     rel_path: str,
-    *,
-    branch: str = "",
 ) -> str | None:
-    commit = git.get_skill_commit(rel_path, branch=branch)
+    commit = repo.git.get_skill_commit(rel_path, branch=repo.branch)
     if not commit:
         return None
-    if not git.verify_commit_content(commit, rel_path):
+
+    try:
+        repo.git.verify_commit_content(commit, rel_path)
+    except CommitVerificationError:
+        console.debug_traceback()
         return None
+
     return commit
 
 
@@ -58,8 +82,11 @@ def ensure_on_branch(
     *,
     pull: bool = False,
     require_clean: bool = True,
-) -> None:
+) -> SyncedRepo:
     needs_checkout = git.current_branch() != branch
+
+    # TODO: it's ok if it's not clean outside skill dirs and this does
+    #       not prevent us from changing branch
     if require_clean or needs_checkout or pull:
         if not git.is_clean():
             raise AppError(
@@ -72,3 +99,5 @@ def ensure_on_branch(
 
     if pull:
         git.pull()
+
+    return SyncedRepo(git, branch)

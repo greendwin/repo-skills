@@ -33,7 +33,7 @@ from repo_skills.git import GitRepo, ensure_on_branch
 from repo_skills.utils import normalize_line_endings
 
 from ._app import app
-from ._deps import resolve_git_repo
+from ._deps import prepare_source_repo, resolve_git_repo
 
 MERGE_BRANCH_PREFIX = "skill-merge/"
 
@@ -135,7 +135,7 @@ def _merge_start(
 
     source = None
     if to_source:
-        source = ctx.source_registry.get_source(to_source, load_skills=True)
+        source = ctx.source_registry.load_source(to_source)
 
     installed = ctx.manifest.skills.get(skill_name)
     if installed is None:
@@ -166,7 +166,7 @@ def _merge_start(
         )
         save_skill_manifest(ctx.manifest)
 
-    source = ctx.source_registry.get_source(installed.source, load_skills=True)
+    source = ctx.source_registry.load_source(installed.source)
     skill = source.get_skill(skill_name)
 
     git = resolve_git_repo(source.repo_root)
@@ -365,7 +365,7 @@ def _resolve_untracked(
 
     matches: list[tuple[Source, SourceSkill]] = []
     for source_name in ctx.source_registry.sources:
-        source = ctx.source_registry.get_source(source_name, load_skills=True)
+        source = ctx.source_registry.load_source(source_name)
         skill = source.skills.get(skill_name)
         if skill is not None:
             matches.append((source, skill))
@@ -398,12 +398,9 @@ def _merge_orphan(
     if source is None:
         source = _resolve_orphan_source(ctx.source_registry)
 
-    git = resolve_git_repo(source.repo_root)
-    target_branch = source.get_branch(git)
-    ensure_on_branch(git, target_branch, pull=not offline)
+    repo = prepare_source_repo(source, pull=not offline)
 
     provider = _find_skill_in_provider(ctx.provider_registry, provider, skill_name)
-
     installed_path = provider.install_path / skill_name
     skill_rel_path = f"{source.config.skills_dir}/{skill_name}"
     skill_dst = source.repo_root / skill_rel_path
@@ -416,13 +413,15 @@ def _merge_orphan(
     subject = f"feat: add `{skill_name}` skill"
     description = read_skill_description(installed_path)
     message = f"{subject}\n\n{description}" if description else subject
-    git.commit_all(message)
+    repo.git.commit_all(message)
+
+    commit = repo.git.get_skill_commit(skill_rel_path)
 
     manifest = load_skill_manifest()
     manifest.register_skill(
         skill_name,
         source_name=source.name,
-        baseline=make_baseline(git.get_skill_commit(skill_rel_path), skill_dst),
+        baseline=make_baseline(commit, skill_dst),
     )
     save_skill_manifest(manifest)
 
@@ -660,7 +659,7 @@ def _finalize(
     merge_branch = f"{MERGE_BRANCH_PREFIX}{provider.name}/{skill_name}"
 
     installed = ctx.manifest.skills[skill_name]
-    source = ctx.source_registry.get_source(installed.source, load_skills=True)
+    source = ctx.source_registry.load_source(installed.source)
     skill = source.get_skill(skill_name)
 
     target_branch = source.get_branch(git)
@@ -712,7 +711,7 @@ def _merge_abort(ctx: ConfigContext) -> None:
         git.merge_abort()
 
     intalled = ctx.manifest.skills[skill_name]
-    source = ctx.source_registry.get_source(intalled.source, load_skills=False)
+    source = ctx.source_registry.get_source_no_skills(intalled.source)
 
     target_branch = source.get_branch(git)
     if git.current_branch() != target_branch:
@@ -847,4 +846,4 @@ def _resolve_orphan_source(source_registry: SourceRegistry) -> Source:
         )
 
     source_name = list(source_registry.sources)[0]
-    return source_registry.get_source(source_name, load_skills=False)
+    return source_registry.get_source_no_skills(source_name)

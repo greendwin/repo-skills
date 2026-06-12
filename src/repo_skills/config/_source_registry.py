@@ -36,20 +36,29 @@ class SourceRegistry:
     def sources(self) -> Mapping[str, SourceEntry]:
         return self._entries
 
-    def get_source(self, name: str, *, load_skills: bool) -> Source:
+    def load_source(self, name: str) -> Source:
+        entry = self._get_entry(name)
+        if entry.source is not None:
+            return entry.source
+
+        entry.source = load_source(entry.repo_root, load_skills=True)
+        return entry.source
+
+    def get_source_no_skills(self, name: str) -> Source:
+        entry = self._get_entry(name)
+        if entry.source is not None:
+            # already loaded
+            return entry.source
+
+        # don't cache source without loaded skills
+        return load_source(entry.repo_root, load_skills=False)
+
+    def _get_entry(self, name: str) -> SourceEntry:
         entry = self._entries.get(name)
         if entry is None:
             raise AppError(f"Source {fmt_ident(name)} not found.")
 
-        if entry.source is not None:
-            return entry.source
-
-        if not load_skills:
-            # don't cache source without loaded skills
-            return load_source(entry.repo_root, load_skills=False)
-
-        entry.source = load_source(entry.repo_root, load_skills=True)
-        return entry.source
+        return entry
 
     def register_source(self, name: str, repo_root: Path) -> None:
         self._entries[name] = SourceEntry(repo_root)

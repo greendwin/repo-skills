@@ -16,16 +16,16 @@ status: pending
 
 - **Resolve the verified commit before copying.** Move `latest_commit` resolution to the top of `_update_skill`, before the provider loop, so the side-effecting copy never runs unless the commit is verified. *Rejected: copy-then-rollback (fragile restore of files we should never have touched).*
 
-- **`resolve_verified_commit` raises instead of returning `None`.** It now raises `AppError(reason, props=...)` built from the `CommitVerification` result (and a separate "no commit found for `<rel_path>`" when `get_skill_commit` is empty). Callers update accordingly:
+- **`resolve_verified_commit` propagates instead of returning `None`.** s08t3703 already made `verify_commit_content` raise `CommitVerificationError(AppError)` (carrying `reason`/`file`/`repo`); `resolve_verified_commit` currently catches it and returns `None` to preserve its contract. This slice **removes that catch** so the exception propagates, and additionally raises a `"no commit found for <rel_path>"` `AppError` when `get_skill_commit` is empty. Callers update accordingly:
   - `_install._resolve_commit` → simplifies to a direct call; its hand-built "content does not match commit" message is removed.
   - `_update.py` → the raise propagates through `_run_updates`' existing `try/except` (`[red]failed[/red]` + `render_error`), so the skill is **not** re-registered: files AND baseline stay as they were.
-  - `_update_attach._attach_one` → keeps its intentional "try-or-skip" probe: wrap the call in `try/except AppError`, call `console.debug_traceback()` (so the reason surfaces under `--debug`), and `return None`. Mirrors the existing `except AppError: console.debug_traceback()` pattern at `_update_attach.py` (broken-source skip).
+  - `_update_attach._attach_skill` → keeps its intentional "try-or-skip" probe: wrap the call in `try/except AppError`, call `console.debug_traceback()` (so the reason surfaces under `--debug`), and `return None`. Mirrors the existing `except AppError: console.debug_traceback()` pattern at `_update_attach.py` (broken-source skip).
 
 - **Committed-but-dirty source → error.** Source working tree matches no commit for the path (uncommitted/extra/missing files) or no commit touches the path → the raised `AppError` aborts that skill. *Rejected: silently keeping the old baseline after the copy (the original half-apply bug).*
 
-- **Source unavailable (pull failed) → skip, not error.** When `source_repos`/`source_branches` lack the skill's source (because `_pull_sources` hit a pull failure, already reported once at source level), short-circuit `_update_skill` before the copy loop and report `[yellow]skipped[/yellow] [dim](source unavailable)[/dim]` via a skill-level flag on `_SkillReport`. Baseline/files untouched; `register_skill` is called with the unchanged baseline/detached (or skipped). Never `up-to-date`, never a redundant per-skill error. *Rejected: a per-skill `AppError` for every skill of the failed source (N duplicate errors burying the one real cause).*
+- **Source unavailable (pull failed) → skip, not error.** When the `pulled: dict[str, PulledSource]` map lacks the skill's source (because `_pull_sources` hit a pull failure, already reported once at source level), short-circuit `_update_skill` before the copy loop and report `[yellow]skipped[/yellow] [dim](source unavailable)[/dim]` via a skill-level flag on `_SkillReport`. Baseline/files untouched; `register_skill` is called with the unchanged baseline/detached (or skipped). Never `up-to-date`, never a redundant per-skill error. *Rejected: a per-skill `AppError` for every skill of the failed source (N duplicate errors burying the one real cause).*
 
-- **`_advance_baseline` simplification.** With resolve-before-copy + raise, the `in_sync and latest_commit is None` branch is unreachable (an in-sync skill always has a verified commit or we raised earlier). Remove that branch.
+- **`_advance_to_latest` simplification.** With resolve-before-copy + raise, the unresolvable-`latest_commit` branch in `_advance_to_latest` (refresh hashes / keep old commit) is unreachable for the pulled case — an in-sync skill of a pulled source always has a verified commit or we raised earlier. The only remaining `latest_commit is None` path is the source-unavailable short-circuit above, which no longer reaches `_advance_to_latest`. Drop the keep-old-commit branch.
 
 ## Edge cases
 
@@ -38,8 +38,8 @@ status: pending
 
 ## Key files
 
-- `src/repo_skills/git.py` — `resolve_verified_commit` raises `AppError` (no-commit and content-mismatch cases) using the `CommitVerification.reason`/`.props` from s08t3703; no longer returns `None`.
-- `src/repo_skills/cli/_update.py` — reorder `_update_skill` (resolve before the provider loop); add the source-unavailable short-circuit + skill-level flag on `_SkillReport`; add the `skipped (source unavailable)` label and render it in `_print_skill_report`; simplify `_advance_baseline`.
+- `src/repo_skills/git.py` — `resolve_verified_commit` stops catching `CommitVerificationError` (lets it propagate) and raises a `"no commit found"` `AppError` when `get_skill_commit` is empty; no longer returns `None` on mismatch. The `CommitVerificationError(AppError)` itself already exists from s08t3703.
+- `src/repo_skills/cli/_update.py` — reorder `_update_skill` (resolve before the provider loop); add the source-unavailable short-circuit + skill-level flag on `_SkillReport`; add the `skipped (source unavailable)` label and render it in `_print_skill_report`; simplify `_advance_to_latest`.
 - `src/repo_skills/cli/_install.py` — simplify `_resolve_commit` to a direct call (drop the manual message).
 - `src/repo_skills/cli/_update_attach.py` — wrap `resolve_verified_commit` in `try/except AppError: console.debug_traceback(); return None`.
 - `tests/cli/helper.py`, `tests/cli/test_update*.py`, `tests/cli/test_install.py`, `tests/cli/test_update_attach.py` — update expectations: dirty-source now errors (not silently keeps old baseline); add source-unavailable skip coverage; attach still skips quietly.

@@ -3,7 +3,7 @@ from __future__ import annotations
 import shutil
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Annotated, NamedTuple, Optional
+from typing import Annotated, Optional
 
 import typer
 
@@ -19,7 +19,7 @@ from repo_skills.config import (
 )
 from repo_skills.console import console, fmt_data, fmt_ident
 from repo_skills.errors import AppError, NoopError, render_error
-from repo_skills.git import GitRepo, ensure_on_branch, resolve_verified_commit
+from repo_skills.git import SyncedRepo, ensure_on_branch, resolve_verified_commit
 
 from ._app import app
 from ._deps import resolve_git_repo
@@ -36,6 +36,13 @@ class _Status(Enum):
     UPDATED = auto()
     SKIPPED = auto()
     UP_TO_DATE = auto()
+
+
+class _Detach(Enum):
+    NONE = auto()  # attached before and after this update
+    RECOVERED = auto()  # was detached, content-sync reattached it
+    NEWLY_DETACHED = auto()  # was attached, baseline commit fell off history
+    STILL_DETACHED = auto()  # remained detached (could not be reattached)
 
 
 _SYNCED_STATES = {_Status.UPDATED, _Status.UP_TO_DATE}
@@ -82,16 +89,16 @@ def update(
             )
         raise NoopError("[dim]No skills installed.[/dim]")
 
-    source_branches, source_repos = _pull_sources(
+    source_repos = _sync_source_repos(
         ctx.source_registry,
         targets.pull_sources,
         offline=offline,
     )
 
-    attached = attach_skills(targets.attach_candidates, source_branches)
+    attached = attach_skills(targets.attach_candidates, source_repos)
     skills_to_update = {**targets.skills, **attached}
 
-    _run_updates(ctx, skills_to_update, source_branches, source_repos)
+    _run_updates(ctx, skills_to_update, source_repos)
     save_skill_manifest(ctx.manifest)
 
 
@@ -145,7 +152,7 @@ def _validate_filters(
             raise AppError(f"Skill {fmt_ident(name)} is not installed.")
 
     for name in source_names or ():
-        _ = source_registry.get_source(name, load_skills=False)
+        _ = source_registry.get_source_no_skills(name)
 
 
 def _select_skills(
@@ -169,24 +176,19 @@ def _select_skills(
     return skills
 
 
-class _PulledSources(NamedTuple):
-    source_branches: dict[str, str]
-    repos: dict[str, GitRepo]
-
-
-def _pull_sources(
+def _sync_source_repos(
     source_registry: SourceRegistry,
     needed_sources: frozenset[str],
     *,
     offline: bool,
-) -> _PulledSources:
-    source_branches: dict[str, str] = {}
-    source_repos: dict[str, GitRepo] = {}
+) -> dict[str, SyncedRepo]:
+    source_repos = {}
     for source_name in sorted(source_registry.sources):
         if source_name not in needed_sources:
             continue
 
-        registered = source_registry.get_source(source_name, load_skills=False)
+        # note: request source without skills to avoid scanning them on wrong branch
+        registered = source_registry.get_source_no_skills(source_name)
         git = resolve_git_repo(registered.repo_root)
         branch = registered.get_branch(git)
 
@@ -194,98 +196,41 @@ def _pull_sources(
             f"Pulling {fmt_data(source_name)}", tty_subprocess=not offline
         ):
             try:
-                ensure_on_branch(git, branch, pull=not offline)
+                repo = ensure_on_branch(git, branch, pull=not offline)
             except Exception as ex:
                 console.finish("[red]failed[/red]")
                 render_error(ex)
                 continue
 
-            source_branches[source_name] = branch
-            source_repos[source_name] = git
+            source_repos[source_name] = repo
             if offline:
                 console.finish("[dim]skipped[/dim]")
             else:
                 console.finish("[green]done[/green]")
 
-    return _PulledSources(source_branches, source_repos)
+    return source_repos
 
 
 @dataclass
 class _SkillReport:
     provider_statuses: dict[str, _Status]
     baseline: Baseline | None
-    detached: bool
-    recovered: bool = False
-    newly_detached: bool = False
+    transition: _Detach
 
-
-@dataclass(frozen=True)
-class _BaselineDecision:
-    baseline: Baseline | None
-    detached: bool
-    recovered: bool
-    newly_detached: bool
-
-
-def _advance_baseline(
-    entry: InstalledSkill,
-    *,
-    in_sync: bool,
-    latest_commit: str | None,
-    source_hashes: dict[str, str],
-    reachable: bool,
-) -> _BaselineDecision:
-    if in_sync:
-        if latest_commit is not None:
-            return _BaselineDecision(
-                baseline=Baseline(commit=latest_commit, files=source_hashes),
-                detached=False,
-                recovered=entry.detached,
-                newly_detached=False,
-            )
-
-        # latest commit unresolvable: refresh hashes, keep old commit
-        baseline = (
-            Baseline(commit=entry.baseline.commit, files=source_hashes)
-            if entry.baseline
-            else None
-        )
-        return _BaselineDecision(
-            baseline=baseline,
-            detached=entry.detached,
-            recovered=False,
-            newly_detached=False,
-        )
-
-    # skipped: baseline untouched
-    if entry.baseline and not reachable and not entry.detached:
-        return _BaselineDecision(
-            baseline=entry.baseline,
-            detached=True,
-            recovered=False,
-            newly_detached=True,
-        )
-
-    return _BaselineDecision(
-        baseline=entry.baseline,
-        detached=entry.detached,
-        recovered=False,
-        newly_detached=False,
-    )
+    @property
+    def detached(self) -> bool:
+        return self.transition in (_Detach.NEWLY_DETACHED, _Detach.STILL_DETACHED)
 
 
 def _run_updates(
     ctx: ConfigContext,
     skills: dict[str, InstalledSkill],
-    source_branches: dict[str, str],
-    source_repos: dict[str, GitRepo],
+    source_repos: dict[str, SyncedRepo],
 ) -> None:
     for skill_name, entry in skills.items():
         with console.running(f"Updating {fmt_data(skill_name)}"):
             try:
-                report = _update_skill(
-                    ctx, skill_name, entry, source_branches, source_repos
-                )
+                report = _update_skill(ctx, skill_name, entry, source_repos)
             except Exception as ex:
                 console.finish("[red]failed[/red]")
                 render_error(ex)
@@ -305,15 +250,15 @@ def _update_skill(
     ctx: ConfigContext,
     skill_name: str,
     entry: InstalledSkill,
-    source_branches: dict[str, str],
-    source_repos: dict[str, GitRepo],
+    source_repos: dict[str, SyncedRepo],
 ) -> _SkillReport:
     if entry.source not in ctx.source_registry.sources:
         raise AppError(f"Source {fmt_ident(entry.source)} not found")
 
-    source = ctx.source_registry.get_source(entry.source, load_skills=True)
+    source = ctx.source_registry.load_source(entry.source)
     skill = source.skills.get(skill_name)
     if skill is None:
+        # TODO: should we mark this skill as detached instead of reporing an error?
         raise AppError("Skill removed from source")
 
     src = source.repo_root / skill.rel_path
@@ -347,34 +292,54 @@ def _update_skill(
         provider_statuses[provider.name] = _Status.UPDATED
 
     in_sync = all(s in _SYNCED_STATES for s in provider_statuses.values())
+    repo = source_repos.get(entry.source)
 
-    pinned_branch = source_branches.get(entry.source)
-    git = source_repos.get(entry.source)
-
-    latest_commit = None
-    if in_sync and pinned_branch is not None and git is not None:
-        latest_commit = resolve_verified_commit(
-            git, skill.rel_path, branch=pinned_branch
+    if not in_sync:
+        # skipped (locally modified): leave the baseline untouched,
+        # only detect whether the recorded commit has fallen off the pinned branch
+        reachable = (
+            repo is not None
+            and entry.baseline is not None
+            and repo.git.is_ancestor(entry.baseline.commit, repo.branch)
         )
 
-    reachable = False
-    if not in_sync and entry.baseline and pinned_branch is not None and git is not None:
-        reachable = git.is_ancestor(entry.baseline.commit, pinned_branch)
+        if entry.baseline is not None and not reachable and not entry.detached:
+            transition = _Detach.NEWLY_DETACHED
+        elif entry.detached:
+            transition = _Detach.STILL_DETACHED
+        else:
+            transition = _Detach.NONE
 
-    decision = _advance_baseline(
-        entry,
-        in_sync=in_sync,
-        latest_commit=latest_commit,
-        source_hashes=source_hashes,
-        reachable=reachable,
-    )
+        return _SkillReport(
+            provider_statuses=provider_statuses,
+            baseline=entry.baseline,
+            transition=transition,
+        )
+
+    # content-synced: advance the whole baseline to the latest commit
+    latest_commit = None
+    if repo is not None:
+        latest_commit = resolve_verified_commit(repo, skill.rel_path)
+
+    if latest_commit is not None:
+        baseline = Baseline(commit=latest_commit, files=source_hashes)
+        transition = _Detach.RECOVERED if entry.detached else _Detach.NONE
+    elif entry.baseline is None:
+        baseline = None
+        # TODO: should it be still `STILL_DETACHED`?
+        transition = _Detach.NONE
+    else:
+        # TODO: this is BUG, we should never update hashes without updating
+        #       commit itself, baseline is the original commit and original files
+
+        # latest commit unresolvable: refresh hashes, keep the old commit
+        baseline = Baseline(commit=entry.baseline.commit, files=source_hashes)
+        transition = _Detach.STILL_DETACHED if entry.detached else _Detach.NONE
 
     return _SkillReport(
         provider_statuses=provider_statuses,
-        baseline=decision.baseline,
-        detached=decision.detached,
-        recovered=decision.recovered,
-        newly_detached=decision.newly_detached,
+        baseline=baseline,
+        transition=transition,
     )
 
 
@@ -382,11 +347,11 @@ def _print_skill_report(report: _SkillReport) -> None:
     unique = set(report.provider_statuses.values())
 
     if len(report.provider_statuses) > 1 and len(unique) > 1:
-        if report.recovered:
+        if report.transition is _Detach.RECOVERED:
             console.finish(_RECOVERED)
-        elif report.newly_detached:
+        elif report.transition is _Detach.NEWLY_DETACHED:
             console.finish(_DETACHED)
-        elif report.detached:
+        elif report.transition is _Detach.STILL_DETACHED:
             console.finish(_UNTRACKED)
 
         for prov_name, prov_status in report.provider_statuses.items():
@@ -400,11 +365,11 @@ def _print_skill_report(report: _SkillReport) -> None:
     else:
         status = _STATUS_LABEL[_Status.UP_TO_DATE]
 
-    if report.recovered:
+    if report.transition is _Detach.RECOVERED:
         status = f"{status}, {_RECOVERED}"
-    elif report.newly_detached:
+    elif report.transition is _Detach.NEWLY_DETACHED:
         status = f"{status}, {_DETACHED}"
-    elif report.detached:
+    elif report.transition is _Detach.STILL_DETACHED:
         status = _UNTRACKED
 
     console.finish(status)

@@ -1,7 +1,7 @@
 ---
 id: s08t37
 slug: showing-outdated-even-though-its
-status: in-progress
+status: pending
 ---
 
 # Showing 'outdated' even though it's up-to-date
@@ -41,7 +41,7 @@ These refine the "advance atomically" decisions above by making the `Baseline(co
 
 - **Committed-but-dirty source → error** — when the source working tree matches no commit for the skill's path (uncommitted/extra/missing files) or no commit touches the path, this is an actionable per-skill error: `resolve_verified_commit` raises `AppError`, which in `update` propagates to the existing failed / `render_error` path, leaving files AND baseline untouched (skill not re-registered). *Rejected: silently keeping the old baseline after the copy (the original half-apply bug).*
 
-- **Precise verification detail via a result object** — `verify_commit_content` returns a `CommitVerification` dataclass (`matches: bool`, `reason: str | None` display message, `props: dict[str, str]` extras) instead of a bare `bool`. It reports only the FIRST offending file (`not present in commit` / `missing file` / `file differs` / `untracked file`) so the friendly message stays compact, with `props` (offending file, repo path) passed straight into `AppError(props=...)`. *Rejected: bare bool (no actionable detail); encoding ok/fail in a `str | None` (state in a primitive — the authoritative flag is `matches`).*
+- **Precise verification detail via a result object** — `verify_commit_content` returns a `CommitVerification` dataclass (`matches: bool`, `reason: str | None` display message, `file: str | None` offending file, `repo: str | None` plain repo path) instead of a bare `bool`. It reports only the FIRST offending file (`not present in commit` / `missing file` / `file differs` / `untracked file`) so the friendly message stays compact; the typed `file`/`repo` fields (plain values, no markup) are assembled into `AppError(props=...)` by the consuming caller. *Rejected: bare bool (no actionable detail); encoding ok/fail in a `str | None` (state in a primitive — the authoritative flag is `matches`); a `props: dict[str, str]` bag (untyped/stringly-keyed — typed fields are clearer and the caller builds the AppError props dict).*
 
 - **`resolve_verified_commit` raises instead of returning `None`** — install and update both want the error; `_install._resolve_commit` simplifies to a direct call (its hand-built message removed). `_update_attach` keeps its intentional "try-or-skip" probe by catching the `AppError` and returning `None`, logging it via `console.debug_traceback()` so the reason still surfaces under `--debug`.
 
@@ -66,7 +66,7 @@ None.
 
 ## Subtasks
 
-- [~] [s08t3701](s08t3701-update-advances-the-baseline-atomically.md): **review** Update advances the baseline atomically on content-sync
-- [ ] [s08t3702](s08t3702-safereattach-by-content-search.md): Safe-reattach by content search
-- [ ] [s08t3703](s08t3703-commitverification-result-object-pinpoints-the.md): CommitVerification result object pinpoints the first content mismatch
+- [x] [s08t3701](s08t3701-update-advances-the-baseline-atomically.md): Update advances the baseline atomically on content-sync
+- [x] [s08t3703](s08t3703-commitverification-result-object-pinpoints-the.md): CommitVerification result pinpoints the first content mismatch
 - [ ] [s08t3704](s08t3704-enforce-the-baseline-invariant-in.md): Enforce the baseline invariant in update and install
+- [ ] [s08t3705](s08t3705-safereattach-by-content-search.md): Safe-reattach by content search

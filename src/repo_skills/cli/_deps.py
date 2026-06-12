@@ -7,9 +7,10 @@ from typing import Annotated, Optional
 import typer
 from typer_di import Depends
 
+from repo_skills.config import Source
 from repo_skills.discovery import find_git_root, find_install_dir, find_repo_skills_dir
 from repo_skills.errors import AppError
-from repo_skills.git import GitRepo
+from repo_skills.git import GitRepo, SyncedRepo, ensure_on_branch
 from repo_skills.git_real import RealGitRepo
 from repo_skills.manifest import default_manifest_path
 
@@ -85,3 +86,9 @@ def resolve_git_repo(path: Path) -> GitRepo:
         return _git_repo_factory(git_root)
 
     return RealGitRepo(git_root)
+
+
+def prepare_source_repo(source: Source, *, pull: bool) -> SyncedRepo:
+    git = resolve_git_repo(source.repo_root)
+    target_branch = source.get_branch(git)
+    return ensure_on_branch(git, target_branch, pull=pull)

@@ -7,7 +7,7 @@ from rich.markup import escape
 
 from repo_skills.console import console, fmt_command, fmt_ident, fmt_path
 from repo_skills.errors import AppError, FileNotInCommitError
-from repo_skills.git import GitRepo
+from repo_skills.git import CommitVerificationError, GitRepo
 from repo_skills.utils import normalize_line_endings, rel_posix
 
 
@@ -233,28 +233,48 @@ class RealGitRepo:
     def _in_merge(self) -> bool:
         return (self._path / ".git" / "MERGE_HEAD").exists()
 
-    def verify_commit_content(self, commit: str, rel_path: str) -> bool:
+    def verify_commit_content(self, commit: str, rel_path: str) -> None:
+        repo_path = str(self._path)
+
         listing = self._run("ls-tree", "-r", "--name-only", commit, rel_path)
         if not listing:
-            return False
+            raise CommitVerificationError(
+                f"'{rel_path}' not present in commit", repo_path=repo_path
+            )
 
         committed_files = listing.splitlines()
+        committed_set = set(committed_files)
         working_dir = self._path / rel_path
 
         for file_path in committed_files:
             local_file = self._path / file_path
             if not local_file.exists():
-                return False
+                # note: reports only the *first* offending file
+                raise CommitVerificationError(
+                    f"missing file '{file_path}'",
+                    file_path=file_path,
+                    repo_path=repo_path,
+                )
 
             committed_content = self.get_file_at_commit(commit, file_path)
             local_bytes = normalize_line_endings(local_file.read_bytes())
             if local_bytes != committed_content:
-                return False
+                raise CommitVerificationError(
+                    f"file '{file_path}' differs",
+                    file_path=file_path,
+                    repo_path=repo_path,
+                )
 
         local_files = {
             rel_posix(f, self._path) for f in working_dir.rglob("*") if f.is_file()
         }
-        return local_files == set(committed_files)
+        extra = local_files - committed_set
+        if extra:
+            # note: reports only the *first* offending file
+            f = min(extra)
+            raise CommitVerificationError(
+                f"untracked file '{f}'", file_path=f, repo_path=repo_path
+            )
 
 
 def _check_implements_protocol(_: GitRepo) -> None:

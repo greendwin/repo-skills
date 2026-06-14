@@ -8,6 +8,8 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 from repo_skills.config import (
     Baseline,
     InstalledSkill,
+    ProviderRegistry,
+    save_provider_registry,
 )
 from tests.cli.helper import (
     INSTALL_DIR,
@@ -29,13 +31,14 @@ from tests.cli.helper import (
 
 class TestUpdateSynced:
     def test_overwrites_synced_skill_with_new_source(
-        self, fs: FakeFilesystem, git_repo: Path
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         hashes = (
             SkillSetup(fs, git_repo)
             .add_skill("tdd", source_content="# tdd v2", installed_content="# tdd v1")
             .build()
         )
+        _fake_git.branch_commits[("skills/tdd", "main")] = "newcommit"
 
         result = assert_invoke("update", "--offline")
 
@@ -90,7 +93,7 @@ class TestUpdateAdvancesBaseline:
         status = assert_invoke("status")
         assert "outdated" not in status.output.lower()
 
-    def test_unresolvable_commit_does_not_advance(
+    def test_unresolvable_commit_reports_failed_and_does_not_advance(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         hashes = (
@@ -106,12 +109,14 @@ class TestUpdateAdvancesBaseline:
 
         result = assert_invoke("update", "--offline")
 
-        assert_words_in_message(result.output, "tdd", "updated")
+        assert_words_in_message(result.output, "tdd", "failed", "no commit found")
         manifest = load_manifest()
         assert manifest.skills["tdd"].baseline is not None
+        # no resolvable commit: baseline left entirely untouched
         assert manifest.skills["tdd"].baseline.commit == "old"
-        # files refreshed to source hashes even when commit unresolvable
-        assert manifest.skills["tdd"].baseline.files != hashes["tdd"]
+        assert manifest.skills["tdd"].baseline.files == hashes["tdd"]
+        # resolution fails before any copy: install dir keeps the original
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v1"
 
     def test_skipped_skill_leaves_baseline_untouched(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -163,7 +168,7 @@ class TestUpdateAdvancesBaseline:
         assert manifest.skills["tdd"].baseline is not None
         assert manifest.skills["tdd"].baseline.commit == "new456"
 
-    def test_unverified_latest_commit_does_not_advance(
+    def test_unverified_latest_commit_reports_failed_and_does_not_advance(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         hashes = (
@@ -180,15 +185,42 @@ class TestUpdateAdvancesBaseline:
         # latest commit exists but its content cannot be verified
         _fake_git.verified["skills/tdd"] = False
 
-        assert_invoke("update")
+        result = assert_invoke("update")
+
+        assert_words_in_message(result.output, "tdd", "failed", "content mismatch")
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].baseline is not None
+        # verification error propagates: baseline left entirely untouched
+        assert manifest.skills["tdd"].baseline.commit == "old"
+        assert manifest.skills["tdd"].baseline.files == hashes["tdd"]
+        assert manifest.skills["tdd"].detached is False
+        # source working tree (dirty) must not be copied into the install dir
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v1"
+
+    def test_empty_provider_registry_leaves_baseline_untouched(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        hashes = (
+            SkillSetup(fs, git_repo)
+            .add_skill(
+                "tdd",
+                commit="old",
+                source_content="# tdd",
+                installed_content="# tdd",
+            )
+            .build()
+        )
+        # no providers at all: nothing to copy, nothing to compare
+        save_provider_registry(ProviderRegistry())
+        _fake_git.branch_commits[("skills/tdd", "main")] = "newcommit"
+
+        assert_invoke("update", "--offline")
 
         manifest = load_manifest()
         assert manifest.skills["tdd"].baseline is not None
-        # unverified commit is never written as the baseline
+        # an empty registry must never advance the baseline to the "" sentinel
         assert manifest.skills["tdd"].baseline.commit == "old"
-        # files still refreshed to source hashes
-        assert manifest.skills["tdd"].baseline.files != hashes["tdd"]
-        assert manifest.skills["tdd"].detached is False
+        assert manifest.skills["tdd"].baseline.files == hashes["tdd"]
 
     def test_multi_provider_skipped_leaves_baseline_untouched(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -253,11 +285,12 @@ class TestUpdateSkipsNoBaseline:
 
 class TestUpdateUpToDate:
     def test_reports_up_to_date_when_source_matches(
-        self, fs: FakeFilesystem, git_repo: Path
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         SkillSetup(fs, git_repo).add_skill(
             "tdd", source_content="# tdd", installed_content="# tdd", commit="abc"
         ).build()
+        _fake_git.branch_commits[("skills/tdd", "main")] = "abc"
 
         result = assert_invoke("update", "--offline")
 
@@ -265,10 +298,13 @@ class TestUpdateUpToDate:
 
 
 class TestUpdateAutoInstallsNewProvider:
-    def test_copies_to_new_provider(self, fs: FakeFilesystem, git_repo: Path) -> None:
+    def test_copies_to_new_provider(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
         SkillSetup(fs, git_repo).add_skill(
             "tdd", source_content="# tdd", installed_content="# tdd", commit="abc"
         ).build()
+        _fake_git.branch_commits[("skills/tdd", "main")] = "abc"
 
         cursor_dir = Path("/home/user/.cursor/skills")
         register_provider("cursor", str(cursor_dir))
@@ -444,6 +480,7 @@ class TestUpdateValidation:
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _fake_git.branch = "develop"
+        _fake_git.branch_commits[("skills/tdd", "develop")] = "abc"
         register_source(git_repo, branch="develop")
         create_source_skill(fs, "tdd")
         hashes = install_skill(fs, "tdd")
@@ -491,13 +528,17 @@ class TestUpdateValidation:
 
         assert_status_line(result.output, "Pulling my-project", "failed")
         assert_words_in_message(result.output, "uncommitted changes")
-        assert "[dim]" not in result.output
+        assert_words_in_message(
+            result.output, "tdd", "source", "my-project", "unavailable"
+        )
 
+        # source failed to sync: install dir and baseline stay untouched
         installed = (INSTALL_DIR / "tdd" / "SKILL.md").read_text()
-        assert installed == "# tdd v2"
+        assert installed == "# tdd v1"
         manifest = load_manifest()
         assert manifest.skills["tdd"].baseline is not None
-        assert manifest.skills["tdd"].baseline.files != hashes["tdd"]
+        assert manifest.skills["tdd"].baseline.files == hashes["tdd"]
+        assert manifest.skills["tdd"].baseline.commit == "abc"
 
     def test_errors_when_skill_not_installed(
         self, fs: FakeFilesystem, git_repo: Path
@@ -517,7 +558,7 @@ class TestUpdateValidation:
 
 class TestUpdateAll:
     def test_updates_all_installed_skills(
-        self, fs: FakeFilesystem, git_repo: Path
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         (
             SkillSetup(fs, git_repo)
@@ -529,6 +570,8 @@ class TestUpdateAll:
             )
             .build()
         )
+        _fake_git.branch_commits[("skills/tdd", "main")] = "c-tdd"
+        _fake_git.branch_commits[("skills/review", "main")] = "c-review"
 
         result = assert_invoke("update", "--offline")
 

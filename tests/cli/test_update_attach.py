@@ -122,6 +122,25 @@ class TestUpdateAttach:
         result = assert_invoke("update", "--offline")
 
         assert "Attached skill tdd" not in result.output
+        assert "Traceback" not in result.output
+        manifest = load_manifest()
+        assert "tdd" not in manifest.skills
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd"
+
+    def test_verify_failure_attach_reason_shown_only_under_debug(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo)
+        create_source_skill(fs, "tdd", content="# tdd")
+        install_skill(fs, "tdd", content="# tdd")
+        save_manifest({})
+        _fake_git.branch_commits[("skills/tdd", "main")] = "commit-tdd"
+        _fake_git.verified["skills/tdd"] = False
+
+        result = assert_invoke("--debug", "update", "--offline")
+
+        assert "Attached skill tdd" not in result.output
+        assert "Traceback" in result.output
         manifest = load_manifest()
         assert "tdd" not in manifest.skills
         assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd"
@@ -410,8 +429,9 @@ class TestUpdateAttachNoFilter:
 
 class TestUpdateBrokenSource:
     def test_broken_source_warns_and_valid_skill_still_updates(
-        self, fs: FakeFilesystem, git_repo: Path
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
+        _fake_git.branch_commits[("skills/tdd", "main")] = "c-tdd"
         broken_root = Path("/repos/broken-project")
         fs.create_dir(broken_root / ".git")
         registry = SourceRegistry()

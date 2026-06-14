@@ -16,7 +16,12 @@ from repo_skills.config import (
 )
 from repo_skills.console import console, fmt_data, fmt_ident
 from repo_skills.errors import AppError
-from repo_skills.git import SyncedRepo, resolve_verified_commit
+from repo_skills.git import (
+    CommitVerificationError,
+    SkillCommitNotFoundError,
+    SyncedRepo,
+    resolve_verified_commit,
+)
 
 
 @dataclass(frozen=True)
@@ -154,8 +159,10 @@ def _attach_skill(
         # cannot attach skill if its source is not fully synced
         return None
 
-    commit = resolve_verified_commit(repo, skill.rel_path)
-    if commit is None:
+    try:
+        commit = resolve_verified_commit(repo, skill.rel_path)
+    except (CommitVerificationError, SkillCommitNotFoundError):
+        console.debug_traceback()
         return None
 
     console.print(

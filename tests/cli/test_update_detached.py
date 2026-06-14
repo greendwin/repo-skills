@@ -103,10 +103,42 @@ class TestUpdateDetached:
         assert_words_in_message(result.output, "tdd", "untracked")
         assert "recovered" not in result.output.lower()
 
-    def test_no_detached_check_when_commit_is_none(
+    def test_skipped_skill_with_unverifiable_commit_stays_detached(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        hashes = (
+            SkillSetup(fs, git_repo)
+            .add_skill(
+                "tdd",
+                commit="abc123",
+                source_content="# tdd v2",
+                installed_content="# tdd v1",
+                user_edited="# user edit",
+                latest_commit="c-tdd",
+            )
+            .build()
+        )
+        # latest commit exists but its content cannot be verified;
+        # the skill is locally modified (skip path) so no commit is needed
+        _fake_git.verified["skills/tdd"] = False
+        _fake_git.ancestors[("abc123", "main")] = False
+
+        result = assert_invoke("update", "--offline")
+
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].detached is True
+        assert manifest.skills["tdd"].baseline is not None
+        assert manifest.skills["tdd"].baseline.commit == "abc123"
+        assert manifest.skills["tdd"].baseline.files == hashes["tdd"]
+        assert_words_in_message(result.output, "tdd", "detached")
+        assert "failed" not in result.output.lower()
+
+    def test_no_detached_check_when_baseline_is_none(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        SkillSetup(fs, git_repo).add_skill("tdd", has_baseline=False).build()
+        SkillSetup(fs, git_repo).add_skill(
+            "tdd", has_baseline=False, latest_commit="c-tdd"
+        ).build()
 
         result = assert_invoke("update", "--offline")
 

@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import TypeVar
 
@@ -43,3 +44,10 @@ def load_config(cls: type[_T], path: Path) -> _T | None:
 
 def save_config(cfg: BaseModel, path: Path) -> None:
     write_text(path, cfg.model_dump_json(indent=2))
+
+
+def overwrite_dir(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst)

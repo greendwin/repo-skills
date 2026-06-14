@@ -9,7 +9,6 @@ from typer_di import Depends, TyperDI
 
 from repo_skills.config import (
     REPO_SKILLS_DIR,
-    SourceBrokenError,
     SourceConfig,
     load_skill_manifest,
     load_source_config,
@@ -254,12 +253,11 @@ def source_remove(
 ) -> None:
     source_registry = load_source_registry()
 
-    try:
-        # TODO: do we need this `get_source_no_skills` invokation at all?
-        repo_root = source_registry.get_source_no_skills(source_name).repo_root
-    except SourceBrokenError:
-        # silently ignore broken sources, just remove them from the registry
-        repo_root = source_registry.sources[source_name].repo_root
+    if source_name not in source_registry.sources:
+        raise AppError(f"Source {fmt_ident(source_name)} not found.")
+
+    # removal only needs the repo path; no need to load the source (broken or not)
+    repo_root = source_registry.sources[source_name].repo_root
 
     manifest = load_skill_manifest()
     matching = [

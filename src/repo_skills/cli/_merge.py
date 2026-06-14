@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import difflib
 import hashlib
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, NoReturn, Optional
@@ -30,7 +29,7 @@ from repo_skills.config import (
 from repo_skills.console import console, fmt_command, fmt_data, fmt_ident, fmt_path
 from repo_skills.errors import AppError, FileNotInCommitError, NoopError
 from repo_skills.git import GitRepo, ensure_on_branch
-from repo_skills.utils import normalize_line_endings
+from repo_skills.utils import normalize_line_endings, overwrite_dir
 
 from ._app import app
 from ._deps import prepare_source_repo, resolve_git_repo
@@ -235,10 +234,7 @@ def _merge_start(
     else:
         git.create_orphan_branch(branch_name)
 
-    _copy_skill_with_replace(
-        src=installed_path,
-        dst=source.repo_root / skill.rel_path,
-    )
+    overwrite_dir(installed_path, source.repo_root / skill.rel_path)
 
     if no_commit:
         console.print(
@@ -404,7 +400,7 @@ def _merge_orphan(
     installed_path = provider.install_path / skill_name
     skill_rel_path = f"{source.config.skills_dir}/{skill_name}"
     skill_dst = source.repo_root / skill_rel_path
-    _copy_skill_with_replace(src=installed_path, dst=skill_dst)
+    overwrite_dir(installed_path, skill_dst)
 
     if no_commit:
         console.print("Files copied to source repo. Review and commit manually.")
@@ -460,12 +456,6 @@ def _find_skill_in_provider(
         raise AppError(f"Skill {fmt_ident(skill_name)} is not installed.")
 
     return matches[0]
-
-
-def _copy_skill_with_replace(*, src: Path, dst: Path) -> None:
-    if dst.exists():
-        shutil.rmtree(dst)
-    shutil.copytree(src, dst)
 
 
 def _resolve_diverged_provider(
@@ -669,9 +659,9 @@ def _finalize(
 
     installed_path = provider.install_path / skill_name
 
-    _copy_skill_with_replace(
-        src=source.repo_root / skill.rel_path,
-        dst=installed_path,
+    overwrite_dir(
+        source.repo_root / skill.rel_path,
+        installed_path,
     )
 
     new_hashes = compute_file_hashes(installed_path)

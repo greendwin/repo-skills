@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import shutil
 from dataclasses import dataclass
 from enum import Enum, auto
+from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
@@ -11,6 +11,7 @@ from repo_skills.config import (
     Baseline,
     ConfigContext,
     InstalledSkill,
+    ProviderRegistry,
     SkillManifest,
     SourceRegistry,
     compute_file_hashes,
@@ -20,6 +21,7 @@ from repo_skills.config import (
 from repo_skills.console import console, fmt_data, fmt_ident
 from repo_skills.errors import AppError, NoopError, render_error
 from repo_skills.git import SyncedRepo, ensure_on_branch, resolve_verified_commit
+from repo_skills.utils import overwrite_dir
 
 from ._app import app
 from ._deps import resolve_git_repo
@@ -36,6 +38,21 @@ class _Status(Enum):
     UPDATED = auto()
     SKIPPED = auto()
     UP_TO_DATE = auto()
+
+
+class _Action(Enum):
+    FRESH = auto()  # dst absent -> copy in
+    UPDATE = auto()  # dst in sync with baseline but outdated -> overwrite
+    UP_TO_DATE = auto()  # dst matches source
+    SKIPPED = auto()  # dst locally modified -> leave alone
+
+
+_ACTION_STATUS: dict[_Action, _Status] = {
+    _Action.FRESH: _Status.UPDATED,
+    _Action.UPDATE: _Status.UPDATED,
+    _Action.UP_TO_DATE: _Status.UP_TO_DATE,
+    _Action.SKIPPED: _Status.SKIPPED,
+}
 
 
 class _Detach(Enum):
@@ -56,6 +73,19 @@ _STATUS_LABEL: dict[_Status, str] = {
 _DETACHED = "[yellow]detached[/yellow] [dim](commit unreachable)[/dim]"
 _RECOVERED = "[green]recovered[/green]"
 _UNTRACKED = "[yellow]untracked[/yellow] [dim](need merge)[/dim]"
+
+
+def _source_unavailable_label(source: str) -> str:
+    return (
+        f"[yellow]skipped[/yellow] [dim](source {fmt_ident(source)} unavailable)[/dim]"
+    )
+
+
+_TRANSITION_LABEL: dict[_Detach, str] = {
+    _Detach.RECOVERED: _RECOVERED,
+    _Detach.NEWLY_DETACHED: _DETACHED,
+    _Detach.STILL_DETACHED: _UNTRACKED,
+}
 
 
 @app.command(help="Update installed skills from sources.")
@@ -211,7 +241,7 @@ def _sync_source_repos(
     return source_repos
 
 
-@dataclass
+@dataclass(frozen=True)
 class _SkillReport:
     provider_statuses: dict[str, _Status]
     baseline: Baseline | None
@@ -229,78 +259,67 @@ def _run_updates(
 ) -> None:
     for skill_name, entry in skills.items():
         with console.running(f"Updating {fmt_data(skill_name)}"):
+            repo = source_repos.get(entry.source)
+            if repo is None:
+                console.finish(_source_unavailable_label(entry.source))
+                continue
+
             try:
-                report = _update_skill(ctx, skill_name, entry, source_repos)
+                outcome = _update_skill(ctx, entry, skill_name, repo)
             except Exception as ex:
                 console.finish("[red]failed[/red]")
                 render_error(ex)
                 continue
 
-            _print_skill_report(report)
+            _print_skill_report(outcome)
 
             ctx.manifest.register_skill(
                 skill_name,
                 source_name=entry.source,
-                baseline=report.baseline,
-                detached=report.detached,
+                baseline=outcome.baseline,
+                detached=outcome.detached,
             )
 
 
 def _update_skill(
-    ctx: ConfigContext,
-    skill_name: str,
-    entry: InstalledSkill,
-    source_repos: dict[str, SyncedRepo],
+    ctx: ConfigContext, entry: InstalledSkill, skill_name: str, repo: SyncedRepo
 ) -> _SkillReport:
-    if entry.source not in ctx.source_registry.sources:
-        raise AppError(f"Source {fmt_ident(entry.source)} not found")
-
     source = ctx.source_registry.load_source(entry.source)
     skill = source.skills.get(skill_name)
     if skill is None:
-        # TODO: should we mark this skill as detached instead of reporing an error?
+        # TODO: should we mark this skill as detached instead of reporting an error?
         raise AppError("Skill removed from source")
 
     src = source.repo_root / skill.rel_path
     source_hashes = compute_file_hashes(src)
-    provider_statuses: dict[str, _Status] = {}
 
-    for provider in ctx.provider_registry.providers:
-        install_dir = provider.install_path
-        dst = install_dir / skill_name
+    # phase 1: decide each provider's action without mutating anything
+    decisions = _decide_actions(
+        ctx.provider_registry, entry, skill_name, source_hashes=source_hashes
+    )
 
-        if not dst.exists():
-            install_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(src, dst)
-            provider_statuses[provider.name] = _Status.UPDATED
-            continue
+    # resolve the verified commit before any copy so a dirty/uncommitted source
+    # aborts before touching install dirs; only needed when a copy will occur
+    # (FRESH/UPDATE) or the baseline will advance (in_sync)
+    needs_commit = any(d.action is not _Action.SKIPPED for d in decisions)
+    latest_commit: str | None = None
+    if needs_commit:
+        latest_commit = resolve_verified_commit(repo, skill.rel_path)
 
-        current_hashes = compute_file_hashes(dst)
+    # phase 2: apply the copies now that the commit is verified
+    provider_statuses = _apply_actions(decisions, src=src)
 
-        if current_hashes == source_hashes:
-            provider_statuses[provider.name] = _Status.UP_TO_DATE
-            continue
-
-        if not entry.match_files(current_hashes):
-            # installed skill was modified, don't touch it
-            provider_statuses[provider.name] = _Status.SKIPPED
-            continue
-
-        # skill is in sync with what was installed, update it to latest version
-        shutil.rmtree(dst)
-        shutil.copytree(src, dst)
-        provider_statuses[provider.name] = _Status.UPDATED
-
-    in_sync = all(s in _SYNCED_STATES for s in provider_statuses.values())
-    repo = source_repos.get(entry.source)
+    # advance the baseline only when every provider is content-synced; the
+    # empty registry is never content-synced, so the baseline stays put
+    in_sync = bool(provider_statuses) and all(
+        s in _SYNCED_STATES for s in provider_statuses.values()
+    )
 
     if not in_sync:
         # skipped (locally modified): leave the baseline untouched,
         # only detect whether the recorded commit has fallen off the pinned branch
-        reachable = (
-            repo is not None
-            and entry.baseline is not None
-            and repo.git.is_ancestor(entry.baseline.commit, repo.branch)
+        reachable = entry.baseline is not None and repo.git.is_ancestor(
+            entry.baseline.commit, repo.branch
         )
 
         if entry.baseline is not None and not reachable and not entry.detached:
@@ -316,25 +335,13 @@ def _update_skill(
             transition=transition,
         )
 
-    # content-synced: advance the whole baseline to the latest commit
-    latest_commit = None
-    if repo is not None:
-        latest_commit = resolve_verified_commit(repo, skill.rel_path)
+    # content-synced: advance the whole baseline to the verified latest commit
+    # `in_sync` implies a verified commit was resolved
+    if latest_commit is None:
+        raise AssertionError("internal: content-synced skill without a resolved commit")
 
-    if latest_commit is not None:
-        baseline = Baseline(commit=latest_commit, files=source_hashes)
-        transition = _Detach.RECOVERED if entry.detached else _Detach.NONE
-    elif entry.baseline is None:
-        baseline = None
-        # TODO: should it be still `STILL_DETACHED`?
-        transition = _Detach.NONE
-    else:
-        # TODO: this is BUG, we should never update hashes without updating
-        #       commit itself, baseline is the original commit and original files
-
-        # latest commit unresolvable: refresh hashes, keep the old commit
-        baseline = Baseline(commit=entry.baseline.commit, files=source_hashes)
-        transition = _Detach.STILL_DETACHED if entry.detached else _Detach.NONE
+    baseline = Baseline(commit=latest_commit, files=source_hashes)
+    transition = _Detach.RECOVERED if entry.detached else _Detach.NONE
 
     return _SkillReport(
         provider_statuses=provider_statuses,
@@ -343,16 +350,66 @@ def _update_skill(
     )
 
 
+@dataclass(frozen=True)
+class _ProviderDecision:
+    name: str
+    dst: Path
+    action: _Action
+
+
+def _decide_actions(
+    provider_registry: ProviderRegistry,
+    entry: InstalledSkill,
+    skill_name: str,
+    *,
+    source_hashes: dict[str, str],
+) -> list[_ProviderDecision]:
+    decisions: list[_ProviderDecision] = []
+
+    for provider in provider_registry.providers:
+        dst = provider.install_path / skill_name
+        if not dst.exists():
+            decisions.append(_ProviderDecision(provider.name, dst, _Action.FRESH))
+            continue
+
+        current_hashes = compute_file_hashes(dst)
+        if current_hashes == source_hashes:
+            action = _Action.UP_TO_DATE
+        elif entry.match_files(current_hashes):
+            # in sync with what was installed, but outdated: overwrite
+            action = _Action.UPDATE
+        else:
+            # installed skill was locally modified, don't touch it
+            action = _Action.SKIPPED
+
+        decisions.append(_ProviderDecision(provider.name, dst, action))
+
+    return decisions
+
+
+def _apply_actions(
+    decisions: list[_ProviderDecision],
+    *,
+    src: Path,
+) -> dict[str, _Status]:
+    provider_statuses: dict[str, _Status] = {}
+
+    for decision in decisions:
+        if decision.action in (_Action.FRESH, _Action.UPDATE):
+            overwrite_dir(src, decision.dst)
+
+        provider_statuses[decision.name] = _ACTION_STATUS[decision.action]
+
+    return provider_statuses
+
+
 def _print_skill_report(report: _SkillReport) -> None:
     unique = set(report.provider_statuses.values())
+    transition_label = _TRANSITION_LABEL.get(report.transition)
 
     if len(report.provider_statuses) > 1 and len(unique) > 1:
-        if report.transition is _Detach.RECOVERED:
-            console.finish(_RECOVERED)
-        elif report.transition is _Detach.NEWLY_DETACHED:
-            console.finish(_DETACHED)
-        elif report.transition is _Detach.STILL_DETACHED:
-            console.finish(_UNTRACKED)
+        if transition_label is not None:
+            console.finish(transition_label)
 
         for prov_name, prov_status in report.provider_statuses.items():
             console.print(f"  {fmt_data(prov_name)}: {_STATUS_LABEL[prov_status]}")
@@ -365,11 +422,10 @@ def _print_skill_report(report: _SkillReport) -> None:
     else:
         status = _STATUS_LABEL[_Status.UP_TO_DATE]
 
-    if report.transition is _Detach.RECOVERED:
-        status = f"{status}, {_RECOVERED}"
-    elif report.transition is _Detach.NEWLY_DETACHED:
-        status = f"{status}, {_DETACHED}"
-    elif report.transition is _Detach.STILL_DETACHED:
+    if report.transition is _Detach.STILL_DETACHED:
+        # untracked replaces the status line rather than annotating it
         status = _UNTRACKED
+    elif transition_label is not None:
+        status = f"{status}, {transition_label}"
 
     console.finish(status)

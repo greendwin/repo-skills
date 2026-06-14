@@ -31,16 +31,16 @@ SOURCE_B_ROOT = Path("/repos/source-b")
 
 
 class TestUpdateErrorMessages:
-    def test_source_not_in_registry_shows_specific_error(
+    def test_source_not_in_registry_is_skipped_source_unavailable(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        register_source(git_repo)
+        source = register_source(git_repo)
         create_source_skill(fs, "tdd")
         hashes = install_skill(fs, "tdd")
         save_manifest(
             {
                 "tdd": InstalledSkill(
-                    source="my-project", baseline=Baseline(commit="abc", files=hashes)
+                    source=source.name, baseline=Baseline(commit="abc", files=hashes)
                 ),
                 "orphan": InstalledSkill(
                     source="unknown-source",
@@ -52,7 +52,7 @@ class TestUpdateErrorMessages:
         result = assert_invoke("update", "--offline")
 
         assert_words_in_message(
-            result.output, "error", "source", "unknown-source", "not found"
+            result.output, "orphan", "source", "unknown-source", "unavailable"
         )
 
         manifest = load_manifest()
@@ -64,6 +64,8 @@ class TestUpdateErrorMessages:
         register_source(git_repo)
         create_source_skill(fs, "tdd")
         hashes = install_skill(fs, "tdd")
+        # TODO: we should use `SourceConfig` from `register_source` instead of
+        #       hardcoding "my-project" everywhere
         save_manifest(
             {
                 "tdd": InstalledSkill(
@@ -85,7 +87,7 @@ class TestUpdateErrorMessages:
 
 class TestUpdateBatchResilience:
     def test_modified_skill_does_not_block_others(
-        self, fs: FakeFilesystem, git_repo: Path
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         (
             SkillSetup(fs, git_repo)
@@ -97,6 +99,7 @@ class TestUpdateBatchResilience:
             )
             .build()
         )
+        _fake_git.branch_commits[("skills/review", "main")] = "c-review"
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# user edit")
 
         result = assert_invoke("update", "--offline")
@@ -112,7 +115,9 @@ class TestUpdatePullFailure:
         fake_git_manager: FakeGitRepoManager,
     ) -> dict[str, dict[str, str]]:
         fake_git_manager.install(FakeGitRepo(root=SOURCE_A_ROOT, pull_fails=True))
-        fake_git_manager.install(FakeGitRepo(root=SOURCE_B_ROOT))
+        fake_b = FakeGitRepo(root=SOURCE_B_ROOT)
+        fake_b.branch_commits[("skills/bravo", "main")] = "c-bravo-new"
+        fake_git_manager.install(fake_b)
 
         return (
             SkillSetup(fs, SOURCE_A_ROOT)
@@ -156,24 +161,28 @@ class TestUpdatePullFailure:
         assert bravo.baseline.files == refreshed
         assert bravo.baseline.files != hashes["bravo"]
 
-    def test_failed_source_skill_still_syncs_from_local_copy(
+    def test_failed_source_skill_is_skipped_source_unavailable(
         self,
         fs: FakeFilesystem,
         fake_git_manager: FakeGitRepoManager,
     ) -> None:
         hashes = self._setup_two_sources(fs, fake_git_manager)
 
-        assert_invoke("update")
+        result = assert_invoke("update")
 
+        assert_words_in_message(
+            result.output, "alpha", "source", "source-a", "unavailable"
+        )
+
+        # source pull failed: install dir keeps the OLD content, not copied
         installed = (INSTALL_DIR / "alpha" / "SKILL.md").read_text()
-        assert installed == "# alpha v2"
+        assert installed == "# alpha v1"
 
         manifest = load_manifest()
         alpha = manifest.skills["alpha"]
         assert alpha.baseline is not None
-        refreshed = compute_file_hashes(INSTALL_DIR / "alpha")
-        assert alpha.baseline.files == refreshed
-        assert alpha.baseline.files != hashes["alpha"]
+        # baseline left entirely untouched
+        assert alpha.baseline.files == hashes["alpha"]
 
     def test_failed_source_skip_detach_reconciliation(
         self,
@@ -223,7 +232,9 @@ class TestUpdatePullFailure:
                 pull_cause="ssh handshake refused",
             )
         )
-        fake_git_manager.install(FakeGitRepo(root=SOURCE_B_ROOT))
+        fake_b = FakeGitRepo(root=SOURCE_B_ROOT)
+        fake_b.branch_commits[("skills/bravo", "main")] = "c-bravo-new"
+        fake_git_manager.install(fake_b)
 
         (
             SkillSetup(fs, SOURCE_A_ROOT)
@@ -279,6 +290,7 @@ class TestUpdateExceptionHandling:
         fs: FakeFilesystem,
         git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
+        fake_git: FakeGitRepo,
         *,
         cause: str = "",
     ) -> tuple[dict[str, str], dict[str, str]]:
@@ -292,6 +304,9 @@ class TestUpdateExceptionHandling:
             )
             .build()
         )
+        # both skills resolve a commit so failures come from the copy step
+        fake_git.branch_commits[("skills/tdd", "main")] = "c-tdd"
+        fake_git.branch_commits[("skills/review", "main")] = "c-review"
 
         real_compute = compute_file_hashes
 
@@ -313,8 +328,9 @@ class TestUpdateExceptionHandling:
         fs: FakeFilesystem,
         git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
+        _fake_git: FakeGitRepo,
     ) -> None:
-        self._setup_two_skills(fs, git_repo, monkeypatch)
+        self._setup_two_skills(fs, git_repo, monkeypatch, _fake_git)
 
         result = assert_invoke("update", "--offline")
 
@@ -326,8 +342,9 @@ class TestUpdateExceptionHandling:
         fs: FakeFilesystem,
         git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
+        _fake_git: FakeGitRepo,
     ) -> None:
-        self._setup_two_skills(fs, git_repo, monkeypatch, cause="inode gone")
+        self._setup_two_skills(fs, git_repo, monkeypatch, _fake_git, cause="inode gone")
 
         result = assert_invoke("update", "--offline")
 
@@ -339,8 +356,9 @@ class TestUpdateExceptionHandling:
         fs: FakeFilesystem,
         git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
+        _fake_git: FakeGitRepo,
     ) -> None:
-        h1, _h2 = self._setup_two_skills(fs, git_repo, monkeypatch)
+        h1, _h2 = self._setup_two_skills(fs, git_repo, monkeypatch, _fake_git)
 
         assert_invoke("update", "--offline")
 
@@ -356,8 +374,9 @@ class TestUpdateExceptionHandling:
         fs: FakeFilesystem,
         git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
+        _fake_git: FakeGitRepo,
     ) -> None:
-        self._setup_two_skills(fs, git_repo, monkeypatch)
+        self._setup_two_skills(fs, git_repo, monkeypatch, _fake_git)
 
         result = assert_invoke("--debug", "update", "--offline")
 
@@ -369,8 +388,9 @@ class TestUpdateExceptionHandling:
         fs: FakeFilesystem,
         git_repo: Path,
         monkeypatch: pytest.MonkeyPatch,
+        _fake_git: FakeGitRepo,
     ) -> None:
-        self._setup_two_skills(fs, git_repo, monkeypatch)
+        self._setup_two_skills(fs, git_repo, monkeypatch, _fake_git)
 
         result = assert_invoke("update", "--offline")
 

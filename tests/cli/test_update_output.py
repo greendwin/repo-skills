@@ -20,7 +20,10 @@ class TestUpdatePerProviderOutput:
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         SkillSetup(fs, git_repo).add_skill(
-            "tdd", source_content="# tdd v2", installed_content="# tdd v1"
+            "tdd",
+            source_content="# tdd v2",
+            installed_content="# tdd v1",
+            latest_commit="c-tdd",
         ).build()
 
         cursor_dir = Path("/home/user/.cursor/skills")
@@ -41,7 +44,10 @@ class TestUpdatePerProviderOutput:
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         SkillSetup(fs, git_repo).add_skill(
-            "tdd", source_content="# tdd v2", installed_content="# tdd v1"
+            "tdd",
+            source_content="# tdd v2",
+            installed_content="# tdd v1",
+            latest_commit="c-tdd",
         ).build()
 
         cursor_dir = Path("/home/user/.cursor/skills")
@@ -58,7 +64,10 @@ class TestUpdatePerProviderOutput:
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         SkillSetup(fs, git_repo).add_skill(
-            "tdd", source_content="# tdd v2", installed_content="# tdd v1"
+            "tdd",
+            source_content="# tdd v2",
+            installed_content="# tdd v1",
+            latest_commit="c-tdd",
         ).build()
         (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# user edit")
         cursor_dir = Path("/home/user/.cursor/skills")
@@ -75,7 +84,11 @@ class TestUpdatePerProviderOutput:
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         SkillSetup(fs, git_repo).add_skill(
-            "tdd", source_content="# tdd", installed_content="# tdd", commit="abc"
+            "tdd",
+            source_content="# tdd",
+            installed_content="# tdd",
+            commit="abc",
+            latest_commit="abc",
         ).build()
 
         cursor_dir = Path("/home/user/.cursor/skills")
@@ -92,7 +105,10 @@ class TestUpdatePerProviderOutput:
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         SkillSetup(fs, git_repo).add_skill(
-            "tdd", source_content="# tdd v2", installed_content="# tdd v1"
+            "tdd",
+            source_content="# tdd v2",
+            installed_content="# tdd v1",
+            latest_commit="c-tdd",
         ).build()
 
         result = assert_invoke("update", "--offline")

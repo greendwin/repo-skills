@@ -7,6 +7,7 @@ from typing import Literal, overload
 from pyfakefs.fake_filesystem import FakeFilesystem
 from typer.testing import CliRunner
 
+import repo_skills.cli._deps as deps_mod
 from repo_skills.cli import app
 from repo_skills.config import (
     Baseline,
@@ -318,13 +319,15 @@ def register_source(
     name: str = "my-project",
     skills_dir: str = "skills",
     branch: str = "",
-) -> None:
+) -> SourceConfig:
     registry = SourceRegistry()
     registry.register_source(name, git_repo)
     save_source_registry(registry)
 
     cfg = SourceConfig(name=name, skills_dir=skills_dir, branch=branch)
     save_source_config(cfg, git_repo)
+
+    return cfg
 
 
 def save_manifest(skills: dict[str, InstalledSkill]) -> None:
@@ -386,6 +389,7 @@ class _SkillEntry:
     detached: bool
     has_baseline: bool
     user_edited: str | None
+    latest_commit: str | None
 
 
 class SkillSetup:
@@ -413,6 +417,7 @@ class SkillSetup:
         detached: bool = False,
         has_baseline: bool = True,
         user_edited: str | None = None,
+        latest_commit: str | None = None,
     ) -> SkillSetup:
         if source_root is None:
             source_root = self._git_repo
@@ -427,6 +432,7 @@ class SkillSetup:
                 detached=detached,
                 has_baseline=has_baseline,
                 user_edited=user_edited,
+                latest_commit=latest_commit,
             )
         )
         return self
@@ -465,8 +471,21 @@ class SkillSetup:
             if entry.user_edited is not None:
                 (INSTALL_DIR / entry.name / "SKILL.md").write_text(entry.user_edited)
 
+            if entry.latest_commit is not None:
+                fake = self._fake_repo(entry.source_root)
+                fake.branch_commits[(f"skills/{entry.name}", fake.main_branch)] = (
+                    entry.latest_commit
+                )
+
         save_manifest(manifest_skills)
         return hashes
+
+    def _fake_repo(self, root: Path) -> FakeGitRepo:
+        factory = deps_mod._git_repo_factory
+        assert factory is not None, "fake_git_manager fixture is required"
+        repo = factory(root)
+        assert isinstance(repo, FakeGitRepo)
+        return repo
 
     def _register_sources(self) -> None:
         seen: dict[str, Path] = {}

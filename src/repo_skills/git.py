@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .console import console, fmt_path
+from .console import fmt_path
 from .errors import AppError
 
 
@@ -24,6 +24,17 @@ class CommitVerificationError(AppError):
         super().__init__(reason, props=props)
 
         self.reason = reason
+        self.repo = repo_path
+        self.file = file_path
+
+
+class SkillCommitNotFoundError(AppError):
+    def __init__(self, *, repo_path: str, file_path: str) -> None:
+        super().__init__(
+            "No commit found for skill content.",
+            props={"repo": fmt_path(repo_path), "file": fmt_path(file_path)},
+        )
+
         self.repo = repo_path
         self.file = file_path
 
@@ -62,16 +73,12 @@ class GitRepo(Protocol):
 def resolve_verified_commit(
     repo: SyncedRepo,
     rel_path: str,
-) -> str | None:
+) -> str:
     commit = repo.git.get_skill_commit(rel_path, branch=repo.branch)
     if not commit:
-        return None
+        raise SkillCommitNotFoundError(repo_path=str(repo.git.root), file_path=rel_path)
 
-    try:
-        repo.git.verify_commit_content(commit, rel_path)
-    except CommitVerificationError:
-        console.debug_traceback()
-        return None
+    repo.git.verify_commit_content(commit, rel_path)
 
     return commit
 

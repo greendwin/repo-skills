@@ -20,11 +20,17 @@ class TestUpdateNamedTarget:
     ) -> None:
         (
             SkillSetup(fs, git_repo)
-            .add_skill("tdd", source_content="# tdd v2", installed_content="# tdd v1")
+            .add_skill(
+                "tdd",
+                source_content="# tdd v2",
+                installed_content="# tdd v1",
+                latest_commit="c-tdd",
+            )
             .add_skill(
                 "review",
                 source_content="# review v2",
                 installed_content="# review v1",
+                latest_commit="c-review",
             )
             .build()
         )
@@ -42,13 +48,19 @@ class TestUpdateSourceFilter:
     ) -> None:
         (
             SkillSetup(fs, git_repo)
-            .add_skill("tdd", source_content="# tdd v2", installed_content="# tdd v1")
+            .add_skill(
+                "tdd",
+                source_content="# tdd v2",
+                installed_content="# tdd v1",
+                latest_commit="c-tdd",
+            )
             .add_skill(
                 "review",
                 source_content="# review v2",
                 installed_content="# review v1",
                 source_name="other-project",
                 source_root=OTHER_REPO_ROOT,
+                latest_commit="c-review",
             )
             .build()
         )
@@ -74,13 +86,19 @@ class TestUpdateSourceFilter:
     ) -> None:
         (
             SkillSetup(fs, git_repo)
-            .add_skill("tdd", source_content="# tdd v2", installed_content="# tdd v1")
+            .add_skill(
+                "tdd",
+                source_content="# tdd v2",
+                installed_content="# tdd v1",
+                latest_commit="c-tdd",
+            )
             .add_skill(
                 "review",
                 source_content="# review v2",
                 installed_content="# review v1",
                 source_name="other-project",
                 source_root=OTHER_REPO_ROOT,
+                latest_commit="c-review",
             )
             .build()
         )
@@ -102,13 +120,19 @@ class TestUpdateSourceFilter:
     ) -> None:
         (
             SkillSetup(fs, git_repo)
-            .add_skill("tdd", source_content="# tdd v2", installed_content="# tdd v1")
+            .add_skill(
+                "tdd",
+                source_content="# tdd v2",
+                installed_content="# tdd v1",
+                latest_commit="c-tdd",
+            )
             .add_skill(
                 "review",
                 source_content="# review v2",
                 installed_content="# review v1",
                 source_name="other-project",
                 source_root=OTHER_REPO_ROOT,
+                latest_commit="c-review",
             )
             .build()
         )
@@ -163,13 +187,19 @@ class TestUpdateSourceFilter:
     ) -> None:
         (
             SkillSetup(fs, git_repo)
-            .add_skill("tdd", source_content="# tdd v2", installed_content="# tdd v1")
+            .add_skill(
+                "tdd",
+                source_content="# tdd v2",
+                installed_content="# tdd v1",
+                latest_commit="c-tdd",
+            )
             .add_skill(
                 "review",
                 source_content="# review v2",
                 installed_content="# review v1",
                 source_name="other-project",
                 source_root=OTHER_REPO_ROOT,
+                latest_commit="c-review",
             )
             .build()
         )
@@ -185,13 +215,19 @@ class TestUpdateSourceFilter:
     ) -> None:
         (
             SkillSetup(fs, git_repo)
-            .add_skill("tdd", source_content="# tdd v2", installed_content="# tdd v1")
+            .add_skill(
+                "tdd",
+                source_content="# tdd v2",
+                installed_content="# tdd v1",
+                latest_commit="c-tdd",
+            )
             .add_skill(
                 "review",
                 source_content="# review v2",
                 installed_content="# review v1",
                 source_name="other-project",
                 source_root=OTHER_REPO_ROOT,
+                latest_commit="c-review",
             )
             .build()
         )
@@ -210,16 +246,23 @@ class TestUpdateMultipleNames:
     ) -> None:
         (
             SkillSetup(fs, git_repo)
-            .add_skill("tdd", source_content="# tdd v2", installed_content="# tdd v1")
+            .add_skill(
+                "tdd",
+                source_content="# tdd v2",
+                installed_content="# tdd v1",
+                latest_commit="c-tdd",
+            )
             .add_skill(
                 "review",
                 source_content="# review v2",
                 installed_content="# review v1",
+                latest_commit="c-review",
             )
             .add_skill(
                 "ship",
                 source_content="# ship v2",
                 installed_content="# ship v1",
+                latest_commit="c-ship",
             )
             .build()
         )

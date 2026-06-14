@@ -309,13 +309,31 @@ class TestInstallGitValidation:
     def test_errors_when_content_does_not_match_commit(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
+        _fake_git.commits["skills/tdd"] = "abc1234"
         _fake_git.verified["skills/tdd"] = False
         register_source(git_repo)
         create_repo_skill(fs, "tdd", root=SKILLS_DIR)
 
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "does not match", "abc1234")
+        assert_words_in_message(result.exception.message, "content mismatch")
+        # the verification fails before any copy: nothing installed or recorded
+        assert not (INSTALL_DIR / "tdd").exists()
+        assert "tdd" not in load_skill_manifest().skills
+
+    def test_errors_when_source_has_no_commit(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        # no `commits`/`branch_commits` entry: latest commit is unresolvable
+        _fake_git.commits.clear()
+        register_source(git_repo)
+        create_repo_skill(fs, "tdd", root=SKILLS_DIR)
+
+        result = assert_invoke("install", "tdd", "--offline", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "no commit found")
+        assert not (INSTALL_DIR / "tdd").exists()
+        assert "tdd" not in load_skill_manifest().skills
 
     def test_pulls_by_default(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

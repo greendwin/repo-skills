@@ -1,7 +1,7 @@
 ---
 id: s08t3704
 slug: enforce-the-baseline-invariant-in
-status: pending
+status: done
 ---
 
 # Enforce the baseline invariant in update and install

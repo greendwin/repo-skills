@@ -10,16 +10,17 @@ from repo_skills.config import (
     SkillManifest,
     Source,
     SourceRegistry,
+    SourceSkill,
     load_provider_registry,
     load_skill_manifest,
     load_source_registry,
     make_baseline,
     save_skill_manifest,
 )
-from repo_skills.config._source import SourceSkill
-from repo_skills.console import console, fmt_command, fmt_data, fmt_ident
+from repo_skills.console import console, fmt_command, fmt_ident
 from repo_skills.errors import AppError
-from repo_skills.git import SyncedRepo, resolve_verified_commit
+from repo_skills.git import resolve_verified_commit
+from repo_skills.utils import overwrite_dir
 
 from ._app import app
 from ._deps import prepare_source_repo
@@ -113,7 +114,7 @@ def _install_one(
         )
 
     src = source.repo_root / skill.rel_path
-    commit = _resolve_commit(repo, skill)
+    commit = resolve_verified_commit(repo, skill.rel_path)
 
     provider_registry = load_provider_registry()
 
@@ -168,18 +169,6 @@ def _resolve_source(
     )
 
 
-def _resolve_commit(repo: SyncedRepo, skill: SourceSkill) -> str:
-    commit = resolve_verified_commit(repo, skill.rel_path)
-    if commit is None:
-        # TODO: TBD: use helper func for commit printing (ugly `[:8]`)
-        raise AppError(
-            f"Skill {fmt_ident(skill.name)} content does not match "
-            f"commit {fmt_data(repo.git.get_skill_commit(skill.rel_path)[:8])}."
-        )
-
-    return commit
-
-
 def _record_manifest(
     manifest: SkillManifest, source: Source, skill: SourceSkill, commit: str
 ) -> None:
@@ -208,8 +197,4 @@ def _copy_skill(
             hint=f"Use {fmt_command('--force')} to overwrite.",
         )
 
-    if dst.exists():
-        shutil.rmtree(dst)
-
-    install_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(src, dst)
+    overwrite_dir(src, dst)

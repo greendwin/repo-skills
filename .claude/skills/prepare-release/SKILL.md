@@ -1,6 +1,6 @@
 ---
 name: prepare-release
-description: Prepare a release — bump version, draft release notes, check architecture doc drift, run tox. Never commits or tags.
+description: Prepare a release — bump version, draft release notes, check public and architecture doc drift, run tox. Never commits or tags.
 disable-model-invocation: true
 ---
 
@@ -19,9 +19,9 @@ Optional argument: `major`, `minor`, `patch`, or an explicit `X.Y.Z` — sets th
 2. Detect baseline tag
 3. Read commits since baseline
 4. Decide version
-5. Discover architecture docs
-6. Draft README release notes + check architecture doc drift
-7. Write pyproject.toml, README.md, architecture docs
+5. Discover architecture + public docs
+6. Draft README release notes + check public-doc and architecture-doc drift
+7. Write pyproject.toml, README.md, public + architecture docs
 8. uv lock --upgrade (if uv.lock exists)
 9. uv run tox (with one retry on skill-caused failures)
 10. Print final output with suggested git commands
@@ -63,7 +63,7 @@ Run `git log --no-merges --format="%H %s" <baseline>..HEAD` to get the commit li
 
 **Stop condition:** if the list is empty, stop. "Nothing to release since `<baseline>`."
 
-Store the commit list — you'll need the subjects for version reasoning and the full messages (+ optional diffs) for ambiguous cases and architecture doc drift detection.
+Store the commit list — you'll need the subjects for version reasoning and the full messages (+ optional diffs) for ambiguous cases and public-doc / architecture-doc drift detection.
 
 ## 4. Decide version
 
@@ -84,9 +84,13 @@ Determine the version bump before drafting notes.
 - Prerelease format (`1.4.0a1`, `2.0.0rc2`) → allow but skip README release notes (only bump pyproject).
 - Any valid greater stable semver → accept.
 
-## 5. Discover architecture docs
+## 5. Discover architecture + public docs
 
-Identify architecture docs to check for drift. Use the **union** of two discovery channels:
+Identify docs to check for drift. There are **two families**, discovered separately:
+
+### Architecture docs (internal design)
+
+Use the **union** of two discovery channels:
 
 **Channel A — CLAUDE.md references.** Parse `CLAUDE.md` (if it exists) for references to `.md` files that look like architecture or design docs. Examples: `CONTEXT.md`, `DESIGN.md`, `STRUCTURE.md`, `docs/adr/`, etc.
 
@@ -94,9 +98,17 @@ Identify architecture docs to check for drift. Use the **union** of two discover
 
 Deduplicate the union. Exclude files that don't exist. ADR files (`docs/adr/*.md`) are point-in-time decision records — **do not** drift-check them. Only include them in the discovered set for awareness in the final output.
 
-Store the discovered list for steps 6 and 10.
+### Public docs (user-facing usage/reference)
 
-## 6. Draft README release notes + check architecture doc drift
+These document the surface users actually invoke — install steps, commands, flags, config, concepts. Discover:
+
+**`README.md`'s user-facing sections** — everything *except* `## Release Notes`. Typical headings: Quick start, Concepts, Commands, Configuration, usage examples. These are the primary public docs and are almost always present.
+
+**Auto-detect standalone usage docs** — scan for `docs/usage*.md`, `docs/cli*.md`, `docs/commands*.md`, `USAGE.md`, and `docs/guide*.md`; glob `docs/*.md` for anything whose name or top heading reads as a how-to/reference for end users (not an ADR or design doc). Exclude anything already classified as an architecture doc.
+
+Store both discovered lists for steps 6 and 11.
+
+## 6. Draft README release notes + check public-doc and architecture-doc drift
 
 Nothing is written to disk yet.
 
@@ -110,6 +122,29 @@ Goal: produce a new `### vX.Y.Z` section for `README.md`'s `## Release Notes` th
 - Curate, don't enumerate. Collapse related commits into one bullet. Drop commits that are pure internal churn (version bumps, tox config tweaks, CI noise) unless they affect users.
 - Keep bullets short — one line each is the norm.
 - Match tense and phrasing style of existing release sections.
+
+### Public docs drift check
+
+Goal: keep the user-facing docs (README usage sections + any standalone usage docs from step 5) accurate, so a reader following them sees the surface that actually ships. The release notes describe *what changed*; the public docs describe *how to use it now* — both must reflect this release.
+
+**Step 1 — is drift checking relevant at all?** Scan the release's commits. Public docs are implicated if commits add, remove, or change anything a user invokes or sees:
+- New or renamed commands / subcommands
+- New, renamed, removed, or behavior-changed flags and options
+- Changed defaults, output, or messages a doc quotes
+- New or changed config keys / file locations / env vars
+- Changed install or quick-start steps
+- New or renamed user-facing concepts/terminology
+
+If no commits match, **skip this step entirely** and report: "Public docs: no drift detected for this release."
+
+**Step 2 — surgical edits.** For each implicated public doc:
+1. Grep the actual source for the current surface (Typer commands/options, config models, `--help` text). Prefer running the real `--help` to copy exact option names and wording.
+2. Read the matching section of the doc.
+3. Make minimal edits — add the new flag to the relevant command block, add a row/bullet, correct a changed default or message, add a brief quick-start line for a genuinely new top-level command.
+
+Do **not** rewrite whole sections, restructure, or "improve" prose that is merely dated in style. Do **not** document internal-only changes (refactors, private API) — those belong nowhere in public docs. Keep examples runnable and consistent with the existing format.
+
+**Scope discipline:** only fix drift caused by *this release's* commits. A full doc-vs-source audit is out of scope. Note that release-notes drafting and public-docs drift draw from the same commits but serve different sections — update both; never let the release-notes bullet stand in for the missing command/flag documentation.
 
 ### Architecture doc drift check
 
@@ -137,7 +172,8 @@ Do **not** rewrite whole sections. Do **not** "improve" prose that is merely dat
 After drafting, write immediately — no approval gate:
 1. Update `pyproject.toml`: change the `version = "X.Y.Z"` line under `[project]`. Do not touch anything else in that file.
 2. Prepend the new `### vX.Y.Z` section to `README.md`'s `## Release Notes` (directly above the previous release entry). Skip this for prerelease versions.
-3. Apply the architecture doc edits if any.
+3. Apply the public-doc edits if any (README usage sections and any standalone usage docs).
+4. Apply the architecture doc edits if any.
 
 ## 8. Idempotent re-run detection
 
@@ -191,11 +227,19 @@ Version: X.Y.Z (patch|minor|major)
 Reasoning: <brief explanation of why this bump level was chosen,
 including any uncertainty or prefix-tally disagreements>
 
-=== README.md (written) ===
+=== README.md release notes (written) ===
 
 ### vX.Y.Z
 - <release note 1>
 - <release note 2>
+
+=== Public docs ===
+
+<edits applied per file/section, or "No drift detected for this release.">
+
+Checked public docs:
+  README.md (Commands)   <edit: added --flag to `cmd`>
+  docs/usage.md          unchanged
 
 === Architecture docs ===
 
@@ -208,7 +252,7 @@ Discovered architecture docs:
 Changed files:
   pyproject.toml       <N> +, <M> -
   uv.lock              <N> +, <M> -   (or: skipped — no lockfile)
-  README.md            <N> +
+  README.md            <N> +, <M> -   (release notes + any public-doc edits)
   CONTEXT.md           <N> +, <M> -   (or: unchanged)
 
 Tox: passed
@@ -248,5 +292,6 @@ Do **not** execute any `git` command. Print and stop.
 - Never edits `pyproject.toml` constraints (only the `version` field).
 - Never touches `tox.ini` or CI configuration.
 - Never uses `--no-verify`, `--no-gpg-sign`, or equivalent skip-hook flags.
-- Never rewrites architecture doc sections that aren't implicated by this release.
-- Never edits files outside: `pyproject.toml`, `uv.lock`, `README.md`, and discovered architecture docs.
+- Never rewrites public-doc or architecture-doc sections that aren't implicated by this release.
+- Never documents internal-only changes (refactors, private API) in public docs.
+- Never edits files outside: `pyproject.toml`, `uv.lock`, `README.md`, and discovered public + architecture docs.

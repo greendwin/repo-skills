@@ -20,7 +20,12 @@ from repo_skills.config import (
 )
 from repo_skills.console import console, fmt_data, fmt_ident
 from repo_skills.errors import AppError, NoopError, render_error
-from repo_skills.git import SyncedRepo, ensure_on_branch, resolve_verified_commit
+from repo_skills.git import (
+    SyncedRepo,
+    ensure_on_branch,
+    find_commit_with_content,
+    resolve_verified_commit,
+)
 from repo_skills.utils import overwrite_dir
 
 from ._app import app
@@ -298,6 +303,25 @@ def _update_skill(
         ctx.provider_registry, entry, skill_name, source_hashes=source_hashes
     )
 
+    # before any copy, see whether it would detach and
+    # try to re-pin it to a reachable commit whose content matches
+    #
+    # previously-skipped copies become UPDATE
+    # the shared in_sync path below then advances the baseline and reports RECOVERED
+    if not _decisions_in_sync(decisions) and _would_detach(entry, repo):
+        reattached = _attempt_safe_reattach(
+            decisions, repo=repo, rel_path=skill.rel_path
+        )
+        if reattached is not None:
+            entry = InstalledSkill(
+                source=entry.source,
+                baseline=reattached,
+                detached=True,
+            )
+            decisions = _decide_actions(
+                ctx.provider_registry, entry, skill_name, source_hashes=source_hashes
+            )
+
     # resolve the verified commit before any copy so a dirty/uncommitted source
     # aborts before touching install dirs; only needed when a copy will occur
     # (FRESH/UPDATE) or the baseline will advance (in_sync)
@@ -350,11 +374,61 @@ def _update_skill(
     )
 
 
+def _attempt_safe_reattach(
+    decisions: list[_ProviderDecision],
+    *,
+    repo: SyncedRepo,
+    rel_path: str,
+) -> Baseline | None:
+    # build the fingerprint from the pre-apply content of the installed copies only
+    # a freshly-written copy must not influence the search
+    # all such copies must be byte-identical, otherwise the fingerprint is ambiguous
+    # and we must not silently re-pin a baseline
+    fingerprint: dict[str, str] | None = None
+    for decision in decisions:
+        if decision.current_hashes is None:
+            continue
+
+        if fingerprint is None:
+            fingerprint = decision.current_hashes
+        elif decision.current_hashes != fingerprint:
+            return None
+
+    if fingerprint is None:
+        return None
+
+    found = find_commit_with_content(repo.git, rel_path, fingerprint)
+    if found is None:
+        return None
+
+    return Baseline(commit=found, files=fingerprint)
+
+
+def _decisions_in_sync(decisions: list[_ProviderDecision]) -> bool:
+    # mirror the post-apply `in_sync` check using only the planned actions
+    statuses = [_ACTION_STATUS[d.action] for d in decisions]
+    return bool(statuses) and all(s in _SYNCED_STATES for s in statuses)
+
+
+def _would_detach(entry: InstalledSkill, repo: SyncedRepo) -> bool:
+    if entry.detached:
+        return True
+
+    if entry.baseline is None:
+        return False
+
+    return not repo.git.is_ancestor(entry.baseline.commit, repo.branch)
+
+
 @dataclass(frozen=True)
 class _ProviderDecision:
     name: str
     dst: Path
     action: _Action
+    # pre-apply content of the install dir, or `None` when the dir was absent (FRESH)
+    # the reattach fingerprint is built only from genuinely-installed copies,
+    # never re-read after `_apply_actions` overwrites them
+    current_hashes: dict[str, str] | None
 
 
 def _decide_actions(
@@ -369,7 +443,7 @@ def _decide_actions(
     for provider in provider_registry.providers:
         dst = provider.install_path / skill_name
         if not dst.exists():
-            decisions.append(_ProviderDecision(provider.name, dst, _Action.FRESH))
+            decisions.append(_ProviderDecision(provider.name, dst, _Action.FRESH, None))
             continue
 
         current_hashes = compute_file_hashes(dst)
@@ -382,7 +456,7 @@ def _decide_actions(
             # installed skill was locally modified, don't touch it
             action = _Action.SKIPPED
 
-        decisions.append(_ProviderDecision(provider.name, dst, action))
+        decisions.append(_ProviderDecision(provider.name, dst, action, current_hashes))
 
     return decisions
 

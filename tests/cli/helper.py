@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, overload
@@ -25,6 +26,7 @@ from repo_skills.config import (
 )
 from repo_skills.errors import AppError, FileNotInCommitError, NoopError
 from repo_skills.git import CommitVerificationError
+from repo_skills.utils import normalize_line_endings
 
 
 @dataclass
@@ -122,8 +124,25 @@ class FakeGitRepo:
         if not self.verified.get(rel_path, True):
             raise CommitVerificationError("content mismatch", repo_path=str(self.root))
 
-    def log_commits(self, path: str, max_count: int) -> list[str]:
-        return self.commit_logs.get(path, [])[:max_count]
+    def log_commits(self, path: str, max_count: int | None = None) -> list[str]:
+        commits = self.commit_logs.get(path, [])
+        if max_count is None:
+            return list(commits)
+        return commits[:max_count]
+
+    def commit_content_hashes(self, commit: str, rel_path: str) -> dict[str, str]:
+        prefix = f"{rel_path}/"
+        paths = sorted(
+            path
+            for (c, path) in self.files_at_commit
+            if c == commit and path.startswith(prefix)
+        )
+        hashes: dict[str, str] = {}
+        for path in paths:
+            raw = normalize_line_endings(self.get_file_at_commit(commit, path))
+            sha = hashlib.sha256(raw).hexdigest()
+            hashes[path[len(prefix) :]] = f"sha256:{sha}"
+        return hashes
 
     def get_file_at_commit(self, commit: str, path: str) -> bytes:
         try:

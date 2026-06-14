@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from repo_skills.config import compute_file_hashes
 from repo_skills.errors import AppError
-from repo_skills.git import CommitVerificationError
+from repo_skills.git import CommitVerificationError, find_commit_with_content
 from repo_skills.git_real import RealGitRepo
+
+
+def _fingerprint(content: bytes) -> dict[str, str]:
+    sha = hashlib.sha256(content).hexdigest()
+    return {"SKILL.md": f"sha256:{sha}"}
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -360,6 +367,173 @@ def test_verify_commit_content_crlf_matches_lf(repo: Path) -> None:
 
     git = RealGitRepo(repo)
     git.verify_commit_content(commit, "skills/tdd")  # matches: does not raise
+
+
+def test_find_commit_with_content_matches_head(repo: Path) -> None:
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("# v1\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "v1")
+
+    (skills_dir / "SKILL.md").write_text("# v2\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "v2")
+    head = _git(repo, "log", "-1", "--format=%H")
+
+    target = _fingerprint(b"# v2\n")
+
+    git = RealGitRepo(repo)
+    assert find_commit_with_content(git, "skills/tdd", target) == head
+
+
+def test_find_commit_with_content_matches_deep_in_history(repo: Path) -> None:
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("# wanted\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "v1")
+    wanted = _git(repo, "log", "-1", "--format=%H")
+
+    (skills_dir / "SKILL.md").write_text("# v2\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "v2")
+
+    target = _fingerprint(b"# wanted\n")
+
+    git = RealGitRepo(repo)
+    assert find_commit_with_content(git, "skills/tdd", target) == wanted
+
+
+def test_find_commit_with_content_no_match_returns_none(repo: Path) -> None:
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("# v1\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "v1")
+
+    target = _fingerprint(b"# nowhere\n")
+
+    git = RealGitRepo(repo)
+    assert find_commit_with_content(git, "skills/tdd", target) is None
+
+
+def test_find_commit_with_content_empty_history_returns_none(repo: Path) -> None:
+    target = _fingerprint(b"# anything\n")
+
+    git = RealGitRepo(repo)
+    assert find_commit_with_content(git, "skills/missing", target) is None
+
+
+def test_find_commit_with_content_returns_newest_matching_commit(repo: Path) -> None:
+    """When identical content appears at two commits, the newer one wins."""
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+
+    # Older commit holds the target content.
+    (skills_dir / "SKILL.md").write_text("# X\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "x-old")
+    older = _git(repo, "log", "-1", "--format=%H")
+
+    # Change away from the target content.
+    (skills_dir / "SKILL.md").write_text("# Y\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "y")
+
+    # Newer commit restores the byte-identical target content.
+    (skills_dir / "SKILL.md").write_text("# X\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "x-new")
+    newer = _git(repo, "log", "-1", "--format=%H")
+
+    target = _fingerprint(b"# X\n")
+
+    git = RealGitRepo(repo)
+    found = find_commit_with_content(git, "skills/tdd", target)
+    assert found == newer
+    assert found != older
+
+
+def test_find_commit_with_content_extra_file_is_not_a_match(repo: Path) -> None:
+    """A commit with an extra file beyond the target fingerprint is no match."""
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("# only\n")
+    (skills_dir / "extra.md").write_text("# extra\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "with extra")
+
+    # Target fingerprint covers SKILL.md only (via the production hashing path).
+    target = _fingerprint(b"# only\n")
+
+    git = RealGitRepo(repo)
+    assert find_commit_with_content(git, "skills/tdd", target) is None
+
+
+def test_commit_content_hashes_maps_nested_files_relative_to_skill(
+    repo: Path,
+) -> None:
+    skills_dir = repo / "skills" / "tdd"
+    (skills_dir / "nested").mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("# top\n")
+    (skills_dir / "nested" / "more.md").write_text("# deep\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "multi")
+    commit = _git(repo, "log", "-1", "--format=%H")
+
+    git = RealGitRepo(repo)
+    hashes = git.commit_content_hashes(commit, "skills/tdd")
+
+    top = hashlib.sha256(b"# top\n").hexdigest()
+    deep = hashlib.sha256(b"# deep\n").hexdigest()
+    assert hashes == {
+        "SKILL.md": f"sha256:{top}",
+        "nested/more.md": f"sha256:{deep}",
+    }
+
+
+def test_commit_content_hashes_normalizes_crlf(repo: Path) -> None:
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_bytes(b"line1\r\nline2\r\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "crlf")
+    commit = _git(repo, "log", "-1", "--format=%H")
+
+    git = RealGitRepo(repo)
+    hashes = git.commit_content_hashes(commit, "skills/tdd")
+
+    normalized = hashlib.sha256(b"line1\nline2\n").hexdigest()
+    assert hashes == {"SKILL.md": f"sha256:{normalized}"}
+
+
+def test_commit_content_hashes_missing_skill_returns_empty(repo: Path) -> None:
+    head = _git(repo, "log", "-1", "--format=%H")
+    git = RealGitRepo(repo)
+    assert git.commit_content_hashes(head, "skills/missing") == {}
+
+
+def test_find_commit_with_content_crlf_fingerprint_matches_lf_commit(
+    repo: Path, tmp_path: Path
+) -> None:
+    """A fingerprint hashed over CRLF bytes still finds the LF-committed blob."""
+    skills_dir = repo / "skills" / "tdd"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("line1\nline2\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "v1")
+    wanted = _git(repo, "log", "-1", "--format=%H")
+
+    # build the target via the production hashing path over CRLF bytes of the
+    # same logical content; normalization parity must still match the LF commit
+    work = tmp_path / "work" / "tdd"
+    work.mkdir(parents=True)
+    (work / "SKILL.md").write_bytes(b"line1\r\nline2\r\n")
+    target = compute_file_hashes(work)
+
+    git = RealGitRepo(repo)
+    assert find_commit_with_content(git, "skills/tdd", target) == wanted
 
 
 def test_verify_commit_content_committed_crlf_matches_local_crlf(

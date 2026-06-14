@@ -27,3 +27,4 @@ status: pending
 - [ ] [s06t20](s06t20-multiple-source-support.md): Multiple source support
 - [x] [s06t23](s06t23-support-s-alias-for-source.md): Support `-s` alias for `--source`
 - [ ] [s06t24](s06t24-source-remove-show-list-of.md): 'source remove': show list of skills in a bullet list
+- [ ] [s06t25](s06t25-support-skills-dependencies.md): Support skills dependencies

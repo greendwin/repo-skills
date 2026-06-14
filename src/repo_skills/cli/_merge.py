@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import difflib
-import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, NoReturn, Optional
@@ -584,24 +583,26 @@ def _find_base_commit(
     best_distance = None
 
     for commit in commits:
-        commit_hashes: dict[str, str] = {}
+        # an exact base requires the commit's FULL content to equal the
+        # installed copy — extra files in the tree disqualify it
+        if git.commit_content_hashes(commit, skill_rel) == installed_hashes:
+            best_commit = commit
+            best_distance = 0
+            break
+
         for rel_path in installed_hashes:
             try:
-                data = git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
+                _ = git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
             except FileNotInCommitError:
                 break  # missing file — disqualifies this commit
-
-            sha = hashlib.sha256(data).hexdigest()
-            commit_hashes[rel_path] = f"sha256:{sha}"
         else:  # all files found — evaluate this commit
-            if commit_hashes == installed_hashes:
-                best_commit = commit
-                best_distance = 0
-                break
-
             distance = _compute_distance(
                 git, commit, skill_rel, installed_path, set(installed_hashes.keys())
             )
+
+            # distance must never read as 0 — this value is reserved for exact match
+            distance = max(1, distance)
+
             if best_distance is None or best_distance > distance:
                 best_commit = commit
                 best_distance = distance
@@ -788,10 +789,14 @@ def _compute_distance(
     installed_path: Path,
     file_paths: set[str],
 ) -> int:
+    # note: full-content equality (dist==0) is decided by the exact-match path
+    # both sides are normalized so the count reflects real content drift only
     total = 0
 
     for rel_path in file_paths:
-        commit_data = git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
+        commit_data = normalize_line_endings(
+            git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
+        )
         commit_lines = commit_data.decode(errors="replace").splitlines()
 
         local_file = installed_path / rel_path

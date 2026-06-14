@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from pathlib import Path
 
@@ -117,11 +118,75 @@ class RealGitRepo:
         args.extend(["--", rel_path])
         return self._run(*args)
 
-    def log_commits(self, path: str, max_count: int) -> list[str]:
-        output = self._run("log", f"--max-count={max_count}", "--format=%H", "--", path)
+    def log_commits(self, path: str, max_count: int | None = None) -> list[str]:
+        args = ["log", "--format=%H"]
+        if max_count is not None:
+            args.append(f"--max-count={max_count}")
+        args.extend(["--", path])
+        output = self._run(*args)
         if not output:
             return []
         return output.splitlines()
+
+    def commit_content_hashes(self, commit: str, rel_path: str) -> dict[str, str]:
+        skill_dir = self._path / rel_path
+        listing = self._run("ls-tree", "-r", "--name-only", commit, rel_path)
+        if not listing:
+            return {}
+
+        files = listing.splitlines()
+        contents = self._batch_blob_contents(commit, files)
+
+        hashes: dict[str, str] = {}
+        for file_path in files:
+            content = normalize_line_endings(contents[file_path])
+            sha = hashlib.sha256(content).hexdigest()
+            rel = rel_posix(self._path / file_path, skill_dir)
+            hashes[rel] = f"sha256:{sha}"
+        return hashes
+
+    def _batch_blob_contents(self, commit: str, files: list[str]) -> dict[str, bytes]:
+        # fetch every blob for this commit in a single `git cat-file --batch`
+        # call instead of one `git show` per file; the batch protocol emits
+        # `<oid> <type> <size>\n<size bytes>\n` per requested spec, in order
+        specs = "".join(f"{commit}:{path}\n" for path in files)
+        cmd = ["git", "cat-file", "--batch"]
+        console.debug_cmd(cmd, self._path)
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=self._path,
+                input=specs.encode(),
+                capture_output=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            stderr = exc.stderr.decode(errors="replace").strip() if exc.stderr else ""
+            console.debug_output("", stderr)
+            raise _git_error(("cat-file", "--batch"), stderr, self._path) from exc
+
+        return self._parse_cat_file_batch(commit, files, result.stdout)
+
+    def _parse_cat_file_batch(
+        self, commit: str, files: list[str], output: bytes
+    ) -> dict[str, bytes]:
+        contents: dict[str, bytes] = {}
+        offset = 0
+        for path in files:
+            newline = output.index(b"\n", offset)
+            header = output[offset:newline].decode()
+            offset = newline + 1
+
+            parts = header.split(" ")
+            if len(parts) < 3 or parts[1] == "missing":
+                raise FileNotInCommitError(commit, path)
+
+            size = int(parts[2])
+            contents[path] = output[offset : offset + size]
+            # skip the blob payload and the trailing newline the batch emits
+            offset += size + 1
+
+        return contents
 
     def get_file_at_commit(self, commit: str, path: str) -> bytes:
         try:

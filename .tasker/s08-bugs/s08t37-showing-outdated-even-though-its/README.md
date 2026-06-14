@@ -69,6 +69,8 @@ None.
 - [x] [s08t3701](s08t3701-update-advances-the-baseline-atomically.md): Update advances the baseline atomically on content-sync
 - [x] [s08t3703](s08t3703-commitverification-result-object-pinpoints-the.md): CommitVerification result pinpoints the first content mismatch
 - [x] [s08t3704](s08t3704-enforce-the-baseline-invariant-in.md): Enforce the baseline invariant in update and install
-- [ ] [s08t3705](s08t3705-safereattach-by-content-search.md): Safe-reattach by content search
+- [x] [s08t3705](s08t3705-safereattach-by-content-search.md): Safe-reattach by content search
 - [x] [s08t3706](s08t3706-remodel-skillreport-sourceunavailabledetached-as-a.md): Remodel _SkillReport source-unavailable/detached as a discriminated outcome
 - [x] [s08t3707](s08t3707-extract-shared-skilldir-overwrite-primitive.md): Extract shared skill-dir overwrite primitive for update and install
+- [ ] [s08t3708](s08t3708-avoid-duplicate-perfile-fetches-in.md): Avoid duplicate per-file fetches in merge base search
+- [ ] [s08t3709](s08t3709-make-the-recoveredbaselineadvance-invariant-explicit.md): Make the RECOVERED/baseline-advance invariant explicit in reattach carry

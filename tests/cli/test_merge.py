@@ -300,6 +300,26 @@ class TestBaseCommitSearch:
         assert _fake_git.created_branches["skill-merge/claude/tdd"] == "bbb222"
         assert_words_in_message(result.output, "merge", "complete")
 
+    def test_extra_file_commit_is_not_an_exact_base(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        # a commit carrying the installed file PLUS an extra file must not be
+        # treated as the exact (distance 0) base; its full content diverges
+        _setup_diverged_skill(fs, git_repo, commit=None)
+
+        _fake_git.commit_logs["skills/tdd"] = ["bbb222"]
+        _fake_git.files_at_commit[("bbb222", "skills/tdd/SKILL.md")] = (
+            b"# edited by user"
+        )
+        _fake_git.files_at_commit[("bbb222", "skills/tdd/extra.md")] = b"# extra"
+
+        result = assert_invoke("merge", "tdd", "--offline")
+
+        # not an exact match: a merge branch is created rather than early-exiting
+        # with "up to date"
+        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "bbb222"
+        assert_words_in_message(result.output, "merge", "complete")
+
     def test_orphan_branch_when_no_commits(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
@@ -1930,3 +1950,40 @@ class TestFindBaseCommitCRLF:
         assert result is not None
         assert result.commit == "abc"
         assert result.distance == 0
+
+
+class TestFindBaseCommitNearMiss:
+    """A commit with all files present but differing content is scored by distance."""
+
+    def test_near_miss_commit_scored_by_distance(self, fs: FakeFilesystem) -> None:
+        installed = Path("/installed/tdd")
+        fs.create_file(installed / "SKILL.md", contents=b"line1\nchanged\n")
+
+        git = FakeGitRepo(
+            commit_logs={"skills/tdd": ["near"]},
+            files_at_commit={
+                ("near", "skills/tdd/SKILL.md"): b"line1\nline2\n",
+            },
+        )
+
+        result = _find_base_commit(git, "skills/tdd", installed)
+        assert result is not None
+        assert result.commit == "near"
+        # content differs but no file is missing, so it is scored, not exact
+        assert result.distance == 2
+
+    def test_commit_missing_file_is_disqualified(self, fs: FakeFilesystem) -> None:
+        installed = Path("/installed/tdd")
+        fs.create_file(installed / "SKILL.md", contents=b"a\n")
+        fs.create_file(installed / "EXTRA.md", contents=b"b\n")
+
+        git = FakeGitRepo(
+            commit_logs={"skills/tdd": ["partial"]},
+            files_at_commit={
+                ("partial", "skills/tdd/SKILL.md"): b"a\n",
+            },
+        )
+
+        # the commit lacks EXTRA.md, so it cannot serve as a base at all
+        result = _find_base_commit(git, "skills/tdd", installed)
+        assert result is None

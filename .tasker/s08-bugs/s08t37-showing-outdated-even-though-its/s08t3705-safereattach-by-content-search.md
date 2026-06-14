@@ -1,7 +1,7 @@
 ---
 id: s08t3705
 slug: safereattach-by-content-search
-status: pending
+status: done
 ---
 
 # Safe-reattach by content search

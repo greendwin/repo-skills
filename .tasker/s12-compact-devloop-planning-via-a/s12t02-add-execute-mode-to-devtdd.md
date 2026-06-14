@@ -4,36 +4,36 @@ slug: add-execute-mode-to-devtdd
 status: done
 ---
 
-# Add execute mode to /dev-tdd
+# Migrate every /dev-tdd reference back to /tdd
 
 ## Goal
 
-Extend `~/.claude/skills/dev-tdd/SKILL.md` with a second mode, `mode: execute`, that drives red-green-refactor to green tests for one slice — consuming the shared digest from plan mode. An explicit `mode:` keyword dispatches between `plan` and `execute`.
+Repoint every reference to the soon-to-be-deleted `/dev-tdd` skill back at `/tdd` (preserving `mode:` where present), so no part of the skill set names a skill that is about to be removed. One coherent change across the whole set.
 
 ## Decisions & constraints
 
-- **`/dev-tdd` owns BOTH modes** so `/dev-loop` never calls `/tdd` at all, and every interactive-suppression hack (the current "use tdd's skip-review path" instructions) disappears. *(Rejected: `/dev-tdd` owns plan only, execute stays on `/tdd` — leaves the suppression hacks in place.)*
-- **Explicit `mode:` dispatch.** The spawn prompt opens with `mode: plan` or `mode: execute`; the skill never infers mode from inputs.
-- **Execute-mode inputs:** the one slice (goal + acceptance criteria), the shared **digest** (four-section), and any decisions/constraints. It consumes the digest rather than re-exploring from zero, though it may look at specifics for its own slice.
-- **Green-test contract:** execute-mode returns only when tests are green; if it cannot reach green it stops and reports (never returns red as done). Behavior-preserving rules for refactor application carry over from `/tdd`.
-- **Per-finding outcome reporting:** when execute-mode applies review/refactor findings, it returns `{finding, outcome: applied|dropped, reason}` per finding (this is what `/dev-loop` Steps 3d/4c consume).
-- **Non-interactive**, same as plan mode: no approval waits, no `/grill-me`.
-- Continues to reference `/tdd`'s craft sidecars (tracer-bullet loop, mocking-at-boundaries, deep-modules, interface-design) rather than restating them.
+- **Migrate all references in one change** — a dangling reference to a deleted skill is latent breakage; "one canonical `/tdd`" is defeated if half the skill set still says `/dev-tdd`.
+- **Spawn mechanism unchanged; `tdd` agent stays deleted.** `/dev-loop` still spawns a `general-purpose` agent with prompt "invoke `/tdd` in `mode: {plan|execute}` …"; no dedicated wrapper. Only the skill name in spawn prompts changes (`/dev-tdd` → `/tdd`). *Rejected: re-introducing a `tdd` agent — re-creates the orphan-prone duplicate already removed.*
+- Preserve `mode: plan` / `mode: execute` wording wherever it appears — only the skill name flips.
+- **Grep-confirm the exact set before editing** — the list below is from the prior session and must be re-verified; catch any reference it missed.
 
 ## Edge cases
 
-- Cannot reach green → stop and report which slice/finding failed and why.
-- A refactor finding can't stay green → drop it, report `outcome: dropped` with reason; never change expected behavior to force it through.
-- Digest missing a fact the slice needs → execute-mode may inspect the codebase for that specific gap (digest is a starting point, not a hard boundary).
+- A `/dev-tdd` mention that is actually describing the now-removed fork's history (vs. a live spawn instruction) → reword, don't leave a stale name.
+- Distinguish the `/tdd` *skill* name (legitimate) from any lingering spawnable-`tdd`-*agent* reference (must not reappear).
+- Leave genuine `/tdd`-skill references in `impl-loop`, `worktree-loop`, `setup-task-tracker`, `to-tasks` untouched — they already point at the right skill.
 
-## Key files
+## Key files (grep-confirm first)
 
-- Edit: `~/.claude/skills/dev-tdd/SKILL.md` (built in the previous slice).
-- Reference: `~/.claude/skills/tdd/SKILL.md` Tracer Bullet / Incremental Loop / Refactor sections; `~/.claude/skills/dev-loop/SKILL.md` Steps 3a/3d/4c for the consumption contract.
+- `~/.claude/skills/dev-loop/SKILL.md` — roles table, invariants, Steps 2 / 3a / 3d / 4c
+- `~/.claude/skills/review-iter/SKILL.md`
+- `~/.claude/skills/fix-tests/SKILL.md`
+- `~/.claude/skills/setup-dev-loop/SKILL.md`, `FORMAT.md`, `templates/generic.md`, `templates/claude-code.md`, `examples/dev-loop.md`
+- `/work/docs/agents/dev-loop.md` (the only in-repo file)
 
 ## Acceptance criteria
 
-- The skill documents an `execute` mode dispatched by an explicit `mode:` keyword alongside `plan`.
-- Execute-mode's documented inputs include the slice, the four-section digest, and decisions/constraints.
-- It states the green-test contract (return only when green; stop+report otherwise) and the per-finding `{finding, outcome, reason}` return shape.
-- It remains non-interactive and references (does not duplicate) the craft sidecars.
+- A grep for `dev-tdd` across `~/.claude/skills/` and `/work/docs/agents/` returns only the `/dev-tdd` skill file itself (removed in the next slice) — no other live reference remains.
+- Every former `/dev-tdd` spawn instruction now reads `/tdd` with its `mode:` keyword intact.
+- `/dev-loop`'s roles table and invariants name `/tdd` as the spawned writer/planner; no spawnable `tdd` agent is reintroduced.
+- `docs/agents/dev-loop.md` (in-repo) names `/tdd` as the sole writer.

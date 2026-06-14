@@ -1,7 +1,7 @@
 ---
 id: s12t04
 slug: delete-the-orphaned-tdd-agent
-status: pending
+status: done
 ---
 
 # Delete the orphaned tdd agent wrapper

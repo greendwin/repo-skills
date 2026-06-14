@@ -4,7 +4,7 @@ This repo runs inside **Claude Code**. The code-review lens invokes the built-in
 `/code-review` command (read-only by default); the refactor lenses are read-only
 reviewers that propose refactorings in prose. Every lens reports findings with an
 inline `suggested-fix` and never edits the tracked tree — `dev-loop` hands the accepted
-findings to `tdd`, the sole writer, which implements them under green tests. Each lens
+findings to `/tdd`, the sole writer, which implements them under green tests. Each lens
 below is one reviewer; `dev-loop` spawns the lenses in a roster in parallel and
 collects their findings. This document is self-contained — no other file is needed to
 perform any lens below.

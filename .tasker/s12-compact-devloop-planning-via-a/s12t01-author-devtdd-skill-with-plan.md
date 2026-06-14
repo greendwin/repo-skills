@@ -4,37 +4,40 @@ slug: author-devtdd-skill-with-plan
 status: done
 ---
 
-# Author /dev-tdd skill with plan mode
+# Fold mode: dispatch into /tdd; extract human routine to a sidecar
 
 ## Goal
 
-Create a new skill at `~/.claude/skills/dev-tdd/SKILL.md` that, when invoked in `mode: plan`, explores the codebase, reads the task body, and returns a structured planning payload — fully non-interactive. This is the tracer bullet that proves the non-interactive fork pattern.
+Make `/tdd` the single dual-mode TDD skill. Invoked with **no mode** → today's interactive human flow (relocated to a `human-mode.md` sidecar); `mode: plan` → returns `{slice list, digest, open-questions, assumptions}`; `mode: execute` → drives red→green→refactor to green for one slice. `SKILL.md` stays agent-lean: craft pointers + mode dispatch + agent return contracts only; the rare human routine is read on demand from the sidecar.
+
+This is the tracer bullet — it makes `/tdd` capable of everything `/dev-tdd` did, so later slices can repoint references and delete the fork.
 
 ## Decisions & constraints
 
-- **Fork of `/tdd`, non-interactive by design.** `/dev-tdd` exists specifically to be spawned by `/dev-loop`. It must NEVER invoke `/grill-me`, NEVER wait for user approval, and NEVER prompt for clarification. *(Rejected: bolting a plan mode onto interactive `/tdd` — muddies its identity and the "only tdd writes" invariant.)*
-- **Plan-mode reads the task itself.** The orchestrator passes only a task-id (or a bare description); plan-mode `/dev-tdd` reads the task body and parent via the `read-task` verb (resolve `docs/agents/task-tracker.md`), because the task body is exactly the bulk that would otherwise pollute the orchestrator's context. Bare-description input → work from the description, do NOT read the task-tracker config.
-- **Return payload (as data):** `{slice list, digest, blocking open-questions, assumptions}`.
-  - Slice list: ordered tracer-bullet vertical slices, each with goal + acceptance criteria.
-  - Ambiguity is handed back, never gated on the user: genuinely undecided design that changes the slices → **blocking open-questions**; minor judgment calls → **assumptions** recorded inline in the plan.
-- **Digest = four fixed sections** (prose within each): `## Files`, `## Domain`, `## Constraints`, `## Decisions`. The digest is the contract surface that downstream execute-mode consumes, so its shape is fixed. *(Rejected: freeform prose / per-slice fragments.)*
-- **Reference, don't copy, `/tdd`'s craft sidecars.** The SKILL.md owns only modes + return contract + non-interactive overrides; it points at `/tdd`'s existing sidecars for craft: `tests.python.md`, `mocking.python.md`, `tests.js.md`, `mocking.js.md`, `deep-modules.md`, `interface-design.md` (in `~/.claude/skills/tdd/`). Zero craft duplication. *(Rejected: full copy — craft drifts in two places.)*
-- The readiness-check / grill-me machinery from `/tdd`'s Planning section becomes **report-not-invoke** here: it produces open-questions/assumptions instead of calling `/grill-me`.
+- **One canonical TDD skill (collapse the fork).** Two near-identical TDD skills are confusing; `/tdd` is the single entry point. Craft-drift is already neutralized (`/dev-tdd` only references `/tdd`'s sidecars), so "one entry point" is the driver. *Reverses the earlier fork decision.*
+- **Fold explicit `mode:` dispatch into `/tdd`.** No mode → interactive human path; `mode: plan` / `mode: execute` → non-interactive agent contract. The skill never infers mode; an absent/unknown `mode:` on a non-human spawn → stop and report. *This is the "bolt a mode onto /tdd" option originally rejected; chosen now because sidecar extraction makes it cheap.*
+- **Hot path stays in SKILL.md; rare human routine moves to a sidecar.** A `SKILL.md` is loaded in full on every invocation; sidecars are read on demand. The subagent path is high-frequency (one plan + N execute + fix + refactor spawns per `/dev-loop` run), so `SKILL.md` keeps the common content: craft pointers + mode dispatch + the agent return contracts (digest, green-test, per-finding outcome) + the non-interactive overrides. The human-only routine (readiness check → grill-me → plan → approval gate → reactive escalation) moves to a sidecar (e.g. `human-mode.md`), read only when invoked with **no** mode. **Do NOT extract the mode dispatch or agent contracts** — those are the common path.
+- **Human path stays first-class (dual-mode), byte-for-byte as today** — just relocated. *Rejected: a "subagent-first, human = thin adapter that decides how to adopt output" design — it softens `/tdd`'s deliberate approval/grill-me quality gate to agent discretion, which drifts.*
+- **Contract moves verbatim.** The `mode: plan` / `mode: execute` sections, the four-section digest (`## Files` / `## Domain` / `## Constraints` / `## Decisions`), the green-test contract, and the per-finding `{finding, outcome, reason}` shape move unchanged from `/dev-tdd`. No redesign. The human "no mode" path never produces/consumes a digest — it plans + implements in one continuous flow as `/tdd` does now.
+- Continue referencing `/tdd`'s craft sidecars (tests/mocking per language, deep-modules, interface-design) — no craft duplication.
 
 ## Edge cases
 
-- Bare description (no task id): skip task-tracker read entirely.
-- Missing `docs/agents/task-tracker.md` when a task-id IS given: halt and name the missing config (same contract as `/tdd`).
-- Plan-mode produces blocking open-questions: just return them — do not attempt to resolve interactively.
+- `mode:` absent or unrecognized on a subagent spawn → stop and report; do not guess.
+- Bare description (no task id) in `mode: plan`/`execute` → work from the description; do not read/require the task-tracker config.
+- Missing `docs/agents/task-tracker.md` when a task-id IS given → halt and name the missing config (same contract as today's `/tdd`).
+- Human (no-mode) invocation must behave exactly as current `/tdd` — verify the readiness/grill-me/approval/escalation flow survives the move to the sidecar intact.
 
 ## Key files
 
-- New: `~/.claude/skills/dev-tdd/SKILL.md`
-- Reference (read for shape, do not edit): `~/.claude/skills/tdd/SKILL.md` and its sidecars; `~/.claude/skills/dev-loop/SKILL.md` (for the slice/digest contract it expects).
+- Edit: `~/.claude/skills/tdd/SKILL.md` (add mode dispatch + agent contracts; trim the human routine out).
+- New: `~/.claude/skills/tdd/human-mode.md` (the relocated interactive routine).
+- Reference (do not edit): `~/.claude/skills/dev-tdd/SKILL.md` (source of the verbatim mode/contract content), `~/.claude/skills/tdd/` craft sidecars.
 
 ## Acceptance criteria
 
-- `~/.claude/skills/dev-tdd/SKILL.md` exists with valid frontmatter (`name: dev-tdd`, a description).
-- It defines a `plan` mode whose documented output is exactly `{slice list, digest, blocking open-questions, assumptions}`, with the digest's four fixed section headings spelled out.
-- It explicitly states non-interactivity (no `/grill-me`, no approval wait, no clarification prompts) and the read-task-by-id behavior.
-- It references the `/tdd` craft sidecars by path rather than restating their content.
+- `/tdd/SKILL.md` documents `mode: plan` and `mode: execute` dispatched by an explicit `mode:` keyword, plus the no-mode human path that defers to the sidecar.
+- `mode: plan`'s documented output is exactly `{slice list, digest, open-questions, assumptions}` with the digest's four fixed headings; `mode: execute` documents slice + digest inputs, the green-test contract, and the per-finding `{finding, outcome, reason}` return.
+- The non-interactive overrides (no grill-me, no approval wait, no clarification prompts) are stated for both modes.
+- The interactive human routine lives in `human-mode.md` and is referenced (not duplicated) from `SKILL.md`; the no-mode path reproduces today's behavior.
+- `SKILL.md` references the craft sidecars rather than restating them.

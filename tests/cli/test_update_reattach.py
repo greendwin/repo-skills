@@ -180,6 +180,10 @@ class TestUpdateSafeReattach:
 
         manifest = load_manifest()
         assert manifest.skills["tdd"].detached is True
+        # the baseline commit must NOT advance: a divergent SKIPPED copy is routed
+        # to the untracked/merge path, never silently re-pinned
+        assert manifest.skills["tdd"].baseline is not None
+        assert manifest.skills["tdd"].baseline.commit == "abc123"
         assert "recovered" not in result.output.lower()
         assert_words_in_message(result.output, "untracked")
         assert "failed" not in result.output.lower()

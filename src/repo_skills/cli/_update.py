@@ -364,6 +364,14 @@ def _update_skill(
     if latest_commit is None:
         raise AssertionError("internal: content-synced skill without a resolved commit")
 
+    # guard the baseline invariant: only content-synced copies may advance the
+    # baseline; if a non-synced copy reaches this point (e.g. a loosened reattach
+    # fingerprint guard) fail loudly instead of advancing over a local edit
+    if not all(s in _SYNCED_STATES for s in provider_statuses.values()):
+        raise AssertionError(
+            "internal: content-synced skill advancing baseline over a non-synced copy"
+        )
+
     baseline = Baseline(commit=latest_commit, files=source_hashes)
     transition = _Detach.RECOVERED if entry.detached else _Detach.NONE
 

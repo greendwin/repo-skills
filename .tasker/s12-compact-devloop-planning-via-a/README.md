@@ -1,31 +1,34 @@
 ---
 id: s12
 slug: compact-devloop-planning-via-a
-status: pending
+status: done
 ---
 
-# Compact /dev-loop planning via a non-interactive /dev-tdd fork
+# Collapse /dev-tdd back into a single canonical /tdd skill
 
 ## Context
 
-`/dev-loop`'s Step 2 (Plan and approve) makes the orchestrator explore the codebase, read CONTEXT.md + ADRs, and synthesize the tracer-bullet slice list inline — all in the main context window. This raw exploration pollutes the orchestrator's context. Goal: delegate exploration + plan synthesis to a non-interactive subagent so the orchestrator holds only the distilled plan + a compact digest, keeping its context lean while preserving the mandatory planning gate and the "only the writer touches the tracked tree" invariant.
+`/dev-loop`'s planning phase originally made the orchestrator explore the codebase and synthesize the slice list inline, polluting its context. The first pass (this story's earlier subtasks) solved that by forking `/tdd` into a non-interactive `/dev-tdd` with `plan`/`execute` modes that the orchestrator delegates to. That worked, but left **two near-identical TDD skills**. This rework reverses the central fork decision: fold the mode machinery back **into** `/tdd` so there is one canonical TDD skill, while preserving every behavior the fork bought (non-interactive subagent contract, lean orchestrator context, the plan/execute digest handoff, and the mandatory human approval gate).
 
-Artifacts: new `~/.claude/skills/dev-tdd/SKILL.md`; rewritten `~/.claude/skills/dev-loop/SKILL.md` (Steps 1–3a); deleted `~/.claude/agents/tdd.md`. Note these live under `~/.claude`, not the repo-skills tree.
+The original delegation goal is unchanged — the orchestrator still holds only a distilled plan + digest and never explores inline. Only the *hosting* skill changes: `/dev-loop` spawns `/tdd` (with a `mode:`) instead of `/dev-tdd`.
 
 ## Decisions
 
-- **Delegate exploration + slice synthesis, keep task-id resolution in the orchestrator** — the orchestrator's context should hold only the distilled plan + digest, never raw exploration. Step-1 task-id resolution stays with the orchestrator because it needs ids for status transitions anyway.
-- **Fork `/tdd` into a non-interactive `/dev-tdd`** rather than bolting a mode onto `/tdd`. *Rejected: adding a "plan-only" mode to `/tdd` (muddies its interactive identity and the "only tdd writes" invariant); using the generic `Plan`/`Explore` agents (no knowledge of the tracer-bullet slice contract or task-tracker verbs).* `/tdd` stays pristine for human/standalone use.
-- **`/dev-tdd` owns BOTH `plan` and `execute` modes** — `/dev-loop` never calls `/tdd` at all. *Rationale: interactivity is the problem in execute mode too (the planning/readiness/grill-me preamble dev-loop suppresses with "skip review"); one fork removes all suppression hacks and gives dev-loop a single clean subagent contract.*
-- **No dedicated agent wrapper for `/dev-tdd`** — `/dev-loop` spawns a `general-purpose` agent with a one-line prompt: "invoke `/dev-tdd` in {plan|execute} mode with these inputs." *Rejected: a dedicated `dev-tdd` agent — its only durable value (stable name, model pin, framing) can all live in the skill itself; a second wrapper duplicating the skill cuts against the compaction goal.* The full non-interactive/return-data/approval-granted contract lives in the `/dev-tdd` skill.
-- **Delete the orphaned `tdd` agent wrapper** (`~/.claude/agents/tdd.md`) — its sole consumer was dev-loop delegation, now gone. *Rejected: keeping it "just in case" (YAGNI; orphaned artifact duplicating the `/tdd` skill). Re-create if a future need arises.*
-- **`/dev-tdd` references `/tdd`'s craft sidecars** (`tests.python.md`, `mocking.python.md`, `deep-modules.md`, `interface-design.md`, etc.) rather than copying them. *Rejected: full copy (craft drifts in two places).* `/dev-tdd`'s own SKILL.md holds only modes + return contracts + non-interactive overrides — zero craft duplication. Extracting shared craft into neutral sidecars is the clean end-state if it gets messy.
-- **Explicit `mode:` keyword in the spawn prompt** (`plan` / `execute`), not inferred. Plan-mode produces the digest; execute-mode consumes it plus its one slice. The digest is the contract surface between the two modes so neither re-explores from zero.
-- **Orchestrator passes task-id only; plan-mode `/dev-tdd` reads the task body** and distills it into the slice list + digest. *Rationale: the task body (goal, acceptance criteria, parent decisions) is exactly the bulk that pollutes orchestrator context.* `/dev-tdd` already has the `read-task` verb from `/tdd`.
-- **Plan-mode returns `{slice list, digest, blocking open-questions, assumptions}`** — ambiguity is handed back as DATA, never via an interactive `/grill-me` (a subagent can't gate on the user). True blockers → explicit open-questions; minor judgment calls → visible assumptions inline in the plan the user approves.
-- **Approval loop revises inline from the digest**, re-spawning plan-mode only when a change needs facts outside the digest (e.g. "also handle subsystem X you didn't look at"). *Rejected: always re-spawn (loses the cheap common case); revise-only-inline (can't cover out-of-digest requests).*
-- **`--skip-plan` skips the approval WAIT but cannot override blocking open-questions** — true blockers still reach the user; auto-approve resumes once resolved. *Rationale: `--skip-plan` means "don't make me click approve," not "proceed on genuinely undecided design"; matches the mandatory-gate invariant which relaxes the wait, never correctness.*
-- **Digest = four fixed sections**: `## Files`, `## Domain`, `## Constraints`, `## Decisions` (prose within each). *Rejected: freeform prose (informal parsing); per-slice fragments (re-fragments the exploration the digest is meant to consolidate).*
+- **One canonical TDD skill (collapse the fork)** — two near-identical TDD skills are confusing; `/tdd` is the single entry point. The craft-drift argument is already neutralized (`/dev-tdd` only *references* `/tdd`'s sidecars — zero craft duplication), so "one entry point" is the real driver, not deduplication. *Reverses the earlier decision to fork `/tdd` into `/dev-tdd`.*
+
+- **Fold explicit `mode:` dispatch into `/tdd`** — no mode → today's interactive human path; `mode: plan` / `mode: execute` → the non-interactive agent contract. *This is the "bolt a mode onto /tdd" option the fork originally rejected; chosen now because sidecar extraction (below) makes it cheap and keeps `/tdd`'s interactive identity intact.* The skill never infers mode; absent/unknown `mode:` on a non-human spawn → stop and report.
+
+- **Keep the hot path in SKILL.md, move the rare human routine to a sidecar** — a `SKILL.md` is loaded in full on every invocation; sidecars are read on demand. The subagent path is high-frequency (one plan spawn + N execute + fix + refactor spawns per `/dev-loop` run), so anything in `SKILL.md` is paid on every spawn. Therefore `/tdd/SKILL.md` keeps the common content: craft pointers + mode dispatch + agent return contracts (digest, green-test, per-finding outcome). The rare human-only routine (readiness check → grill-me → plan → approval gate → reactive escalation) moves to a sidecar (e.g. `human-mode.md`), read only when `/tdd` is invoked with **no** mode. *Do not extract the mode dispatch or agent contracts — those are the common path.* Token win compounds with spawn count.
+
+- **Human path stays first-class (dual-mode), not subagent-first** — the human flow is byte-for-byte what it is today, just relocated to the sidecar. *Rejected: a "subagent-first, human = thin adapter that decides how to adopt output" design — it softens `/tdd`'s deliberate approval/grill-me quality gate (the skill whose own description calls it "the standard workflow") to agent discretion, which drifts.*
+
+- **Contract moves verbatim, no redesign** — the plan/execute split, the four-section digest (`## Files` / `## Domain` / `## Constraints` / `## Decisions`), the green-test contract, and the per-finding `{finding, outcome, reason}` shape move unchanged from `/dev-tdd` into `/tdd`. *Rejected: smuggling a contract redesign (collapsing modes, restructuring the digest) into a "merge two files" change.* The human "no mode" path never produces/consumes a digest — it plans + implements in one continuous flow as `/tdd` does now.
+
+- **Spawn mechanism unchanged; `tdd` agent stays deleted** — `/dev-loop` still spawns a `general-purpose` agent with a one-line prompt ("invoke `/tdd` in `mode: {plan|execute}` with these inputs"); no dedicated wrapper. The deletion of the `tdd` agent wrapper is orthogonal to the fork and still holds. *Rejected: re-introducing a `tdd` agent now that `/tdd` is canonical — it re-creates the orphan-prone duplicate that was removed.* Only the skill name in the spawn prompt changes (`/dev-tdd` → `/tdd`).
+
+- **Migrate every `/dev-tdd` reference back to `/tdd` in one coherent change** — a dangling reference to a deleted skill is latent breakage. Flip all references (preserving `mode:` where present) across `dev-loop`, `review-iter`, `fix-tests`, `setup-dev-loop` (SKILL.md, FORMAT.md, templates/generic.md, templates/claude-code.md, examples/dev-loop.md), and the in-repo `docs/agents/dev-loop.md`. Grep-confirm the exact set before editing.
+
+- **Delete the `/dev-tdd` skill file** once its content is folded into `/tdd`.
 
 ## Open questions
 
@@ -33,13 +36,18 @@ Artifacts: new `~/.claude/skills/dev-tdd/SKILL.md`; rewritten `~/.claude/skills/
 
 ## Out of scope
 
-- Refactoring `/tdd`'s shared craft into neutral provider-agnostic sidecars (the (3) end-state of the content-reuse decision) — only do this if referencing `/tdd`'s sidecars proves messy.
-- Changes to the review-lens rosters or `docs/agents/dev-loop.md` config.
-- Any change to `/tdd`'s own interactive behavior (it stays as-is for humans).
+- Any redesign of the digest, the plan/execute split, or the green-test / per-finding contracts (they move verbatim).
+- Changes to `/tdd`'s actual interactive human behavior (it is relocated to a sidecar, not changed).
+- Changes to the review-lens rosters or the *content* of `docs/agents/dev-loop.md` beyond the `/dev-tdd` → `/tdd` reference flip.
+- Re-introducing any dedicated agent wrapper.
+
+## Note
+
+All edited skill files live under `~/.claude` (outside the repo tree); only `/work/docs/agents/dev-loop.md` is in-repo. These are markdown-only edits — `uv run tox` / TDD do not apply.
 
 ## Subtasks
 
-- [x] [s12t01](s12t01-author-devtdd-skill-with-plan.md): Author /dev-tdd skill with plan mode
-- [x] [s12t02](s12t02-add-execute-mode-to-devtdd.md): Add execute mode to /dev-tdd
-- [ ] [s12t03](s12t03-rewrite-devloop-steps-13-to.md): Rewrite /dev-loop Steps 1-3 to delegate planning to /dev-tdd
-- [ ] [s12t04](s12t04-delete-the-orphaned-tdd-agent.md): Delete the orphaned tdd agent wrapper
+- [x] [s12t01](s12t01-author-devtdd-skill-with-plan.md): Fold mode: dispatch into /tdd; extract human routine to a sidecar
+- [x] [s12t02](s12t02-add-execute-mode-to-devtdd.md): Migrate every /dev-tdd reference back to /tdd
+- [x] [s12t03](s12t03-rewrite-devloop-steps-13-to.md): Delete the /dev-tdd skill file
+- [x] [s12t04](s12t04-delete-the-orphaned-tdd-agent.md): Delete the orphaned tdd agent wrapper

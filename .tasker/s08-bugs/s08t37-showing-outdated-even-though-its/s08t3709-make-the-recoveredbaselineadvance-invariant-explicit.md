@@ -1,7 +1,7 @@
 ---
 id: s08t3709
 slug: make-the-recoveredbaselineadvance-invariant-explicit
-status: pending
+status: done
 ---
 
 # Make the RECOVERED/baseline-advance invariant explicit in reattach carry

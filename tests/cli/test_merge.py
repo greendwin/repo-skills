@@ -27,6 +27,7 @@ from repo_skills.config import (
     save_source_registry,
 )
 from repo_skills.errors import AppError
+from repo_skills.utils import normalize_line_endings
 from tests.cli.helper import (
     INSTALL_DIR,
     SKILLS_DIR,
@@ -408,7 +409,11 @@ class TestBaseCommitSearch:
         assert_words_in_message(result.output, "merge", "complete")
 
     def test_search_base_propagates_unexpected_error(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         _setup_diverged_skill(fs, git_repo, commit=None)
 
@@ -421,7 +426,7 @@ class TestBaseCommitSearch:
                 raise AppError("unexpected git failure")
             return _orig(commit, path)
 
-        _fake_git.get_file_at_commit = _boom  # type: ignore[method-assign]
+        monkeypatch.setattr(_fake_git, "get_file_at_commit", _boom)
 
         result = assert_invoke(
             "merge", "tdd", "--search-base", "--offline", expect_error=True
@@ -1854,78 +1859,48 @@ class TestExactMatchEarlyExit:
 class TestComputeDistanceCRLF:
     """splitlines() strips line endings, so CRLF vs LF never affects distance."""
 
-    def test_crlf_local_matches_lf_commit(self, fs: FakeFilesystem) -> None:
-        installed = Path("/installed/tdd")
-        fs.create_file(installed / "SKILL.md", contents=b"line1\r\nline2\r\n")
-
-        git = FakeGitRepo(
-            files_at_commit={
-                ("abc", "skills/tdd/SKILL.md"): b"line1\nline2\n",
-            },
-        )
+    def test_crlf_local_matches_lf_commit(self) -> None:
+        commit_content = {"SKILL.md": normalize_line_endings(b"line1\nline2\n")}
+        installed_content = {"SKILL.md": normalize_line_endings(b"line1\r\nline2\r\n")}
 
         distance = _compute_distance(
-            git,
-            commit="abc",
-            skill_rel="skills/tdd",
-            installed_path=installed,
+            commit_content,
+            installed_content,
             file_paths={"SKILL.md"},
         )
         assert distance == 0
 
-    def test_crlf_commit_matches_crlf_local(self, fs: FakeFilesystem) -> None:
-        installed = Path("/installed/tdd")
-        fs.create_file(installed / "SKILL.md", contents=b"line1\r\nline2\r\n")
-
-        git = FakeGitRepo(
-            files_at_commit={
-                ("abc", "skills/tdd/SKILL.md"): b"line1\r\nline2\r\n",
-            },
-        )
+    def test_crlf_commit_matches_crlf_local(self) -> None:
+        commit_content = {"SKILL.md": normalize_line_endings(b"line1\r\nline2\r\n")}
+        installed_content = {"SKILL.md": normalize_line_endings(b"line1\r\nline2\r\n")}
 
         distance = _compute_distance(
-            git,
-            commit="abc",
-            skill_rel="skills/tdd",
-            installed_path=installed,
+            commit_content,
+            installed_content,
             file_paths={"SKILL.md"},
         )
         assert distance == 0
 
-    def test_crlf_commit_matches_lf_local(self, fs: FakeFilesystem) -> None:
-        installed = Path("/installed/tdd")
-        fs.create_file(installed / "SKILL.md", contents=b"line1\nline2\n")
-
-        git = FakeGitRepo(
-            files_at_commit={
-                ("abc", "skills/tdd/SKILL.md"): b"line1\r\nline2\r\n",
-            },
-        )
+    def test_crlf_commit_matches_lf_local(self) -> None:
+        commit_content = {"SKILL.md": normalize_line_endings(b"line1\r\nline2\r\n")}
+        installed_content = {"SKILL.md": normalize_line_endings(b"line1\nline2\n")}
 
         distance = _compute_distance(
-            git,
-            commit="abc",
-            skill_rel="skills/tdd",
-            installed_path=installed,
+            commit_content,
+            installed_content,
             file_paths={"SKILL.md"},
         )
         assert distance == 0
 
-    def test_actual_content_diff_still_counted(self, fs: FakeFilesystem) -> None:
-        installed = Path("/installed/tdd")
-        fs.create_file(installed / "SKILL.md", contents=b"line1\r\nchanged\r\n")
-
-        git = FakeGitRepo(
-            files_at_commit={
-                ("abc", "skills/tdd/SKILL.md"): b"line1\nline2\n",
-            },
-        )
+    def test_actual_content_diff_still_counted(self) -> None:
+        commit_content = {"SKILL.md": normalize_line_endings(b"line1\nline2\n")}
+        installed_content = {
+            "SKILL.md": normalize_line_endings(b"line1\r\nchanged\r\n")
+        }
 
         distance = _compute_distance(
-            git,
-            commit="abc",
-            skill_rel="skills/tdd",
-            installed_path=installed,
+            commit_content,
+            installed_content,
             file_paths={"SKILL.md"},
         )
         assert distance == 2  # 1 removal + 1 addition
@@ -1987,3 +1962,110 @@ class TestFindBaseCommitNearMiss:
         # the commit lacks EXTRA.md, so it cannot serve as a base at all
         result = _find_base_commit(git, "skills/tdd", installed)
         assert result is None
+
+
+class TestFindBaseCommitDedup:
+    """A near-miss commit must avoid the full-tree fetch and re-reads."""
+
+    def test_near_miss_skips_full_tree_and_reads_each_file_once(
+        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        installed = Path("/installed/tdd")
+        fs.create_file(installed / "SKILL.md", contents=b"line1\nchanged\n")
+        fs.create_file(installed / "EXTRA.md", contents=b"a\nb\n")
+
+        # two near-miss commits, so the per-file fetch-count assertion proves
+        # dedup across the full multi-commit loop, not just within one commit
+        git = FakeGitRepo(
+            commit_logs={"skills/tdd": ["near1", "near2"]},
+            files_at_commit={
+                ("near1", "skills/tdd/SKILL.md"): b"line1\nline2\n",
+                ("near1", "skills/tdd/EXTRA.md"): b"a\nb\n",
+                ("near2", "skills/tdd/SKILL.md"): b"line1\nother\n",
+                ("near2", "skills/tdd/EXTRA.md"): b"a\nb\n",
+            },
+        )
+
+        content_hash_calls = 0
+        file_fetches: list[str] = []
+
+        orig_content_hashes = git.commit_content_hashes
+        orig_get_file = git.get_file_at_commit
+
+        def counting_content_hashes(commit: str, rel_path: str) -> dict[str, str]:
+            nonlocal content_hash_calls
+            content_hash_calls += 1
+            return orig_content_hashes(commit, rel_path)
+
+        def counting_get_file(commit: str, path: str) -> bytes:
+            file_fetches.append(f"{commit}:{path}")
+            return orig_get_file(commit, path)
+
+        monkeypatch.setattr(git, "commit_content_hashes", counting_content_hashes)
+        monkeypatch.setattr(git, "get_file_at_commit", counting_get_file)
+
+        result = _find_base_commit(git, "skills/tdd", installed)
+
+        assert result is not None
+        assert result.commit in {"near1", "near2"}
+        # subset differs for both commits, so the expensive full-tree hash is
+        # never consulted across the whole loop
+        assert content_hash_calls == 0
+        # each installed file is fetched at most once per commit across the loop
+        assert sorted(file_fetches) == sorted(set(file_fetches))
+        # both commits were scanned, so dedup spans more than a single commit
+        assert len(file_fetches) == 4
+
+    def test_subset_match_escalates_to_full_tree_check(
+        self, fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        installed = Path("/installed/tdd")
+        fs.create_file(installed / "SKILL.md", contents=b"line1\nline2\n")
+
+        git = FakeGitRepo(
+            commit_logs={"skills/tdd": ["exact"]},
+            files_at_commit={
+                ("exact", "skills/tdd/SKILL.md"): b"line1\nline2\n",
+            },
+        )
+
+        content_hash_calls = 0
+        orig_content_hashes = git.commit_content_hashes
+
+        def counting_content_hashes(commit: str, rel_path: str) -> dict[str, str]:
+            nonlocal content_hash_calls
+            content_hash_calls += 1
+            return orig_content_hashes(commit, rel_path)
+
+        monkeypatch.setattr(git, "commit_content_hashes", counting_content_hashes)
+
+        result = _find_base_commit(git, "skills/tdd", installed)
+
+        assert result is not None
+        assert result.commit == "exact"
+        assert result.distance == 0
+        # the subset matched, so the cheap gate escalated to the full-tree
+        # confirmation exactly once
+        assert content_hash_calls == 1
+
+    def test_extra_file_in_commit_floors_distance_to_one(
+        self, fs: FakeFilesystem
+    ) -> None:
+        installed = Path("/installed/tdd")
+        fs.create_file(installed / "SKILL.md", contents=b"line1\nline2\n")
+
+        git = FakeGitRepo(
+            commit_logs={"skills/tdd": ["extra"]},
+            files_at_commit={
+                ("extra", "skills/tdd/SKILL.md"): b"line1\nline2\n",
+                ("extra", "skills/tdd/extra.md"): b"surplus\n",
+            },
+        )
+
+        result = _find_base_commit(git, "skills/tdd", installed)
+
+        assert result is not None
+        assert result.commit == "extra"
+        # installed subset matches but the commit carries an extra file, so this
+        # is not an exact match; distance is floored to 1, never 0
+        assert result.distance == 1

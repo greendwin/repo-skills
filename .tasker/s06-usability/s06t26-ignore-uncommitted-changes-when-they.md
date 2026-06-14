@@ -1,5 +1,5 @@
 ---
-id: s01t01
+id: s06t26
 slug: ignore-uncommitted-changes-when-they
 status: pending
 ---

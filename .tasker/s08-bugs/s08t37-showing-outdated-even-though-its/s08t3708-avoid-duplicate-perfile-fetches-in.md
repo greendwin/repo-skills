@@ -1,7 +1,7 @@
 ---
 id: s08t3708
 slug: avoid-duplicate-perfile-fetches-in
-status: pending
+status: done
 ---
 
 # Avoid duplicate per-file fetches in merge base search

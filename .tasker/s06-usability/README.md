@@ -22,9 +22,9 @@ status: pending
 - [ ] [s06t13](s06t13-allow-to-omit-skill-name/): Allow to omit skill name when only one skill is modified
 - [x] [s06t14](s06t14-inconsistent-status-command/): Inconsistent 'status' command -
 - [x] [s06t16](s06t16-autoattach-untracked-skills-on-update/): Auto-attach untracked skills on `update` when they match source exactly
-- [ ] [s06t17](s06t17-group-skills-when-installed-from.md): Group skills when installed from same source
 - [x] [s06t18](s06t18-update-specific-source/): Update specific source
 - [ ] [s06t20](s06t20-multiple-source-support.md): Multiple source support
 - [x] [s06t23](s06t23-support-s-alias-for-source.md): Support `-s` alias for `--source`
 - [ ] [s06t24](s06t24-source-remove-show-list-of.md): 'source remove': show list of skills in a bullet list
 - [ ] [s06t25](s06t25-support-skills-dependencies.md): Support skills dependencies
+- [ ] [s06t26](s06t26-ignore-uncommitted-changes-when-they.md): Ignore uncommitted changes when they do not relate to skills

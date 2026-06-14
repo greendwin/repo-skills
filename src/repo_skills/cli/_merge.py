@@ -28,7 +28,7 @@ from repo_skills.config import (
 from repo_skills.console import console, fmt_command, fmt_data, fmt_ident, fmt_path
 from repo_skills.errors import AppError, FileNotInCommitError, NoopError
 from repo_skills.git import GitRepo, ensure_on_branch
-from repo_skills.utils import normalize_line_endings, overwrite_dir
+from repo_skills.utils import hash_content, normalize_line_endings, overwrite_dir
 
 from ._app import app
 from ._deps import prepare_source_repo, resolve_git_repo
@@ -579,33 +579,30 @@ def _find_base_commit(
     if not commits:
         return None
 
+    # installed files are loop-invariant — read and normalize them once
+    installed_content: dict[str, bytes] = {
+        rel_path: normalize_line_endings((installed_path / rel_path).read_bytes())
+        for rel_path in installed_hashes
+    }
+
     best_commit: str | None = None
     best_distance = None
 
     for commit in commits:
-        # an exact base requires the commit's FULL content to equal the
-        # installed copy — extra files in the tree disqualify it
-        if git.commit_content_hashes(commit, skill_rel) == installed_hashes:
+        score = _score_commit(
+            git, commit, skill_rel, installed_hashes, installed_content
+        )
+        if score is None:
+            continue  # a required installed file is missing — disqualified
+
+        if score == 0:
             best_commit = commit
             best_distance = 0
             break
 
-        for rel_path in installed_hashes:
-            try:
-                _ = git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
-            except FileNotInCommitError:
-                break  # missing file — disqualifies this commit
-        else:  # all files found — evaluate this commit
-            distance = _compute_distance(
-                git, commit, skill_rel, installed_path, set(installed_hashes.keys())
-            )
-
-            # distance must never read as 0 — this value is reserved for exact match
-            distance = max(1, distance)
-
-            if best_distance is None or best_distance > distance:
-                best_commit = commit
-                best_distance = distance
+        if best_distance is None or best_distance > score:
+            best_commit = commit
+            best_distance = score
 
     if best_commit is None or best_distance is None:
         return None
@@ -616,6 +613,45 @@ def _find_base_commit(
         message=message,
         distance=best_distance,
     )
+
+
+def _score_commit(
+    git: GitRepo,
+    commit: str,
+    skill_rel: str,
+    installed_hashes: dict[str, str],
+    installed_content: dict[str, bytes],
+) -> int | None:
+    # fetch each installed file once and reuse the content for both the cheap
+    # subset hash check and the distance computation
+    commit_content: dict[str, bytes] = {}
+    for rel_path in installed_hashes:
+        try:
+            raw = git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
+        except FileNotInCommitError:
+            return None  # missing file — disqualifies this commit
+
+        commit_content[rel_path] = normalize_line_endings(raw)
+
+    commit_subset_hashes = {
+        rel_path: hash_content(content) for rel_path, content in commit_content.items()
+    }
+
+    if commit_subset_hashes == installed_hashes:
+        # the installed-file subset matches — only now run the expensive
+        # full-tree check to confirm there are no extra files in the commit
+        if git.commit_content_hashes(commit, skill_rel) == installed_hashes:
+            return 0
+
+        # extra files in the tree disqualify an exact match; the subset diff is
+        # 0, so floor to 1 (0 is reserved for exact match)
+        return 1
+
+    distance = _compute_distance(
+        commit_content, installed_content, set(installed_hashes.keys())
+    )
+    # distance must never read as 0 — reserved for exact match
+    return max(1, distance)
 
 
 def _merge_continue(ctx: ConfigContext) -> None:
@@ -783,26 +819,21 @@ def _parse_merge_branch(branch: str) -> tuple[str, str]:
 
 
 def _compute_distance(
-    git: GitRepo,
-    commit: str,
-    skill_rel: str,
-    installed_path: Path,
+    commit_content: dict[str, bytes],
+    installed_content: dict[str, bytes],
     file_paths: set[str],
 ) -> int:
     # note: full-content equality (dist==0) is decided by the exact-match path
-    # both sides are normalized so the count reflects real content drift only
+    # both dicts hold already-fetched, normalized blobs keyed by the
+    # skill-relative posix path, so this function performs no disk or git I/O
     total = 0
 
     for rel_path in file_paths:
-        commit_data = normalize_line_endings(
-            git.get_file_at_commit(commit, f"{skill_rel}/{rel_path}")
-        )
-        commit_lines = commit_data.decode(errors="replace").splitlines()
+        commit_lines = commit_content[rel_path].decode(errors="replace").splitlines()
 
-        local_file = installed_path / rel_path
-        if local_file.exists():
-            local_bytes = normalize_line_endings(local_file.read_bytes())
-            installed_lines = local_bytes.decode(errors="replace").splitlines()
+        installed_data = installed_content.get(rel_path)
+        if installed_data is not None:
+            installed_lines = installed_data.decode(errors="replace").splitlines()
         else:
             installed_lines = []
 

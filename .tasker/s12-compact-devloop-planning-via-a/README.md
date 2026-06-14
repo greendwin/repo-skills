@@ -39,7 +39,7 @@ Artifacts: new `~/.claude/skills/dev-tdd/SKILL.md`; rewritten `~/.claude/skills/
 
 ## Subtasks
 
-- [ ] [s12t01](s12t01-author-devtdd-skill-with-plan.md): Author /dev-tdd skill with plan mode
-- [ ] [s12t02](s12t02-add-execute-mode-to-devtdd.md): Add execute mode to /dev-tdd
+- [x] [s12t01](s12t01-author-devtdd-skill-with-plan.md): Author /dev-tdd skill with plan mode
+- [x] [s12t02](s12t02-add-execute-mode-to-devtdd.md): Add execute mode to /dev-tdd
 - [ ] [s12t03](s12t03-rewrite-devloop-steps-13-to.md): Rewrite /dev-loop Steps 1-3 to delegate planning to /dev-tdd
 - [ ] [s12t04](s12t04-delete-the-orphaned-tdd-agent.md): Delete the orphaned tdd agent wrapper

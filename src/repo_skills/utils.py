@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import shutil
@@ -30,6 +31,10 @@ def rel_posix(path: Path, base: Path) -> str:
 
 def normalize_line_endings(data: bytes) -> bytes:
     return data.replace(b"\r\n", b"\n")
+
+
+def hash_content(data: bytes) -> str:
+    return f"sha256:{hashlib.sha256(normalize_line_endings(data)).hexdigest()}"
 
 
 def load_config(cls: type[_T], path: Path) -> _T | None:

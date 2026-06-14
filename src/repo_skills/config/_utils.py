@@ -1,4 +1,3 @@
-import hashlib
 import os
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -10,7 +9,7 @@ from typing_extensions import TypeAlias
 
 from repo_skills.console import console
 from repo_skills.errors import AppError, ConfigBrokenError
-from repo_skills.utils import load_config, normalize_line_endings, rel_posix
+from repo_skills.utils import hash_content, load_config, rel_posix
 
 
 class VersionedConfig(BaseModel):
@@ -89,8 +88,6 @@ def compute_file_hashes(skill_dir: Path) -> RelPathHashes:
         for fname in sorted(filenames):
             full = Path(dirpath) / fname
             rel = rel_posix(full, skill_dir)
-            raw = normalize_line_endings(full.read_bytes())
-            sha = hashlib.sha256(raw).hexdigest()
-            result[rel] = f"sha256:{sha}"
+            result[rel] = hash_content(full.read_bytes())
 
     return result

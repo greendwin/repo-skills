@@ -1,5 +1,5 @@
 ---
-id: s06t17
+id: s13t01
 slug: group-skills-when-installed-from
 status: pending
 ---

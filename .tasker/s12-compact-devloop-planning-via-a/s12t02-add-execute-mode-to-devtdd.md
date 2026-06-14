@@ -1,7 +1,7 @@
 ---
 id: s12t02
 slug: add-execute-mode-to-devtdd
-status: pending
+status: done
 ---
 
 # Add execute mode to /dev-tdd

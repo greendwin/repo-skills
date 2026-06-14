@@ -1,7 +1,7 @@
 ---
 id: s12t01
 slug: author-devtdd-skill-with-plan
-status: pending
+status: done
 ---
 
 # Author /dev-tdd skill with plan mode

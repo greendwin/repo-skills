@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import subprocess
 from pathlib import Path
 
@@ -9,7 +8,7 @@ from rich.markup import escape
 from repo_skills.console import console, fmt_command, fmt_ident, fmt_path
 from repo_skills.errors import AppError, FileNotInCommitError
 from repo_skills.git import CommitVerificationError, GitRepo
-from repo_skills.utils import normalize_line_endings, rel_posix
+from repo_skills.utils import hash_content, normalize_line_endings, rel_posix
 
 
 def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> AppError:
@@ -139,10 +138,8 @@ class RealGitRepo:
 
         hashes: dict[str, str] = {}
         for file_path in files:
-            content = normalize_line_endings(contents[file_path])
-            sha = hashlib.sha256(content).hexdigest()
             rel = rel_posix(self._path / file_path, skill_dir)
-            hashes[rel] = f"sha256:{sha}"
+            hashes[rel] = hash_content(contents[file_path])
         return hashes
 
     def _batch_blob_contents(self, commit: str, files: list[str]) -> dict[str, bytes]:

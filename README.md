@@ -40,6 +40,12 @@ This registers the current repo as a skill source, pinned to the current branch.
 skills init --name my-team --branch main
 ```
 
+By default the source's skills root is auto-detected (typically `skills/`). Pin it explicitly with `--skills-dir` (the directory must already exist, repo-relative):
+
+```bash
+skills init --skills-dir packages/skills
+```
+
 Adjust a source's settings later with `skills source config`.
 
 ### 2. Check available skills
@@ -94,7 +100,7 @@ skills uninstall skill-a skill-b
 
 | Term               | Description                                                                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Source**         | A git repo registered via `skills init` (configurable later via `skills source config`). Contains a `skills/` directory with one or more skills. Multiple sources can coexist. |
+| **Source**         | A git repo registered via `skills init` (configurable later via `skills source config`). Contains a skills root directory (auto-detected, or set with `--skills-dir`) with one or more skills. Multiple sources can coexist. |
 | **Skill**          | A directory containing a `SKILL.md` file inside a source's `skills/` tree. Identified by leaf directory name, regardless of nesting depth. |
 | **Provider**       | An agent platform with a known skills install directory. Claude Code is the built-in default.                                              |
 | **Installed copy** | A skill directory inside a provider's install path, editable by the user.                                                                  |
@@ -110,8 +116,10 @@ Manage skill sources (git repositories).
 skills init                    # register current repo as a source (first-time setup)
 skills init --name foo         # custom source name
 skills init --branch dev       # pin to a specific branch
+skills init --skills-dir path  # pin the skills root (must already exist)
 skills source config           # edit this repo's source settings later
-skills source config --branch dev  # re-pin to a different branch
+skills source config --branch dev       # re-pin to a different branch
+skills source config --skills-dir path  # change the skills root
 skills source list             # list all registered sources
 skills source remove <name>    # unregister a source
 skills source remove <name> --force  # remove even if skills are installed
@@ -214,6 +222,16 @@ Configuration files are stored in `~/.config/repo-skills/`:
 [MIT](LICENSE)
 
 ## Release Notes
+
+### v0.11.0
+
+- `skills init` is now the top-level command for registering a source, with `skills source config` to edit an existing one (`skills source init` kept as a hidden alias)
+- `--skills-dir` option on init/config pins the source's skills directory, accepting only an existing repo-relative path under the repo root
+- `skills update` recovers a detached install by searching the pinned branch for a commit whose content matches the on-disk copy, then re-pins and reports it as recovered
+- Content-sync now advances the baseline commit, so `skills status` stops showing a synced install as outdated
+- One source's failed pull no longer aborts the run — remaining sources keep updating and the failure is reported as a `failed` status line
+- `skills merge` reports "now tracked and in sync" when re-attaching a detached or untracked skill, distinct from "already synced"
+- Git pull output no longer clobbers the `skills update` status line
 
 ### v0.10.1
 

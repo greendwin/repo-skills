@@ -1,7 +1,7 @@
 ---
 id: s01t0401
 slug: extract-shared-helpers-from-mergepy
-status: pending
+status: done
 ---
 
 # Extract shared helpers from _merge.py

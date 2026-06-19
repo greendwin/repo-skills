@@ -343,7 +343,7 @@ def register_source(
     registry.register_source(name, git_repo)
     save_source_registry(registry)
 
-    cfg = SourceConfig(name=name, skills_dir=skills_dir, branch=branch)
+    cfg = SourceConfig(name=name, skills_dirs=[skills_dir], branch=branch)
     save_source_config(cfg, git_repo)
 
     return cfg
@@ -531,6 +531,6 @@ class SkillSetup:
         save_source_registry(registry)
         for name, root in seen.items():
             save_source_config(
-                SourceConfig(name=name, skills_dir="skills", branch=""),
+                SourceConfig(name=name, skills_dirs=["skills"], branch=""),
                 root,
             )

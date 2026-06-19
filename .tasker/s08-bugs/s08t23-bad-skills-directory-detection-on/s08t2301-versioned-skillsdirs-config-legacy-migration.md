@@ -1,7 +1,7 @@
 ---
 id: s08t2301
 slug: versioned-skillsdirs-config-legacy-migration
-status: pending
+status: in-review
 ---
 
 # Versioned skills_dirs config + legacy migration

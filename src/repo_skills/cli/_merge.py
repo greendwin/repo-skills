@@ -397,7 +397,12 @@ def _merge_orphan(
 
     provider = _find_skill_in_provider(ctx.provider_registry, provider, skill_name)
     installed_path = provider.install_path / skill_name
-    skill_rel_path = f"{source.config.skills_dir}/{skill_name}"
+    active_dir = source.config.active_dir
+    if active_dir is None:
+        raise AppError(
+            f"Source {fmt_ident(source.name)} has no skills directory configured."
+        )
+    skill_rel_path = f"{active_dir}/{skill_name}"
     skill_dst = source.repo_root / skill_rel_path
     overwrite_dir(installed_path, skill_dst)
 

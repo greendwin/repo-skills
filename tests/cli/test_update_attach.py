@@ -439,7 +439,7 @@ class TestUpdateBrokenSource:
         registry.register_source("broken-project", broken_root)
         save_source_registry(registry)
         save_source_config(
-            SourceConfig(name="my-project", skills_dir="skills", branch=""), git_repo
+            SourceConfig(name="my-project", skills_dirs=["skills"], branch=""), git_repo
         )
 
         create_source_skill(fs, "tdd", content="# tdd v2", root=SKILLS_DIR)

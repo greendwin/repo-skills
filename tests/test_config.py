@@ -19,6 +19,7 @@ from repo_skills.config import (
     default_config_path,
     load_provider_registry,
     load_skill_manifest,
+    load_source,
     load_source_config,
     load_source_registry,
     read_skill_description,
@@ -34,8 +35,8 @@ from repo_skills.config._skill_manifest import (
     CURRENT_VERSION,
     SKILL_MANIFEST_FILE,
 )
-from repo_skills.config._source import _collect_source_skills
-from repo_skills.errors import AppError
+from repo_skills.config._source import SOURCE_CONFIG_PATH, _collect_source_skills
+from repo_skills.errors import AppError, ConfigBrokenError
 from repo_skills.utils import rel_posix, to_posix_path
 from tests.cli.helper import FakeGitRepo
 
@@ -46,7 +47,7 @@ class TestGetBranch:
     def test_returns_config_branch_when_set(self) -> None:
         source = Source(
             repo_root=Path("/repo"),
-            config=SourceConfig(name="", skills_dir="skills", branch="develop"),
+            config=SourceConfig(name="", skills_dirs=["skills"], branch="develop"),
             skills={},
         )
         git = FakeGitRepo(main_branch="main")
@@ -55,7 +56,7 @@ class TestGetBranch:
     def test_falls_back_to_main_when_empty(self) -> None:
         source = Source(
             repo_root=Path("/repo"),
-            config=SourceConfig(name="", skills_dir="skills"),
+            config=SourceConfig(name="", skills_dirs=["skills"]),
             skills={},
         )
         git = FakeGitRepo(main_branch="trunk")
@@ -92,14 +93,31 @@ class TestSourceConfig:
     @pytest.mark.usefixtures("fs")
     def test_save_and_load_round_trip(self) -> None:
         repo_root = Path("/repo")
-        cfg = SourceConfig(name="my-repo", skills_dir="custom/skills", branch="develop")
+        cfg = SourceConfig(
+            name="my-repo", skills_dirs=["custom/skills"], branch="develop"
+        )
         save_source_config(cfg, repo_root)
 
         loaded = load_source_config(repo_root)
         assert loaded is not None
         assert loaded.name == "my-repo"
-        assert loaded.skills_dir == "custom/skills"
+        assert loaded.skills_dirs == ["custom/skills"]
         assert loaded.branch == "develop"
+
+    @pytest.mark.usefixtures("fs")
+    def test_save_writes_version_and_skills_dirs_array(self) -> None:
+        repo_root = Path("/repo")
+        cfg = SourceConfig(name="my-repo", skills_dirs=["a", "b"], branch="develop")
+        save_source_config(cfg, repo_root)
+
+        on_disk = json.loads((repo_root / SOURCE_CONFIG_PATH).read_text())
+        assert on_disk["version"] == 1
+        assert on_disk["skills_dirs"] == ["a", "b"]
+        assert "skills_dir" not in on_disk
+
+        loaded = load_source_config(repo_root)
+        assert loaded is not None
+        assert loaded.skills_dirs == ["a", "b"]
 
     def test_load_legacy_without_branch_defaults_to_empty(
         self, fs: FakeFilesystem
@@ -110,10 +128,88 @@ class TestSourceConfig:
         assert cfg is not None
         assert cfg.branch == ""
 
+    def test_load_legacy_migrates_to_skills_dirs(self, fs: FakeFilesystem) -> None:
+        path = Path("/repo/.repo-skills/source.json")
+        fs.create_file(
+            path,
+            contents='{"name": "x", "skills_dir": "skills", "branch": "main"}',
+        )
+
+        cfg = load_source_config(Path("/repo"))
+        assert cfg is not None
+        assert cfg.skills_dirs == ["skills"]
+        assert cfg.name == "x"
+        assert cfg.branch == "main"
+
+        on_disk = json.loads(path.read_text())
+        assert on_disk["version"] == 1
+        assert on_disk["skills_dirs"] == ["skills"]
+        assert "skills_dir" not in on_disk
+        assert on_disk["name"] == "x"
+        assert on_disk["branch"] == "main"
+
+    @pytest.mark.parametrize(
+        "contents",
+        [
+            pytest.param('{"name": "x", "branch": "main"}', id="absent-skills-dir"),
+            pytest.param(
+                '{"name": "x", "skills_dir": "", "branch": "m"}',
+                id="empty-skills-dir",
+            ),
+        ],
+    )
+    def test_load_legacy_empty_dir_yields_empty_list(
+        self, fs: FakeFilesystem, contents: str
+    ) -> None:
+        path = Path("/repo/.repo-skills/source.json")
+        fs.create_file(path, contents=contents)
+
+        cfg = load_source_config(Path("/repo"))
+        assert cfg is not None
+        assert cfg.skills_dirs == []
+
+    def test_load_v1_does_not_resave(self, fs: FakeFilesystem) -> None:
+        path = Path("/repo/.repo-skills/source.json")
+        contents = (
+            '{"version": 1, "name": "x", "skills_dirs": ["skills"], "branch": "main"}'
+        )
+        fs.create_file(path, contents=contents)
+
+        load_source_config(Path("/repo"))
+        assert path.read_text() == contents
+
+    def test_load_newer_version_raises(self, fs: FakeFilesystem) -> None:
+        path = Path("/repo/.repo-skills/source.json")
+        fs.create_file(
+            path,
+            contents='{"version": 2, "name": "x", "skills_dirs": ["s"]}',
+        )
+
+        with pytest.raises(AppError, match="newer version"):
+            load_source_config(Path("/repo"))
+
+    def test_load_malformed_raises_broken(self, fs: FakeFilesystem) -> None:
+        path = Path("/repo/.repo-skills/source.json")
+        fs.create_file(path, contents="{not valid json")
+        before = path.read_text()
+
+        with pytest.raises(ConfigBrokenError):
+            load_source_config(Path("/repo"))
+
+        assert path.read_text() == before
+
+    @pytest.mark.usefixtures("fs")
+    def test_load_source_with_empty_skills_dirs_yields_no_skills(self) -> None:
+        repo_root = Path("/repo")
+        save_source_config(SourceConfig(name="x", skills_dirs=[]), repo_root)
+
+        source = load_source(repo_root, load_skills=True)
+        assert source.skills == {}
+
     @pytest.mark.usefixtures("fs")
     def test_save_creates_parent_dirs(self) -> None:
         repo_root = Path("/deep/nested/dir")
-        cfg = SourceConfig(name="test", skills_dir="skills")
+        cfg = SourceConfig(name="test", skills_dirs=["skills"])
         save_source_config(cfg, repo_root)
         assert (repo_root / ".repo-skills" / "source.json").exists()
 

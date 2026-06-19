@@ -1,7 +1,7 @@
 ---
 id: s08t23
 slug: bad-skills-directory-detection-on
-status: pending
+status: in-progress
 ---
 
 # Bad skills directory detection on `source init`
@@ -41,10 +41,12 @@ status: pending
 
 ## Subtasks
 
-- [ ] [s08t2301](s08t2301-versioned-skillsdirs-config-legacy-migration.md): Versioned skills_dirs config + legacy migration
+- [~] [s08t2301](s08t2301-versioned-skillsdirs-config-legacy-migration.md): **review** Versioned skills_dirs config + legacy migration
 - [ ] [s08t2302](s08t2302-depthfree-detection-with-threecase-contract.md): Depth-free detection with three-case contract
 - [ ] [s08t2303](s08t2303-source-init-branching-skillsdir-flag.md): Source init branching + --skills-dir flag
 - [ ] [s08t2304](s08t2304-multidir-scan-collision-exclusion.md): Multi-dir scan + collision exclusion
 - [ ] [s08t2305](s08t2305-orphan-merge-target-active-dir.md): Orphan merge target = active dir
 - [ ] [s08t2306](s08t2306-status-shows-zeroskill-sources.md): Status shows zero-skill sources
 - [ ] [s08t2307](s08t2307-remove-dead-detection-helpers.md): Remove dead detection helpers
+- [ ] [s08t2308](s08t2308-resolve-broken-source-json-handling.md): Resolve broken source.json handling (duplicate message / fatal-vs-graceful)
+- [ ] [s08t2309](s08t2309-move-v0-migration-off-sourceconfig.md): Move v0 migration off SourceConfig into a dedicated _SourceConfigV0 model

@@ -2,17 +2,20 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import Field
 
 from repo_skills.console import fmt_ident, fmt_path
-from repo_skills.errors import AppError
+from repo_skills.errors import AppError, ConfigBrokenError
 from repo_skills.git import GitRepo
-from repo_skills.utils import load_config, rel_posix, save_config
+from repo_skills.utils import rel_posix, save_config
 
 from ._skill_md import SKILL_FILE
+from ._utils import ConfigState, VersionedConfig, load_versioned_config
 
 REPO_SKILLS_DIR = ".repo-skills"
 SOURCE_CONFIG_PATH = f"{REPO_SKILLS_DIR}/source.json"
+
+CURRENT_VERSION = 1
 
 
 class SourceBrokenError(AppError):
@@ -23,10 +26,16 @@ class SourceBrokenError(AppError):
         )
 
 
-class SourceConfig(BaseModel):
-    name: str
-    skills_dir: str
+class SourceConfig(VersionedConfig):
+    name: str = ""
+    skills_dirs: list[str] = []
     branch: str = ""
+    # legacy v0 key, parsed only during migration; never serialized
+    skills_dir: str | None = Field(default=None, exclude=True)
+
+    @property
+    def active_dir(self) -> str | None:
+        return self.skills_dirs[0] if self.skills_dirs else None
 
 
 @dataclass
@@ -61,10 +70,28 @@ class Source:
 
 
 def load_source_config(repo_root: Path) -> SourceConfig | None:
-    return load_config(SourceConfig, repo_root / SOURCE_CONFIG_PATH)
+    path = repo_root / SOURCE_CONFIG_PATH
+    result = load_versioned_config(SourceConfig, path, CURRENT_VERSION)
+
+    if result.state is ConfigState.MISSING:
+        return None
+
+    if result.state is ConfigState.BROKEN:
+        raise ConfigBrokenError(path)
+
+    if result.state is ConfigState.OUTDATED:
+        cfg = result.cfg
+        legacy_dir = cfg.skills_dir
+        cfg.skills_dirs = [legacy_dir] if legacy_dir else []
+        cfg.skills_dir = None
+        save_source_config(cfg, repo_root)
+        return cfg
+
+    return result.cfg
 
 
 def save_source_config(config: SourceConfig, repo_root: Path) -> None:
+    config.version = CURRENT_VERSION
     save_config(config, repo_root / SOURCE_CONFIG_PATH)
 
 
@@ -73,8 +100,9 @@ def load_source(repo_root: Path, *, load_skills: bool) -> Source:
     if config is None:
         raise SourceBrokenError(repo_root)
 
-    if load_skills:
-        skills = _collect_source_skills(repo_root, config.skills_dir)
+    active_dir = config.active_dir
+    if load_skills and active_dir is not None:
+        skills = _collect_source_skills(repo_root, active_dir)
     else:
         skills = {}
 

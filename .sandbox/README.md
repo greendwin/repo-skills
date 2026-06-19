@@ -68,7 +68,9 @@ docker compose down   # stop the old variant
 ```
 
 Each variant's image is tagged `<COMPOSE_PROJECT_NAME>-<variant>:latest`, so
-switching doesn't rebuild unnecessarily.
+switching doesn't rebuild unnecessarily. The base image (`BASE_IMAGE`, default
+`agent-sandbox-base:latest`) is *shared* across all sandboxes regardless of
+`COMPOSE_PROJECT_NAME`, so it's built once and reused everywhere.
 
 ## Stopping
 
@@ -89,6 +91,14 @@ After changing a `Dockerfile` or `claude_install.sh`:
 ```bash
 ./scripts/build.sh
 docker compose up -d --force-recreate
+```
+
+`build.sh` builds the shared base image only when it's missing, then builds the
+active variant. To refresh the shared base itself (a no-cache rebuild that
+updates *every* sandbox using it), pass `--force`:
+
+```bash
+./scripts/build.sh --force
 ```
 
 ## Adding a variant

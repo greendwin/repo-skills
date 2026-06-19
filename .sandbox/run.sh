@@ -6,7 +6,6 @@ cd "$(dirname "$0")"
 # shellcheck source=scripts/_lib.sh
 source scripts/_lib.sh
 
-BASE_IMAGE="${COMPOSE_PROJECT_NAME}-base:latest"
 VARIANT_IMAGE="${COMPOSE_PROJECT_NAME}-${VARIANT}:latest"
 
 if ! docker image inspect "${BASE_IMAGE}" >/dev/null 2>&1 \

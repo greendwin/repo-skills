@@ -15,4 +15,9 @@ set +a
 : "${VARIANT:?Must set VARIANT in .env}"
 : "${USER:?Must set USER in .env}"
 
+# Base image name is shared across all sandboxes (independent of
+# COMPOSE_PROJECT_NAME), so rebuilding it once updates every sandbox.
+: "${BASE_IMAGE:=agent-sandbox-base:latest}"
+export BASE_IMAGE
+
 export COMPOSE_FILE="docker-compose.yml:variants/${VARIANT}/compose.override.yml"

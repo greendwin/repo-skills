@@ -3,7 +3,7 @@ services:
     build:
       context: variants/${VARIANT}
       args:
-        - BASE_IMAGE=${COMPOSE_PROJECT_NAME}-base:latest
+        - BASE_IMAGE=${BASE_IMAGE}
         - USERNAME=${USER}
         - UID=${HOST_UID:-1000}
         - GID=${HOST_GID:-1000}

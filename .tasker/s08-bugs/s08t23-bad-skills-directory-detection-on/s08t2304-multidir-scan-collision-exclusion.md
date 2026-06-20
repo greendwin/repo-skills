@@ -1,7 +1,7 @@
 ---
 id: s08t2304
 slug: multidir-scan-collision-exclusion
-status: pending
+status: in-progress
 ---
 
 # Multi-dir scan + collision exclusion

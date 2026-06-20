@@ -700,12 +700,137 @@ class TestCollectSourceSkillsPosixPaths:
         repo_root = Path("/repo")
         fs.create_file(repo_root / "skills" / "tdd" / "SKILL.md", contents="# TDD")
 
-        skills = _collect_source_skills(repo_root, "skills")
+        skills = _collect_source_skills(repo_root, ["skills"])
         assert "tdd" in skills
         rel = skills["tdd"].rel_path
         assert "/" in rel or "\\" not in rel
         assert "\\" not in rel
         assert rel == "skills/tdd"
+
+
+class TestCollectSourceSkillsMultiDir:
+    def test_merges_skills_across_dirs(self, fs: FakeFilesystem) -> None:
+        repo_root = Path("/repo")
+        fs.create_file(repo_root / "claude/skills/tdd/SKILL.md", contents="# tdd")
+        fs.create_file(repo_root / "copilot/review/SKILL.md", contents="# review")
+
+        skills = _collect_source_skills(repo_root, ["claude/skills", "copilot"])
+
+        assert set(skills) == {"tdd", "review"}
+        assert skills["tdd"].rel_path == "claude/skills/tdd"
+        assert skills["review"].rel_path == "copilot/review"
+
+    def test_nested_skill_md_inside_a_skill_is_not_a_separate_skill(
+        self, fs: FakeFilesystem
+    ) -> None:
+        repo_root = Path("/repo")
+        fs.create_file(repo_root / "claude/skills/tdd/SKILL.md", contents="# tdd")
+        fs.create_file(
+            repo_root / "claude/skills/tdd/inner/SKILL.md", contents="# inner"
+        )
+
+        skills = _collect_source_skills(repo_root, ["claude/skills"])
+
+        assert set(skills) == {"tdd"}
+
+    def test_missing_dir_is_skipped(self, fs: FakeFilesystem) -> None:
+        repo_root = Path("/repo")
+        fs.create_file(repo_root / "copilot/review/SKILL.md", contents="# review")
+
+        skills = _collect_source_skills(repo_root, ["claude/skills", "copilot"])
+
+        assert set(skills) == {"review"}
+
+    def test_empty_dirs_list_yields_no_skills(self, fs: FakeFilesystem) -> None:
+        repo_root = Path("/repo")
+        fs.create_file(repo_root / "skills/tdd/SKILL.md", contents="# tdd")
+
+        assert _collect_source_skills(repo_root, []) == {}
+
+    def test_collision_excludes_all_copies_and_reports(
+        self, fs: FakeFilesystem, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        repo_root = Path("/repo")
+        fs.create_file(repo_root / "claude/skills/tdd/SKILL.md", contents="# tdd")
+        fs.create_file(repo_root / "copilot/tdd/SKILL.md", contents="# tdd")
+        fs.create_file(repo_root / "copilot/review/SKILL.md", contents="# review")
+
+        skills = _collect_source_skills(repo_root, ["claude/skills", "copilot"])
+
+        assert "tdd" not in skills
+        assert set(skills) == {"review"}
+
+        out = capsys.readouterr().out
+        assert "Warning" in out
+        assert "Error:" not in out
+        assert "tdd" in out
+        assert "claude/skills" in out
+        assert "copilot" in out
+
+    def test_three_dir_collision_reported_once_and_fully_excluded(
+        self, fs: FakeFilesystem, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        repo_root = Path("/repo")
+        fs.create_file(repo_root / "alpha/tdd/SKILL.md", contents="# tdd")
+        fs.create_file(repo_root / "bravo/tdd/SKILL.md", contents="# tdd")
+        fs.create_file(repo_root / "charlie/tdd/SKILL.md", contents="# tdd")
+
+        skills = _collect_source_skills(repo_root, ["alpha", "bravo", "charlie"])
+
+        assert skills == {}
+
+        out = capsys.readouterr().out
+        assert out.count("Warning") == 1
+        assert "Error:" not in out
+        assert "alpha" in out and "bravo" in out and "charlie" in out
+
+    def test_collision_warning_lists_dirs_in_discovery_order(
+        self, fs: FakeFilesystem, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        repo_root = Path("/repo-order")
+        fs.create_file(repo_root / "copilot/tdd/SKILL.md", contents="# tdd")
+        fs.create_file(repo_root / "claude/skills/tdd/SKILL.md", contents="# tdd")
+
+        _collect_source_skills(repo_root, ["copilot", "claude/skills"])
+
+        out = capsys.readouterr().out
+        # scan order, not the sorted view: the first-scanned dir comes first
+        assert out.index("copilot") < out.index("claude/skills")
+
+    def test_intra_dir_duplicate_basename_excluded_and_reported(
+        self, fs: FakeFilesystem, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        repo_root = Path("/repo-intra")
+        fs.create_file(repo_root / "skills/group-a/tdd/SKILL.md", contents="# tdd")
+        fs.create_file(repo_root / "skills/group-b/tdd/SKILL.md", contents="# tdd")
+
+        skills = _collect_source_skills(repo_root, ["skills"])
+
+        assert "tdd" not in skills
+
+        out = capsys.readouterr().out
+        assert "Warning" in out
+        assert "tdd" in out
+        # each colliding copy is located by its full path, so the two subdirs
+        # under the same skills dir are distinguishable
+        assert "skills/group-a/tdd" in out
+        assert "skills/group-b/tdd" in out
+
+    def test_repeated_load_of_colliding_source_warns_each_load(
+        self, fs: FakeFilesystem, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        repo_root = Path("/repo-twice")
+        fs.create_file(repo_root / "claude/skills/tdd/SKILL.md", contents="# tdd")
+        fs.create_file(repo_root / "copilot/tdd/SKILL.md", contents="# tdd")
+        dirs = ["claude/skills", "copilot"]
+
+        # dedup is scoped to a single load, so each load reports the collision
+        # afresh rather than suppressing it via process-wide state
+        _collect_source_skills(repo_root, dirs)
+        _collect_source_skills(repo_root, dirs)
+
+        out = capsys.readouterr().out
+        assert out.count("Warning") == 2
 
 
 def _write_skill(fs: FakeFilesystem, contents: str) -> Path:

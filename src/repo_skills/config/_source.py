@@ -1,9 +1,10 @@
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from repo_skills.console import fmt_ident, fmt_path
+from repo_skills.console import console, fmt_data, fmt_ident, fmt_path
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
 from repo_skills.utils import rel_posix, save_config
@@ -100,34 +101,65 @@ def save_source_config(config: SourceConfig, repo_root: Path) -> None:
 
 
 def load_source(repo_root: Path, *, load_skills: bool) -> Source:
+    # NOTE: when `load_skills` is set this emits console warnings for any skill
+    # whose name collides across multiple locations (see `_collect_source_skills`).
     result = load_source_state(repo_root)
     if result.state is not ConfigState.OK:
         raise SourceBrokenError(repo_root)
 
     config = result.cfg
-    active_dir = config.active_dir
-    if load_skills and active_dir is not None:
-        skills = _collect_source_skills(repo_root, active_dir)
+    if load_skills:
+        skills = _collect_source_skills(repo_root, config.skills_dirs)
     else:
         skills = {}
 
     return Source(repo_root=repo_root, config=config, skills=skills)
 
 
-def _collect_source_skills(repo_root: Path, skills_dir: str) -> dict[str, SourceSkill]:
-    skills_root = repo_root / skills_dir
-    if not skills_root.is_dir():
-        return {}
+def _collect_source_skills(
+    repo_root: Path, skills_dirs: Sequence[str]
+) -> dict[str, SourceSkill]:
+    # NOTE: emits one console warning for every skill name discovered in more than
+    # one location (all colliding copies are excluded). Each collision is gathered
+    # by name, so a single load warns about it exactly once.
+    found: dict[str, SourceSkill] = {}
+    collisions: dict[str, list[str]] = {}
 
-    result: dict[str, SourceSkill] = {}
-    for dirpath, _, filenames in os.walk(skills_root):
-        if SKILL_FILE not in filenames:
+    for skills_dir in skills_dirs:
+        skills_root = repo_root / skills_dir
+        if not skills_root.is_dir():
             continue
 
-        name = os.path.basename(dirpath)
-        result[name] = SourceSkill(
-            name=name,
-            rel_path=rel_posix(Path(dirpath), repo_root),
-        )
+        for dirpath, dirnames, filenames in os.walk(skills_root):
+            if SKILL_FILE not in filenames:
+                continue
 
-    return result
+            dirnames.clear()
+            name = os.path.basename(dirpath)
+            rel_path = rel_posix(Path(dirpath), repo_root)
+            if name in collisions:
+                collisions[name].append(rel_path)
+                continue
+            if name in found:
+                collisions[name] = [found[name].rel_path, rel_path]
+                continue
+
+            found[name] = SourceSkill(name=name, rel_path=rel_path)
+
+    for name, rel_paths in collisions.items():
+        found.pop(name)
+        _warn_collision(name, rel_paths)
+
+    return found
+
+
+def _warn_collision(name: str, rel_paths: Sequence[str]) -> None:
+    # list each colliding copy by its path so the user can locate and resolve the
+    # duplicates; preserve discovery order (dropping any duplicate path) rather
+    # than the sorted view `fmt_data` would render
+    ordered = list(dict.fromkeys(rel_paths))
+    rendered = ", ".join(fmt_data(p) for p in ordered)
+    console.print(
+        f"[yellow]Warning[/yellow]: Skill {fmt_ident(name)} found in "
+        f"multiple locations ({rendered}); excluding it from the source."
+    )

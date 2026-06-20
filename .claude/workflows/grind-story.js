@@ -1,6 +1,6 @@
 export const meta = {
   name: 'grind-story',
-  description: 'Autonomously drive a story\'s pending subtasks: branch, context pack, then per subtask implement → tox-gate → commit → in-review',
+  description: 'Autonomously drive a story\'s pending subtasks: branch, context pack, then per subtask implement → tox-gate → in-review → commit',
   whenToUse: 'Run an unattended implement loop over one story\'s pending subtasks on a dedicated grind branch.',
   phases: [
     { title: 'Setup', detail: 'create grind/<story> branch from HEAD, capture base ref' },
@@ -11,8 +11,8 @@ export const meta = {
     { title: 'Refactor-B', detail: 'refactor-reviewer lenses in parallel → apply-biased triage → tdd applies apply-now behavior-preservingly, until dry (cap 5)' },
     { title: 'File-side-tasks', detail: 'file delayed refactor findings as depth-bounded, deduped, capped flat side-tasks under the story' },
     { title: 'Verify', detail: 'uv run tox (all envs) green gate, with bounded fix-reconverge' },
-    { title: 'Commit', detail: 'stage + one commit-summary-style commit per work item' },
-    { title: 'Status', detail: 'move the work item to in-review (never done)' },
+    { title: 'Status', detail: 'move the work item to in-review (never done) before committing' },
+    { title: 'Commit', detail: 'stage (incl. the .tasker status edit) + one commit-summary-style commit per work item' },
   ],
 }
 
@@ -546,8 +546,10 @@ Read the context pack first: ${packPath}.
 
 Produce exactly ONE commit on the \`grind/${storyId}\` branch for the current change.
 
+The task-tracker stores task status in git-tracked \`.tasker/<…>.md\` frontmatter, so the pick (→ in-progress) and status (→ in-review) steps that ran before you left tracked edits under \`.tasker/\`. Those edits are EXPECTED and MUST ride in this commit — never unstage or exclude them as noise; \`git add -u\` stages them along with the source/test changes.
+
 Staging:
-1. \`git add -u\` to stage tracked modifications/deletions.
+1. \`git add -u\` to stage tracked modifications/deletions (this includes the \`.tasker/\` status-frontmatter edits for task ${pick.taskId}).
 2. \`git status --porcelain\` for untracked (\`??\`) entries. For each:
    - DENYLIST — never stage, never prompt: \`.env\`, \`.env.*\`, \`*.key\`, \`*.pem\`, \`*.p12\`, \`*.pfx\`, \`*.secret\`, \`credentials.json\`, \`secrets.yaml\`, \`.netrc\`, \`.npmrc\`, \`.venv/\`, \`venv/\`, \`node_modules/\`, \`__pycache__/\`, \`*.sqlite\`, \`*.db\`.
    - SUSPICIOUS — never stage, never prompt: editor temps (\`*.swp\`, \`*.swo\`, \`*~\`), backups (\`*.bak\`, \`*.orig\`), OS artifacts (\`.DS_Store\`, \`Thumbs.db\`), or anything common practice would not check in.
@@ -944,12 +946,19 @@ while (processed.length < GUARD_MAX) {
     continue
   }
 
+  // Move to in-review BEFORE committing so the task-tracker's `.tasker` status
+  // edit is part of this work item's commit rather than left dirty and swept
+  // into the next item's commit (or stranded uncommitted for the last item).
+  phase('Status')
+  await agent(statusPrompt(pick, packPath), { label: `review:${pick.taskId}` })
+
   phase('Commit')
   const commit = await agent(commitPrompt(pick, packPath), { label: `commit:${pick.taskId}`, schema: COMMIT_SCHEMA })
   if (!commit) {
     // The commit step itself failed after a green gate. Kind-split as well: an
-    // original subtask halts (its green changes left dirty for inspection); a
-    // side-task is discarded and the loop continues.
+    // original subtask halts (its green changes, now in-review, left dirty for
+    // inspection); a side-task is discarded — `git reset --hard` also reverts
+    // the in-review status edit back to in-progress — and the loop continues.
     const outcome = await handleConvergenceFailure(pick, depth, 'commit step returned no result', '')
     if (outcome.halt) {
       return report(setup, packPath, processed, refactorOutcomes(), outcome.failure)
@@ -959,9 +968,6 @@ while (processed.length < GUARD_MAX) {
   if (commit.skipped && commit.skipped.length) {
     log(`Skipped untracked files (not staged): ${commit.skipped.join(', ')}`)
   }
-
-  phase('Status')
-  await agent(statusPrompt(pick, packPath), { label: `review:${pick.taskId}` })
 
   processed.push({ taskId: pick.taskId, title: pick.title, sha: commit.sha, message: commit.message, depth, origin })
 }

@@ -54,3 +54,4 @@ We want a deterministic, reusable `Workflow` script (`.claude/workflows/grind-st
 - [x] [s14t03](s14t03-phase-b-refactor-loop-with.md): Phase B: refactor loop with duplication and thermo-nuclear lenses
 - [x] [s14t04](s14t04-side-task-filing-from-delayed.md): Side-task filing from `delayed` and depth-bounded re-queue
 - [x] [s14t05](s14t05-failure-semantics-and-full-run.md): Failure semantics and full run report
+- [x] [s14t06](s14t06-sync-task-status-into-the.md): Sync task status into the work-item commit

@@ -1,7 +1,7 @@
 ---
 id: s08t2315
 slug: refactor-no-skills-note-fires
-status: pending
+status: in-review
 ---
 
 # Refactor: "no skills" note fires on a no-op reinit with an unchanged, populated-but-empty dir

@@ -21,7 +21,12 @@ from repo_skills.config import (
     save_source_registry,
 )
 from repo_skills.console import console, fmt_data, fmt_ident, fmt_path
-from repo_skills.discovery import DetectKind, detect_skills_dir, normalize_repo_dir
+from repo_skills.discovery import (
+    DetectKind,
+    detect_skills_dir,
+    has_any_skill,
+    normalize_repo_dir,
+)
 from repo_skills.errors import AppError, NoopError
 from repo_skills.git import GitRepo
 from repo_skills.utils import rel_posix, write_text
@@ -112,7 +117,6 @@ def _init_or_config_source(git: GitRepo, requested: _RequestedChanges) -> None:
 
     if requested.skills_dirs is not None:
         normalized = _normalize_skills_dirs(git, requested.skills_dirs)
-        _note_empty_skills_dirs(git, normalized)
         requested = replace(requested, skills_dirs=normalized)
 
     result = load_source_state(git.root)
@@ -137,12 +141,12 @@ def _normalize_skills_dirs(git: GitRepo, skills_dirs: Sequence[str]) -> list[str
                 git, f"Skills dir {fmt_data(skills_dir)} escapes the repo."
             )
         normalized.append(rel_posix(resolved, git.root))
-    return normalized
+    return list(dict.fromkeys(normalized))
 
 
-def _note_empty_skills_dirs(git: GitRepo, skills_dirs: Sequence[str]) -> None:
+def _note_empty_skills_dirs(repo_root: Path, skills_dirs: Sequence[str]) -> None:
     for rel in skills_dirs:
-        if not _dir_has_skills(git.root / rel):
+        if not _dir_has_skills(repo_root / rel):
             console.print(
                 f"[dim]Note:[/dim] {fmt_path(rel)} "
                 f"[dim]currently has no skills.[/dim]"
@@ -150,14 +154,18 @@ def _note_empty_skills_dirs(git: GitRepo, skills_dirs: Sequence[str]) -> None:
 
 
 def _dir_has_skills(path: Path) -> bool:
-    return path.is_dir() and detect_skills_dir(path).kind is not DetectKind.NONE
+    return path.is_dir() and has_any_skill(path)
 
 
 def _handle_fresh_init(git: GitRepo, requested: _RequestedChanges) -> None:
     source_name = requested.name or git.root.name
     effective_branch = requested.branch or git.current_branch()
 
-    skills_dirs = requested.skills_dirs or [_detect_fresh_skills_dir(git)]
+    if requested.skills_dirs is not None:
+        skills_dirs = requested.skills_dirs
+        _note_empty_skills_dirs(git.root, skills_dirs)
+    else:
+        skills_dirs = [_detect_fresh_skills_dir(git)]
 
     config = SourceConfig(
         name=source_name,
@@ -178,9 +186,8 @@ def _handle_fresh_init(git: GitRepo, requested: _RequestedChanges) -> None:
 
 def _detect_fresh_skills_dir(git: GitRepo) -> str:
     detected = detect_skills_dir(git.root)
-    if detected.kind is DetectKind.SINGLE and detected.path is not None:
-        # SINGLE always carries a path; the None-check is type narrowing
-        return rel_posix(detected.path, git.root)
+    if detected.kind is DetectKind.SINGLE:
+        return rel_posix(detected.require_path(), git.root)
     if detected.kind is DetectKind.AMBIGUOUS:
         raise _repo_error(
             git,
@@ -215,6 +222,7 @@ def _handle_reinit(
     ):
         changes.append(_dirs_change_line(config.skills_dirs, requested.skills_dirs))
         config.skills_dirs = requested.skills_dirs
+        _note_empty_skills_dirs(git_root, requested.skills_dirs)
 
     if changes:
         save_source_config(config, git_root)

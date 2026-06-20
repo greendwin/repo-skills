@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
@@ -22,6 +23,11 @@ class DetectResult:
     kind: DetectKind
     path: Path | None
 
+    def require_path(self) -> Path:
+        # valid for SINGLE results, which always carry a path
+        assert self.path is not None, "SINGLE detection must carry a path"
+        return self.path
+
 
 def find_git_root(start: Path) -> Path | None:
     current = start.resolve()
@@ -36,16 +42,17 @@ def find_git_root(start: Path) -> Path | None:
         current = parent
 
 
-def detect_skills_dir(git_root: Path) -> DetectResult:
-    skill_dirs: list[Path] = []
-    for dirpath, dirnames, filenames in os.walk(git_root):
-        path = Path(dirpath)
+def _iter_skill_dirs(root: Path) -> Iterator[Path]:
+    for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-
         if SKILL_FILE in filenames:
-            skill_dirs.append(path)
             # outermost SKILL.md wins; don't descend into a skill's internals
             dirnames.clear()
+            yield Path(dirpath)
+
+
+def detect_skills_dir(git_root: Path) -> DetectResult:
+    skill_dirs = list(_iter_skill_dirs(git_root))
 
     if not skill_dirs:
         return DetectResult(DetectKind.NONE, None)
@@ -60,6 +67,10 @@ def detect_skills_dir(git_root: Path) -> DetectResult:
         return DetectResult(DetectKind.AMBIGUOUS, None)
 
     return DetectResult(DetectKind.SINGLE, common)
+
+
+def has_any_skill(root: Path) -> bool:
+    return next(_iter_skill_dirs(root), None) is not None
 
 
 def _within(path: Path, root: Path) -> bool:

@@ -10,6 +10,7 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
     Baseline,
+    ConfigState,
     ProviderRegistry,
     SkillManifest,
     Source,
@@ -23,6 +24,7 @@ from repo_skills.config import (
     load_source,
     load_source_config,
     load_source_registry,
+    load_source_state,
     read_skill_description,
     save_provider_registry,
     save_skill_manifest,
@@ -197,6 +199,37 @@ class TestSourceConfig:
         assert cfg is not None
         assert cfg.skills_dirs == []
 
+    def test_load_legacy_preserves_non_enumerated_fields(
+        self, fs: FakeFilesystem
+    ) -> None:
+        # migration must carry forward every SourceConfig field via
+        # model_validate(raw), not a hand-maintained allow-list. `branch` is a
+        # field the old migration only forwarded explicitly; an unknown extra
+        # key proves fields are read straight off the raw dict.
+        path = Path("/repo/.repo-skills/source.json")
+        fs.create_file(
+            path,
+            contents=(
+                '{"name": "x", "skills_dir": "skills", "branch": "dev", '
+                '"future_field": "kept"}'
+            ),
+        )
+
+        cfg = load_source_config(Path("/repo"))
+        assert cfg is not None
+        assert cfg.name == "x"
+        assert cfg.branch == "dev"
+        assert cfg.skills_dirs == ["skills"]
+
+        on_disk = json.loads(path.read_text())
+        assert on_disk["version"] == 1
+        assert on_disk["name"] == "x"
+        assert on_disk["branch"] == "dev"
+        assert on_disk["skills_dirs"] == ["skills"]
+        assert "skills_dir" not in on_disk
+        # pydantic drops unknown fields, so legacy extras are not persisted
+        assert "future_field" not in on_disk
+
     def test_load_legacy_without_name_migrates_to_empty_name(
         self, fs: FakeFilesystem
     ) -> None:
@@ -241,6 +274,48 @@ class TestSourceConfig:
         assert "warning" in warning
         assert "broken config file" in warning
         assert path.read_text() == before
+
+    def test_load_non_object_json_returns_none_and_warns(
+        self, fs: FakeFilesystem, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = Path("/repo/.repo-skills/source.json")
+        fs.create_file(path, contents="[1, 2, 3]")
+
+        assert load_source_config(Path("/repo")) is None
+        assert "broken config file" in capsys.readouterr().out.lower()
+
+
+class TestLoadSourceState:
+    @pytest.mark.usefixtures("fs")
+    def test_missing_yields_missing_state(self) -> None:
+        result = load_source_state(Path("/nonexistent"))
+        assert result.state is ConfigState.MISSING
+
+    def test_broken_yields_broken_state(self, fs: FakeFilesystem) -> None:
+        path = Path("/repo/.repo-skills/source.json")
+        fs.create_file(path, contents="{not valid json")
+
+        result = load_source_state(Path("/repo"))
+        assert result.state is ConfigState.BROKEN
+
+    def test_valid_yields_ok_state_with_cfg(self, fs: FakeFilesystem) -> None:
+        repo_root = Path("/repo")
+        save_source_config(SourceConfig(name="x", branch="dev"), repo_root)
+
+        result = load_source_state(repo_root)
+        assert result.state is ConfigState.OK
+        assert result.cfg.name == "x"
+        assert result.cfg.branch == "dev"
+
+    def test_legacy_migrates_to_ok_state(self, fs: FakeFilesystem) -> None:
+        path = Path("/repo/.repo-skills/source.json")
+        fs.create_file(
+            path, contents='{"name": "x", "skills_dir": "skills", "branch": "main"}'
+        )
+
+        result = load_source_state(Path("/repo"))
+        assert result.state is ConfigState.OK
+        assert result.cfg.skills_dirs == ["skills"]
 
     def test_load_source_malformed_raises_source_broken(
         self, fs: FakeFilesystem

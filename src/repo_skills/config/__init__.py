@@ -3,7 +3,9 @@ __all__ = [
     "SOURCES_REGISTRY_FILE",
     "Baseline",
     "ConfigContext",
+    "ConfigState",
     "InstalledSkill",
+    "LoadedConfig",
     "Provider",
     "ProviderRegistry",
     "SKILL_FILE",
@@ -19,7 +21,7 @@ __all__ = [
     "load_skill_manifest",
     "load_source",
     "load_source_config",
-    "source_config_exists",
+    "load_source_state",
     "save_source_config",
     "load_source_registry",
     "make_baseline",
@@ -58,8 +60,8 @@ from ._source import (
     SourceSkill,
     load_source,
     load_source_config,
+    load_source_state,
     save_source_config,
-    source_config_exists,
 )
 from ._source_registry import (
     SOURCES_REGISTRY_FILE,
@@ -69,6 +71,8 @@ from ._source_registry import (
     save_source_registry,
 )
 from ._utils import (
+    ConfigState,
+    LoadedConfig,
     compute_file_hashes,
     default_config_path,
 )

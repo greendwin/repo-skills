@@ -1,15 +1,16 @@
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from typing_extensions import TypeAlias
 
 from repo_skills.console import console
 from repo_skills.errors import AppError, ConfigBrokenError
-from repo_skills.utils import hash_content, load_config, rel_posix
+from repo_skills.utils import hash_content, load_raw_config, rel_posix, save_config
 
 
 class VersionedConfig(BaseModel):
@@ -38,32 +39,51 @@ class LoadedConfig(Generic[_C]):
     cfg: _C
 
 
+def _report_broken(model: type[_C], path: Path) -> LoadedConfig[_C]:
+    console.debug_traceback()
+    console.print(f"[yellow]Warning[/yellow]: broken config file: {path}")
+    return LoadedConfig(ConfigState.BROKEN, model())
+
+
 def load_versioned_config(
-    model: type[_C], path: Path, current_version: int
+    model: type[_C],
+    path: Path,
+    current_version: int,
+    *,
+    migrate: Callable[[dict[str, Any]], _C] | None = None,
 ) -> LoadedConfig[_C]:
     try:
-        cfg = load_config(model, path)
+        raw = load_raw_config(path)
     except ConfigBrokenError:
-        console.debug_traceback()
+        return _report_broken(model, path)
 
-        console.print(f"[yellow]Warning[/yellow]: broken config file: {path}")
-        return LoadedConfig(ConfigState.BROKEN, model())
-
-    if cfg is None:
+    if raw is None:
         return LoadedConfig(ConfigState.MISSING, model())
 
-    if cfg.version > current_version:
+    version = raw.get("version", 0)
+    if version > current_version:
         raise AppError(
             "Config was written by a newer version of the tool",
             hint="Update the tool to the latest version.",
             props={
                 "path": str(path),
-                "found": str(cfg.version),
+                "found": str(version),
                 "supported": str(current_version),
             },
         )
 
-    if cfg.version < current_version:
+    if version < current_version and migrate is not None:
+        migrated = migrate(raw)
+        migrated.version = current_version
+        save_config(migrated, path)
+        return LoadedConfig(ConfigState.OK, migrated)
+
+    try:
+        cfg = model.model_validate(raw)
+    except ValidationError:
+        return _report_broken(model, path)
+
+    if version < current_version:
         return LoadedConfig(ConfigState.OUTDATED, cfg)
 
     return LoadedConfig(ConfigState.OK, cfg)

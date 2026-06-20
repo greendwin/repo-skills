@@ -7,6 +7,7 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
     Baseline,
+    ConfigState,
     InstalledSkill,
     SourceConfig,
     SourceRegistry,
@@ -306,8 +307,9 @@ class TestStatusMultiProvider:
 def _create_source_skill(
     fs: FakeFilesystem, name: str, git_root: Path = SOURCE_REPO_ROOT
 ) -> None:
-    source_cfg = load_source_config(git_root)
-    assert source_cfg is not None
+    loaded = load_source_config(git_root)
+    assert loaded.state is ConfigState.OK
+    source_cfg = loaded.cfg
     skill_dir = git_root / source_cfg.skills_dirs[0] / name
     fs.create_file(skill_dir / "SKILL.md", contents=f"# {name}")
 

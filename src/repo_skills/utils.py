@@ -3,7 +3,7 @@ import json
 import os
 import shutil
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -45,6 +45,21 @@ def load_config(cls: type[_T], path: Path) -> _T | None:
         return cls.model_validate_json(read_text(path))
     except (ValidationError, json.JSONDecodeError, UnicodeDecodeError) as ex:
         raise ConfigBrokenError(path) from ex
+
+
+def load_raw_config(path: Path) -> dict[str, Any] | None:
+    if not os.path.exists(path):
+        return None
+
+    try:
+        raw = json.loads(read_text(path))
+    except (json.JSONDecodeError, UnicodeDecodeError) as ex:
+        raise ConfigBrokenError(path) from ex
+
+    if not isinstance(raw, dict):
+        raise ConfigBrokenError(path)
+
+    return raw
 
 
 def save_config(cfg: BaseModel, path: Path) -> None:

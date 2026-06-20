@@ -8,6 +8,7 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
     REPO_SKILLS_DIR,
+    ConfigState,
     InstalledSkill,
     SourceBrokenError,
     default_config_path,
@@ -55,8 +56,9 @@ class TestSourceInitFreshRepo:
     def test_creates_source_config_and_registers(self, git_repo: Path) -> None:
         result = assert_invoke("source", "init")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.name == "my-project"
         assert source_cfg.skills_dirs == ["skills"]
         assert source_cfg.branch == "main"
@@ -98,8 +100,9 @@ class TestSourceInitPopulatedRepo:
 
         assert_invoke("source", "init")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["skills"]
         assert not (git_repo / "skills" / ".gitkeep").exists()
 
@@ -111,8 +114,9 @@ class TestSourceInitBranch:
         _fake_git.branches = ["develop"]
         assert_invoke("source", "init", "--branch", "develop")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.branch == "develop"
 
     @pytest.mark.usefixtures("git_repo")
@@ -134,8 +138,9 @@ class TestSourceInitBranch:
         _fake_git.branch = "feature/xyz"
         assert_invoke("source", "init")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.branch == "develop"
 
     def test_reinit_with_branch_updates_pin(
@@ -146,8 +151,9 @@ class TestSourceInitBranch:
         _fake_git.branches = ["release"]
         result = assert_invoke("source", "init", "--branch", "release")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.branch == "release"
 
         assert_words_in_message(result.output, "updated", "my-project")
@@ -160,8 +166,9 @@ class TestSourceInitNameOverride:
     def test_name_flag_overrides_derived_name(self, git_repo: Path) -> None:
         result = assert_invoke("source", "init", "--name", "custom-name")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.name == "custom-name"
 
         registry = load_source_registry()
@@ -226,8 +233,9 @@ class TestSourceInitRename:
         assert "old-name" in result.output
         assert "new-name" in result.output
 
-        source_cfg = load_source_config(SOURCE_REPO_ROOT)
-        assert source_cfg is not None
+        loaded = load_source_config(SOURCE_REPO_ROOT)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.name == "new-name"
 
         registry = load_source_registry()
@@ -274,8 +282,9 @@ class TestTopLevelInit:
     def test_creates_source_config_and_registers(self, git_repo: Path) -> None:
         result = assert_invoke("init")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.name == "my-project"
         assert source_cfg.skills_dirs == ["skills"]
         assert source_cfg.branch == "main"
@@ -297,8 +306,9 @@ class TestSourceConfig:
     def test_fresh_repo_creates_and_registers(self, git_repo: Path) -> None:
         result = assert_invoke("source", "config")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.name == "my-project"
 
         registry = load_source_registry()
@@ -314,8 +324,9 @@ class TestSourceConfig:
         _fake_git.branches = ["release"]
         result = assert_invoke("source", "config", "--branch", "release")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.branch == "release"
 
         assert_words_in_message(result.output, "updated", "my-project")
@@ -330,8 +341,9 @@ class TestSourceInitAlias:
     def test_hidden_alias_still_works(self, git_repo: Path) -> None:
         result = assert_invoke("source", "init")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.name == "my-project"
 
         assert_words_in_message(result.output, "initialized", "source", "my-project")
@@ -362,8 +374,9 @@ class TestSourceInitAutoDetect:
 
         assert_invoke("source", "init")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["my-skills"]
 
     def test_detects_skills_with_categories(
@@ -374,8 +387,9 @@ class TestSourceInitAutoDetect:
 
         assert_invoke("source", "init")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["skills"]
 
 
@@ -387,8 +401,9 @@ class TestSourceInitSkillsDir:
 
         result = assert_invoke("source", "init", "--skills-dir", "my-skills")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.name == "my-project"
         assert source_cfg.skills_dirs == ["my-skills"]
         assert source_cfg.branch == "main"
@@ -413,8 +428,9 @@ class TestSourceInitSkillsDir:
 
         assert_invoke("source", "init", "--skills-dir", "chosen-skills")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["chosen-skills"]
 
     def test_skills_dir_is_normalized_before_storing(
@@ -424,8 +440,9 @@ class TestSourceInitSkillsDir:
 
         assert_invoke("source", "init", "--skills-dir", "./my-skills/")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["my-skills"]
 
     def test_explicit_default_name_still_requires_existing_dir(
@@ -448,8 +465,9 @@ class TestSourceInitSkillsDir:
 
         result = assert_invoke("source", "init", "--skills-dir", "new-skills")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["new-skills"]
 
         assert_words_in_message(
@@ -475,8 +493,9 @@ class TestSourceInitSkillsDir:
             "new-skills",
         )
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.name == "new-name"
         assert source_cfg.branch == "develop"
         assert source_cfg.skills_dirs == ["new-skills"]
@@ -500,8 +519,9 @@ class TestSourceInitSkillsDir:
         assert_words_in_message(result.output, "already initialized", "my-project")
         assert "skills_dir:" not in result.output
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["skills"]
 
     @pytest.mark.parametrize(
@@ -571,8 +591,9 @@ class TestCommandSurface:
 
         result = assert_invoke(*prefix, "--skills-dir", "my-skills")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["my-skills"]
 
         assert_words_in_message(result.output, "initialized", "my-project")
@@ -586,8 +607,9 @@ class TestCommandSurface:
         _fake_git.branches = ["release"]
         result = assert_invoke(*prefix, "--branch", "release")
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
         assert source_cfg.branch == "release"
 
         assert_words_in_message(result.output, "updated", "my-project")

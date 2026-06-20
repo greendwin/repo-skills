@@ -1,7 +1,7 @@
 ---
 id: s08t2311
 slug: reconsider-collapsing-broken-gt-none
-status: pending
+status: done
 ---
 
 # Reconsider collapsing BROKEN-&gt;None in load_source_config; expose ConfigState instead of re-stat via source_config_exists

@@ -9,6 +9,7 @@ from typer_di import Depends, TyperDI
 
 from repo_skills.config import (
     REPO_SKILLS_DIR,
+    ConfigState,
     SourceBrokenError,
     SourceConfig,
     load_skill_manifest,
@@ -17,7 +18,6 @@ from repo_skills.config import (
     save_skill_manifest,
     save_source_config,
     save_source_registry,
-    source_config_exists,
 )
 from repo_skills.console import console, fmt_data, fmt_ident, fmt_path
 from repo_skills.discovery import detect_skills_dir, resolve_skills_dir
@@ -113,19 +113,17 @@ def _init_or_config_source(git: GitRepo, requested: _RequestedChanges) -> None:
             )
         requested = replace(requested, skills_dir=rel_posix(resolved, git.root))
 
-    cfg = load_source_config(git.root)
-
-    # TODO: we must bubble-up `ConfigState` instead of making assumptions
-    if cfg is None:
-        # a config that exists on disk but won't load is broken, not fresh;
-        # fresh-initialising would clobber the unparseable file (data loss)
-        if source_config_exists(git.root):
-            raise SourceBrokenError(git.root)
-
-        _handle_fresh_init(git, requested)
+    result = load_source_config(git.root)
+    if result.state is ConfigState.OK:
+        _handle_reinit(git.root, result.cfg, requested)
         return
 
-    _handle_reinit(git.root, cfg, requested)
+    if result.state is ConfigState.BROKEN:
+        # a config that exists on disk but won't load is broken, not fresh;
+        # fresh-initialising would clobber the unparseable file (data loss)
+        raise SourceBrokenError(git.root)
+
+    _handle_fresh_init(git, requested)
 
 
 def _handle_fresh_init(git: GitRepo, requested: _RequestedChanges) -> None:
@@ -249,15 +247,15 @@ def source_list() -> None:
             console.print(message)
             continue
 
-        config = load_source_config(entry.repo_root)
-        if config is None:
-            # a file that exists but loads to None is broken, not uninitialized
-            if source_config_exists(entry.repo_root):
-                message += "  [red](broken)[/red]"
-            else:
-                message += "  [red](not-inited)[/red]"
-        elif config.branch:
-            message += f"  [dim](branch: {config.branch})[/dim]"
+        result = load_source_config(entry.repo_root)
+        if result.state is ConfigState.OK:
+            if result.cfg.branch:
+                message += f"  [dim](branch: {result.cfg.branch})[/dim]"
+        elif result.state is ConfigState.BROKEN:
+            message += "  [red](broken)[/red]"
+        else:
+            message += "  [red](not-inited)[/red]"
+
         console.print(message)
 
 

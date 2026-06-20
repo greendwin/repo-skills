@@ -9,16 +9,122 @@ export const meta = {
     { title: 'Implement', detail: 'tdd implement the work item to green targeted tests' },
     { title: 'Review-A', detail: 'code-reviewer lenses in parallel → triage → tdd fixes fix-now, until clean (cap 5)' },
     { title: 'Refactor-B', detail: 'refactor-reviewer lenses in parallel → apply-biased triage → tdd applies apply-now behavior-preservingly, until dry (cap 5)' },
+    { title: 'File-side-tasks', detail: 'file delayed refactor findings as depth-bounded, deduped, capped flat side-tasks under the story' },
     { title: 'Verify', detail: 'uv run tox (all envs) green gate, with bounded fix-reconverge' },
     { title: 'Commit', detail: 'stage + one commit-summary-style commit per work item' },
     { title: 'Status', detail: 'move the work item to in-review (never done)' },
   ],
 }
 
-// ---- story id ------------------------------------------------------------
-const storyId = typeof args === 'string' ? args.trim() : String(args || '').trim()
+// ---- story id + recursion bounds -----------------------------------------
+// Args is the story id, optionally followed by `key=value` tuning overrides:
+//   "<story-id> maxDepth=3 totalCap=50"
+// maxDepth gates how deep refactor side-tasks may spawn; totalCap is the hard
+// backstop on side-tasks filed per run (thermo is never fully satisfied, so a
+// ceiling is what guarantees the loop converges).
+const rawArgs = typeof args === 'string' ? args.trim() : String(args || '').trim()
+const argTokens = rawArgs.split(/\s+/).filter(Boolean)
+const storyId = argTokens.length ? argTokens[0] : ''
 if (!storyId) {
   return 'grind-story: no story id given. Invoke as Workflow({name:"grind-story", args:"<story-id>"}).'
+}
+
+const DEFAULT_MAX_DEPTH = 2
+const DEFAULT_TOTAL_CAP = 30
+
+function parsePositiveOverride(tokens, key, fallback) {
+  for (const tok of tokens) {
+    const eq = tok.indexOf('=')
+    if (eq <= 0) continue
+    if (tok.slice(0, eq) !== key) continue
+    const n = Number.parseInt(tok.slice(eq + 1), 10)
+    if (Number.isFinite(n) && n >= 0) return n
+  }
+  return fallback
+}
+
+const maxDepth = parsePositiveOverride(argTokens.slice(1), 'maxDepth', DEFAULT_MAX_DEPTH)
+const totalSideTaskCap = parsePositiveOverride(argTokens.slice(1), 'totalCap', DEFAULT_TOTAL_CAP)
+
+// ---- side-task depth marker (pure helpers) -------------------------------
+// Depth + linkage live in the task description as a parseable marker block:
+//
+//   ## Refactor side-task
+//   - depth: 1
+//   - origin: s08t12 — thermo finding "collapse duplicate dispatch branches"
+//
+// Original subtasks have no such block and are therefore depth 0. A side-task
+// spawned while processing a depth-d work item is born at depth d+1, recording
+// the spawning task id + finding title on its `origin:` line.
+const SIDE_TASK_HEADING = '## Refactor side-task'
+
+// Parse the depth marker out of a task description. Returns {depth, origin} when
+// a well-formed marker is present; null when absent (=> caller treats as depth
+// 0); {malformed:true} when the heading is present but the depth line is not
+// parseable (=> caller defaults to depth 0 AND logs the anomaly).
+function parseDepthMarker(description) {
+  const text = typeof description === 'string' ? description : ''
+  if (!text.includes(SIDE_TASK_HEADING)) return null
+  const depthMatch = text.match(/^[ \t]*-[ \t]*depth:[ \t]*(\d+)[ \t]*$/m)
+  if (!depthMatch) return { malformed: true }
+  const originMatch = text.match(/^[ \t]*-[ \t]*origin:[ \t]*(.+?)[ \t]*$/m)
+  return {
+    depth: Number.parseInt(depthMatch[1], 10),
+    origin: originMatch ? originMatch[1].trim() : '',
+  }
+}
+
+// Resolve the depth of a work item from its description, logging malformed
+// markers as anomalies. A hand-edited side-task with a broken marker is treated
+// as depth 0 (it still gets fully processed; only its children are governed by
+// depth) rather than crashing the run.
+function resolveDepth(taskId, description) {
+  const marker = parseDepthMarker(description)
+  if (marker === null) return 0
+  if (marker.malformed) {
+    log(`Depth marker malformed on ${taskId} — treating as depth 0.`)
+    return 0
+  }
+  return marker.depth
+}
+
+// Build the description body for a filed side-task: the marker block followed by
+// the originating finding's detail so a later pick can run it through the full
+// cycle like any original subtask.
+function buildSideTaskDescription(depth, originTaskId, finding) {
+  const f = finding || {}
+  const title = f.title || '(untitled finding)'
+  const lines = []
+  lines.push(SIDE_TASK_HEADING)
+  lines.push(`- depth: ${depth}`)
+  lines.push(`- origin: ${originTaskId} — refactor finding "${title}"`)
+  lines.push('')
+  lines.push('## Goal')
+  lines.push('')
+  lines.push(`Apply the deferred refactoring surfaced while processing ${originTaskId}.`)
+  if (f.location) lines.push(`- location: ${f.location}`)
+  if (f.severity) lines.push(`- severity: ${f.severity}`)
+  if (f.rationale) {
+    lines.push('')
+    lines.push(f.rationale)
+  }
+  if (f['suggested-fix']) {
+    lines.push('')
+    lines.push('## Suggested fix')
+    lines.push('')
+    lines.push(f['suggested-fix'])
+  }
+  return lines.join('\n')
+}
+
+// Stable signature for a delayed finding used to dedupe a re-surfaced finding
+// against the side-tasks already filed this run AND against existing story
+// children — so the loop converges instead of re-filing the same work forever.
+function findingSignature(originTaskId, finding) {
+  const f = finding || {}
+  const loc = (f.location || '').trim().toLowerCase()
+  const title = (f.title || '').trim().toLowerCase()
+  return `${(originTaskId || '').trim()}::${title}::${loc}`
 }
 
 // ---- structured-output schemas ------------------------------------------
@@ -47,8 +153,47 @@ const PICK_SCHEMA = {
     taskId: { type: 'string', description: 'id of the chosen work item (omit when done)' },
     title: { type: 'string', description: 'title of the chosen work item' },
     isStory: { type: 'boolean', description: 'true when the work item is the story task itself' },
+    description: {
+      type: 'string',
+      description: "the chosen work item's verbatim description body (used to parse its depth marker)",
+    },
   },
   required: ['done'],
+}
+
+// What the dedupe agent reports about the story's current children: the set of
+// already-filed side-task origin/finding signatures, so re-surfaced delayed
+// findings are not filed twice.
+const EXISTING_SIDE_TASKS_SCHEMA = {
+  type: 'object',
+  properties: {
+    signatures: {
+      type: 'array',
+      description: 'origin/finding signature of every refactor side-task already filed under the story',
+      items: { type: 'string' },
+    },
+  },
+  required: ['signatures'],
+}
+
+// One created side-task: the new id plus the signature it covers.
+const FILE_SIDE_TASKS_SCHEMA = {
+  type: 'object',
+  properties: {
+    created: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          taskId: { type: 'string', description: 'id of the created side-task' },
+          title: { type: 'string', description: 'title given to the side-task' },
+          signature: { type: 'string', description: 'finding signature this side-task covers' },
+        },
+        required: ['taskId'],
+      },
+    },
+  },
+  required: ['created'],
 }
 
 const VERIFY_SCHEMA = {
@@ -201,7 +346,7 @@ Select the next work item and move it to in-progress:
 
 If you selected a work item:
 - Move it to the \`in-progress\` status role using the set-status verb from the pack.
-- Return done=false, taskId=<id>, title=<its title>, isStory=<true only if it is the story task itself>.
+- Return done=false, taskId=<id>, title=<its title>, isStory=<true only if it is the story task itself>, and description=<the work item's verbatim description body, exactly as stored, so the orchestrator can parse any depth marker>.
 
 If nothing is left, return done=true.
 
@@ -378,6 +523,32 @@ Read the context pack first: ${packPath}.
 
 Move task ${pick.taskId} to the \`in-review\` status role using the set-status verb resolved in the pack. Never move it to \`done\`. Do nothing else, and confirm the new status.`
 
+const existingSideTasksPrompt = (packPath) => `You are the dedupe-scan step of an autonomous grind-story workflow for story ${storyId}.
+
+Read the context pack first: ${packPath} (it resolves this repo's task-tracker verbs).
+
+Using the read-task verb, load story ${storyId} and inspect every one of its children. A refactor side-task is a child whose description contains a \`## Refactor side-task\` marker block with an \`- origin:\` line. The origin line looks like:
+\`- origin: <spawning-task-id> — refactor finding "<finding title>"\`
+
+For EACH such existing side-task, emit one signature string built EXACTLY as:
+\`<spawning-task-id-lowercased-trimmed>::<finding-title-lowercased-trimmed>::<location-lowercased-trimmed>\`
+Take the location from the side-task body's \`- location:\` line if present, else use an empty string for that segment. Lowercase and trim each of the three segments; join with \`::\`.
+
+Return only the list of signatures. Do not create, edit, or re-status any task.`
+
+const fileSideTasksPrompt = (packPath, originTaskId, items) => `You are the side-task filing step of an autonomous grind-story workflow for story ${storyId}.
+
+Read the context pack first: ${packPath} (it resolves this repo's task-tracker verbs — in particular create-subtask).
+
+File each of the following refactor side-tasks as a FLAT child of story ${storyId} (parent = ${storyId}, NOT nested under ${originTaskId}). Use the create-subtask verb with \`parent: "${storyId}"\`, the given title, and the given description VERBATIM (it already contains the depth marker block). Each item:
+---
+${JSON.stringify(items, null, 2)}
+---
+
+For each item, create the subtask and report its new id alongside the item's \`signature\` (copy the signature through unchanged). The side-tasks are born \`pending\` — do NOT start, review, or finish them. Create nothing else.
+
+Return one entry per item: \`{taskId: <new id>, title: <title used>, signature: <the item's signature>}\`.`
+
 // ---- orchestration -------------------------------------------------------
 const CAP = 5
 const GUARD_MAX = 100
@@ -414,6 +585,16 @@ const outOfScopeFindings = []
 const droppedRefactors = []
 const seen = new Set()
 
+// Side-task filing state, threaded across iterations so the run converges:
+// `filedSignatures` dedupes re-surfaced findings against everything already
+// filed this run; `filedSideTasks` and `residualFindings` feed the report;
+// `capSuppressed` records findings dropped once the total cap is hit.
+const filedSignatures = new Set()
+const filedSideTasks = []
+const residualFindings = []
+const capSuppressed = []
+let sideTaskCount = 0
+
 while (processed.length < GUARD_MAX) {
   phase('Pick')
   const pick = await agent(pickPrompt(packPath), { label: 'pick', schema: PICK_SCHEMA })
@@ -426,7 +607,10 @@ while (processed.length < GUARD_MAX) {
     break
   }
   seen.add(pick.taskId)
-  log(`Processing ${pick.taskId}: ${pick.title || '(untitled)'}`)
+  // Depth governs whether THIS work item may spawn refactor side-tasks. Original
+  // subtasks carry no marker (=> depth 0); a filed side-task carries `depth: d`.
+  const depth = resolveDepth(pick.taskId, pick.description)
+  log(`Processing ${pick.taskId} (depth ${depth}): ${pick.title || '(untitled)'}`)
 
   phase('Implement')
   await agent(implementPrompt(pick, packPath), { label: `impl:${pick.taskId}` })
@@ -434,6 +618,10 @@ while (processed.length < GUARD_MAX) {
   // The `deferred-to-refactor` findings raised for THIS subtask in Phase A,
   // merged into Phase B's refactor pool below.
   const carriedDeferred = []
+
+  // The `delayed` refactor findings triaged for THIS subtask in Phase B — the
+  // seeds for side-task filing once Phase B converges (gated by depth + cap).
+  const carriedDelayed = []
 
   // Phase A — code-reviewer lenses → triage → tdd fixes fix-now, re-converging
   // until no fix-now remains or the round cap is hit. Skipped on an empty roster.
@@ -518,8 +706,12 @@ while (processed.length < GUARD_MAX) {
       const applyNow = Array.isArray(buckets['apply-now']) ? buckets['apply-now'] : []
       const delayed = Array.isArray(buckets['delayed']) ? buckets['delayed'] : []
       const outOfScope = Array.isArray(buckets['out-of-scope']) ? buckets['out-of-scope'] : []
-      // `delayed` seeds Slice 4's side-tasks; `out-of-scope` is reported only.
-      for (const f of delayed) delayedFindings.push({ taskId: pick.taskId, finding: f })
+      // `delayed` seeds the side-tasks filed after Phase B; `out-of-scope` is
+      // reported only. Both are recorded globally for the report.
+      for (const f of delayed) {
+        delayedFindings.push({ taskId: pick.taskId, finding: f })
+        carriedDelayed.push(f)
+      }
       for (const f of outOfScope) outOfScopeFindings.push({ taskId: pick.taskId, finding: f })
 
       if (applyNow.length === 0) {
@@ -540,6 +732,72 @@ while (processed.length < GUARD_MAX) {
         if (res && res.outcome === 'dropped') {
           droppedRefactors.push({ taskId: pick.taskId, finding: res.finding, reason: res.reason || '(no reason given)' })
           log(`Refactor dropped for ${pick.taskId}: "${res.finding}" — ${res.reason || '(no reason given)'}`)
+        }
+      }
+    }
+  }
+
+  // File side-tasks from this subtask's `delayed` findings. Spawning is gated by
+  // depth: a work item already at maxDepth files NOTHING — its delayed findings
+  // become residual instead (the item itself is still fully refactored/committed,
+  // only its children are suppressed). Below maxDepth, surviving findings are
+  // deduped (against this run's already-filed set AND the story's existing
+  // children) and filed flat under the story at depth+1, bounded by the total
+  // cap; the overflow is reported as suppressed-by-cap.
+  if (carriedDelayed.length > 0) {
+    if (depth >= maxDepth) {
+      for (const f of carriedDelayed) residualFindings.push({ taskId: pick.taskId, depth, finding: f })
+      log(`${pick.taskId} is at depth ${depth} (maxDepth ${maxDepth}) — its ${carriedDelayed.length} delayed finding(s) reported as residual, not filed.`)
+    } else {
+      phase('File-side-tasks')
+      // Seed the run's filed-signature set from the story's existing children so
+      // a finding re-surfaced on a later round is not filed twice.
+      const existing = await agent(existingSideTasksPrompt(packPath), {
+        label: `dedupe-scan:${pick.taskId}`,
+        schema: EXISTING_SIDE_TASKS_SCHEMA,
+      })
+      const existingSigs = (existing && Array.isArray(existing.signatures)) ? existing.signatures : []
+      for (const s of existingSigs) {
+        if (typeof s === 'string' && s.trim()) filedSignatures.add(s.trim())
+      }
+
+      const toFile = []
+      for (const finding of carriedDelayed) {
+        const sig = findingSignature(pick.taskId, finding)
+        if (filedSignatures.has(sig)) {
+          log(`Skipping already-filed delayed finding "${(finding && finding.title) || '(untitled)'}" from ${pick.taskId}.`)
+          continue
+        }
+        // Claim the signature now so duplicates within the same batch collapse.
+        filedSignatures.add(sig)
+        if (sideTaskCount + toFile.length >= totalSideTaskCap) {
+          capSuppressed.push({ taskId: pick.taskId, finding })
+          continue
+        }
+        const childDepth = depth + 1
+        toFile.push({
+          signature: sig,
+          title: `Refactor: ${(finding && finding.title) || 'deferred finding'}`.slice(0, 120),
+          description: buildSideTaskDescription(childDepth, pick.taskId, finding),
+        })
+      }
+
+      if (capSuppressed.some((c) => c.taskId === pick.taskId)) {
+        const n = capSuppressed.filter((c) => c.taskId === pick.taskId).length
+        log(`Total side-task cap (${totalSideTaskCap}) reached — ${n} delayed finding(s) from ${pick.taskId} suppressed, not filed.`)
+      }
+
+      if (toFile.length > 0) {
+        const filed = await agent(fileSideTasksPrompt(packPath, pick.taskId, toFile), {
+          label: `file-side-tasks:${pick.taskId}`,
+          schema: FILE_SIDE_TASKS_SCHEMA,
+        })
+        const created = (filed && Array.isArray(filed.created)) ? filed.created : []
+        for (const c of created) {
+          if (!c || !c.taskId) continue
+          sideTaskCount += 1
+          filedSideTasks.push({ originTaskId: pick.taskId, childTaskId: c.taskId, title: c.title, depth: depth + 1 })
+          log(`Filed side-task ${c.taskId} (depth ${depth + 1}) from ${pick.taskId}: "${c.title || ''}".`)
         }
       }
     }
@@ -590,7 +848,15 @@ return report(setup, packPath, processed, refactorOutcomes(), null)
 
 // Bundle the refactor-phase collections threaded into the report.
 function refactorOutcomes() {
-  return { deferredFindings, delayedFindings, outOfScopeFindings, droppedRefactors }
+  return {
+    deferredFindings,
+    delayedFindings,
+    outOfScopeFindings,
+    droppedRefactors,
+    filedSideTasks,
+    residualFindings,
+    capSuppressed,
+  }
 }
 
 // ---- report --------------------------------------------------------------
@@ -599,6 +865,9 @@ function report(setup, packPath, processed, refactor, failure) {
   const delayedFindings = (refactor && refactor.delayedFindings) || []
   const outOfScopeFindings = (refactor && refactor.outOfScopeFindings) || []
   const droppedRefactors = (refactor && refactor.droppedRefactors) || []
+  const filedSideTasks = (refactor && refactor.filedSideTasks) || []
+  const residualFindings = (refactor && refactor.residualFindings) || []
+  const capSuppressed = (refactor && refactor.capSuppressed) || []
   const lines = []
   lines.push(`grind-story — story ${storyId}`)
   lines.push(`branch: ${setup.branch} (base ${setup.baseRef})`)
@@ -626,6 +895,29 @@ function report(setup, packPath, processed, refactor, failure) {
     lines.push('')
     lines.push(`Delayed refactor findings collected for side-task filing (${delayedFindings.length}):`)
     for (const d of delayedFindings) {
+      const f = d.finding || {}
+      lines.push(`  - [${d.taskId}] ${f.title || '(untitled)'} @ ${f.location || '?'} (${f.severity || '?'})`)
+    }
+  }
+  if (filedSideTasks && filedSideTasks.length) {
+    lines.push('')
+    lines.push(`Refactor side-tasks filed (${filedSideTasks.length}):`)
+    for (const s of filedSideTasks) {
+      lines.push(`  - ${s.childTaskId} (depth ${s.depth}) "${s.title || ''}" ← origin ${s.originTaskId}`)
+    }
+  }
+  if (residualFindings && residualFindings.length) {
+    lines.push('')
+    lines.push(`Residual refactor findings at maxDepth (not filed) (${residualFindings.length}):`)
+    for (const d of residualFindings) {
+      const f = d.finding || {}
+      lines.push(`  - [${d.taskId} depth ${d.depth}] ${f.title || '(untitled)'} @ ${f.location || '?'} (${f.severity || '?'})`)
+    }
+  }
+  if (capSuppressed && capSuppressed.length) {
+    lines.push('')
+    lines.push(`Side-task findings suppressed by the total cap of ${totalSideTaskCap} (${capSuppressed.length}):`)
+    for (const d of capSuppressed) {
       const f = d.finding || {}
       lines.push(`  - [${d.taskId}] ${f.title || '(untitled)'} @ ${f.location || '?'} (${f.severity || '?'})`)
     }

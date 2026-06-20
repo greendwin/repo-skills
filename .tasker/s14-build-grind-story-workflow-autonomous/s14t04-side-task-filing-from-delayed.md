@@ -1,7 +1,7 @@
 ---
 id: s14t04
 slug: side-task-filing-from-delayed
-status: pending
+status: done
 ---
 
 # Side-task filing from `delayed` and depth-bounded re-queue

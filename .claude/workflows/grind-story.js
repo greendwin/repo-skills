@@ -46,6 +46,11 @@ function parsePositiveOverride(tokens, key, fallback) {
 const maxDepth = parsePositiveOverride(argTokens.slice(1), 'maxDepth', DEFAULT_MAX_DEPTH)
 const totalSideTaskCap = parsePositiveOverride(argTokens.slice(1), 'totalCap', DEFAULT_TOTAL_CAP)
 
+// Read an array-valued field off a possibly-null structured-output result,
+// defaulting to [] — the one place the "agent may have died / returned a wrong
+// shape" guard lives, so the call sites read as plain field access.
+const arr = (obj, key) => (obj && Array.isArray(obj[key])) ? obj[key] : []
+
 // ---- side-task depth marker (pure helpers) -------------------------------
 // Depth + linkage live in the task description as a parseable marker block:
 //
@@ -74,27 +79,21 @@ function parseDepthMarker(description) {
   }
 }
 
-// Resolve the depth of a work item from its description, logging malformed
-// markers as anomalies. A hand-edited side-task with a broken marker is treated
-// as depth 0 (it still gets fully processed; only its children are governed by
-// depth) rather than crashing the run.
-function resolveDepth(taskId, description) {
+// Resolve a work item's depth AND origin from its description in ONE parse,
+// logging malformed markers as anomalies. No marker => depth 0 with an empty
+// origin (an original subtask). A hand-edited side-task with a broken marker is
+// treated as depth 0 (it still gets fully processed; only its children are
+// governed by depth) rather than crashing the run. The origin (the `- origin:`
+// line of a side-task) is threaded into the report so every committed side-task
+// shows where it came from.
+function resolveMarker(taskId, description) {
   const marker = parseDepthMarker(description)
-  if (marker === null) return 0
+  if (marker === null) return { depth: 0, origin: '' }
   if (marker.malformed) {
     log(`Depth marker malformed on ${taskId} — treating as depth 0.`)
-    return 0
+    return { depth: 0, origin: '' }
   }
-  return marker.depth
-}
-
-// Resolve the origin marker of a work item from its description: the `- origin:`
-// line of a side-task, or an empty string for an original subtask (no marker).
-// Threaded into the report so every committed side-task shows where it came from.
-function resolveOrigin(description) {
-  const marker = parseDepthMarker(description)
-  if (marker === null || marker.malformed) return ''
-  return marker.origin || ''
+  return { depth: marker.depth, origin: marker.origin || '' }
 }
 
 // Build the description body for a filed side-task: the marker block followed by
@@ -274,25 +273,27 @@ const ROSTER_SCHEMA = {
   required: ['lenses'],
 }
 
+// The canonical finding shape, shared by the lens output AND every triage bucket
+// so a triaged finding is contract-bound to round-trip its fields intact (the
+// downstream JS reads `.title`/`.location`/`.severity` off these objects).
+const FINDING_ITEM = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
+    location: { type: 'string', description: 'file:line or symbol the finding refers to' },
+    severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'nit'] },
+    rationale: { type: 'string' },
+    'suggested-fix': { type: 'string' },
+    lens: { type: 'string' },
+  },
+  required: ['title', 'location', 'severity', 'rationale', 'suggested-fix', 'lens'],
+}
+
 const FINDINGS_SCHEMA = {
   type: 'object',
   properties: {
     lens: { type: 'string', description: 'the lens that produced these findings' },
-    findings: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          title: { type: 'string' },
-          location: { type: 'string', description: 'file:line or symbol the finding refers to' },
-          severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'nit'] },
-          rationale: { type: 'string' },
-          'suggested-fix': { type: 'string' },
-          lens: { type: 'string' },
-        },
-        required: ['title', 'location', 'severity', 'rationale', 'suggested-fix', 'lens'],
-      },
-    },
+    findings: { type: 'array', items: FINDING_ITEM },
   },
   required: ['lens', 'findings'],
 }
@@ -303,9 +304,9 @@ const TRIAGE_SCHEMA = {
     buckets: {
       type: 'object',
       properties: {
-        'fix-now': { type: 'array', items: { type: 'object' } },
-        'deferred-to-refactor': { type: 'array', items: { type: 'object' } },
-        'out-of-scope': { type: 'array', items: { type: 'object' } },
+        'fix-now': { type: 'array', items: FINDING_ITEM },
+        'deferred-to-refactor': { type: 'array', items: FINDING_ITEM },
+        'out-of-scope': { type: 'array', items: FINDING_ITEM },
       },
       required: ['fix-now', 'deferred-to-refactor', 'out-of-scope'],
     },
@@ -321,9 +322,9 @@ const REFACTOR_TRIAGE_SCHEMA = {
     buckets: {
       type: 'object',
       properties: {
-        'apply-now': { type: 'array', items: { type: 'object' } },
-        'delayed': { type: 'array', items: { type: 'object' } },
-        'out-of-scope': { type: 'array', items: { type: 'object' } },
+        'apply-now': { type: 'array', items: FINDING_ITEM },
+        'delayed': { type: 'array', items: FINDING_ITEM },
+        'out-of-scope': { type: 'array', items: FINDING_ITEM },
       },
       required: ['apply-now', 'delayed', 'out-of-scope'],
     },
@@ -620,7 +621,7 @@ const packPath = pack.packPath
 // Resolve the code-reviewer roster from the pack once — it does not change per
 // subtask. An empty roster means Phase A is skipped for the whole run.
 const roster = await agent(rosterPrompt(packPath), { label: 'roster:code-reviewer', schema: ROSTER_SCHEMA })
-const reviewLenses = (roster && Array.isArray(roster.lenses)) ? roster.lenses.filter((l) => typeof l === 'string' && l.trim()) : []
+const reviewLenses = arr(roster, 'lenses').filter((l) => typeof l === 'string' && l.trim())
 if (reviewLenses.length === 0) {
   log('Phase A skipped for the run: the code-reviewer roster resolved empty.')
 }
@@ -628,7 +629,7 @@ if (reviewLenses.length === 0) {
 // Resolve the refactor-reviewer roster once too — it likewise does not change
 // per subtask. An empty roster means Phase B is skipped for the whole run.
 const refactorRoster = await agent(refactorRosterPrompt(packPath), { label: 'roster:refactor-reviewer', schema: ROSTER_SCHEMA })
-const refactorLenses = (refactorRoster && Array.isArray(refactorRoster.lenses)) ? refactorRoster.lenses.filter((l) => typeof l === 'string' && l.trim()) : []
+const refactorLenses = arr(refactorRoster, 'lenses').filter((l) => typeof l === 'string' && l.trim())
 if (refactorLenses.length === 0) {
   log('Phase B skipped for the run: the refactor-reviewer roster resolved empty.')
 }
@@ -698,6 +699,17 @@ async function failConvergence(pick, depth, reason, failures) {
   throw new SkipItem()
 }
 
+// Fan the given lenses out in parallel for one review round and flatten their
+// surviving findings — the shared fanout for both review phases. A lens that
+// died or returned null contributes nothing; the round continues.
+async function runLensRound(lenses, promptFn, labelPrefix, round) {
+  const results = await parallel(
+    lenses.map((lens) =>
+      agent(promptFn(lens, packPath, setup.baseRef), { label: `${labelPrefix}:${lens}:${round}`, schema: FINDINGS_SCHEMA })),
+  )
+  return results.flatMap((r) => arr(r, 'findings'))
+}
+
 // Phase A — code-reviewer lenses → triage → tdd fixes fix-now, re-converging
 // until no fix-now remains or the round cap is hit. Skipped on an empty roster.
 // Returns the `deferred-to-refactor` findings to carry into Phase B; throws
@@ -708,15 +720,7 @@ async function reviewPhaseA(pick, depth) {
   phase('Review-A')
   let openFixNow = []
   for (let round = 1; round <= CAP; round++) {
-    const lensRuns = reviewLenses.map((lens) =>
-      agent(lensPrompt(lens, packPath, setup.baseRef), { label: `lens:${lens}:${round}`, schema: FINDINGS_SCHEMA }),
-    )
-    const lensResults = await parallel(lensRuns)
-    const findings = []
-    for (const r of lensResults) {
-      // A lens that died or returned null is filtered out; the round continues.
-      if (r && Array.isArray(r.findings)) findings.push(...r.findings)
-    }
+    const findings = await runLensRound(reviewLenses, lensPrompt, 'lens', round)
     if (findings.length === 0) {
       openFixNow = []
       log(`Review-A round ${round}/${CAP} for ${pick.taskId}: lenses raised no findings.`)
@@ -728,8 +732,8 @@ async function reviewPhaseA(pick, depth) {
       schema: TRIAGE_SCHEMA,
     })
     const buckets = (triage && triage.buckets) || {}
-    const fixNow = Array.isArray(buckets['fix-now']) ? buckets['fix-now'] : []
-    const deferred = Array.isArray(buckets['deferred-to-refactor']) ? buckets['deferred-to-refactor'] : []
+    const fixNow = arr(buckets, 'fix-now')
+    const deferred = arr(buckets, 'deferred-to-refactor')
     for (const f of deferred) {
       deferredFindings.push({ taskId: pick.taskId, finding: f })
       carriedDeferred.push(f)
@@ -776,15 +780,7 @@ async function refactorPhaseB(pick, carriedDeferred) {
   if (refactorLenses.length === 0) return carriedDelayed
   phase('Refactor-B')
   for (let round = 1; round <= CAP; round++) {
-    const lensRuns = refactorLenses.map((lens) =>
-      agent(refactorLensPrompt(lens, packPath, setup.baseRef), { label: `refactor-lens:${lens}:${round}`, schema: FINDINGS_SCHEMA }),
-    )
-    const lensResults = await parallel(lensRuns)
-    const findings = []
-    for (const r of lensResults) {
-      // A lens that died or returned null is filtered out; the round continues.
-      if (r && Array.isArray(r.findings)) findings.push(...r.findings)
-    }
+    const findings = await runLensRound(refactorLenses, refactorLensPrompt, 'refactor-lens', round)
     // Only the first round merges the Phase A deferred findings — later rounds
     // re-review the now-refactored tree fresh so they cannot re-surface stale
     // findings already applied or routed.
@@ -800,9 +796,9 @@ async function refactorPhaseB(pick, carriedDeferred) {
       schema: REFACTOR_TRIAGE_SCHEMA,
     })
     const buckets = (triage && triage.buckets) || {}
-    const applyNow = Array.isArray(buckets['apply-now']) ? buckets['apply-now'] : []
-    const delayed = Array.isArray(buckets['delayed']) ? buckets['delayed'] : []
-    const outOfScope = Array.isArray(buckets['out-of-scope']) ? buckets['out-of-scope'] : []
+    const applyNow = arr(buckets, 'apply-now')
+    const delayed = arr(buckets, 'delayed')
+    const outOfScope = arr(buckets, 'out-of-scope')
     // `delayed` seeds the side-tasks filed after Phase B; `out-of-scope` is
     // reported only. Both are recorded globally for the report.
     for (const f of delayed) {
@@ -827,7 +823,7 @@ async function refactorPhaseB(pick, carriedDeferred) {
       label: `apply-B:${round}`,
       schema: APPLY_SCHEMA,
     })
-    const results = (applied && Array.isArray(applied.results)) ? applied.results : []
+    const results = arr(applied, 'results')
     for (const res of results) {
       if (res && res.outcome === 'dropped') {
         droppedRefactors.push({ taskId: pick.taskId, finding: res.finding, reason: res.reason || '(no reason given)' })
@@ -861,7 +857,7 @@ async function fileSideTasks(pick, depth, carriedDelayed) {
     label: `dedupe-scan:${pick.taskId}`,
     schema: EXISTING_SIDE_TASKS_SCHEMA,
   })
-  const existingRows = (existing && Array.isArray(existing.sideTasks)) ? existing.sideTasks : []
+  const existingRows = arr(existing, 'sideTasks')
   for (const row of existingRows) {
     if (!row || typeof row.origin !== 'string') continue
     filedSignatures.add(findingSignature(row.origin, { title: row.title, location: row.location }))
@@ -898,7 +894,7 @@ async function fileSideTasks(pick, depth, carriedDelayed) {
       label: `file-side-tasks:${pick.taskId}`,
       schema: FILE_SIDE_TASKS_SCHEMA,
     })
-    const created = (filed && Array.isArray(filed.created)) ? filed.created : []
+    const created = arr(filed, 'created')
     for (const c of created) {
       if (!c || !c.taskId) continue
       sideTaskCount += 1
@@ -971,8 +967,7 @@ while (processed.length < GUARD_MAX) {
   // side of the kind-split a convergence failure takes. Original subtasks carry
   // no marker (=> depth 0); a filed side-task carries `depth: d`. Its origin
   // marker is threaded into the report's task -> commit -> origin map.
-  const depth = resolveDepth(pick.taskId, pick.description)
-  const origin = resolveOrigin(pick.description)
+  const { depth, origin } = resolveMarker(pick.taskId, pick.description)
   log(`Processing ${pick.taskId} (depth ${depth}): ${pick.title || '(untitled)'}`)
 
   try {
@@ -1034,11 +1029,11 @@ function report(setup, packPath, processed, refactor, failure) {
     lines.push('', `${title} (${items.length}):`)
     for (const it of items) lines.push(`  - ${fmt(it)}`)
   }
+  // The shared `title @ location` core of a finding, so the detail sections and
+  // the escalation surface below format a finding the same way (no drift).
+  const findingCore = (f) => `${(f || {}).title || '(untitled)'} @ ${(f || {}).location || '?'}`
   // A finding row keyed by task — the shared shape for most refactor collections.
-  const findingRow = (d) => {
-    const f = d.finding || {}
-    return `[${d.taskId}] ${f.title || '(untitled)'} @ ${f.location || '?'} (${f.severity || '?'})`
-  }
+  const findingRow = (d) => `[${d.taskId}] ${findingCore(d.finding)} (${(d.finding || {}).severity || '?'})`
 
   lines.push(`grind-story — story ${storyId}`)
   lines.push(`branch: ${setup.branch} (base ${setup.baseRef})`)
@@ -1063,7 +1058,7 @@ function report(setup, packPath, processed, refactor, failure) {
   section('Refactor side-tasks filed', filedSideTasks,
     (s) => `${s.childTaskId} (depth ${s.depth}) "${s.title || ''}" ← origin ${s.originTaskId}`)
   section('Residual refactor findings at maxDepth (not filed)', residualFindings,
-    (d) => `[${d.taskId} depth ${d.depth}] ${(d.finding || {}).title || '(untitled)'} @ ${(d.finding || {}).location || '?'} (${(d.finding || {}).severity || '?'})`)
+    (d) => `[${d.taskId} depth ${d.depth}] ${findingCore(d.finding)} (${(d.finding || {}).severity || '?'})`)
   section(`Side-task findings suppressed by the total cap of ${totalSideTaskCap}`, capSuppressed, findingRow)
   section('Out-of-scope refactor findings (reported only, not filed)', outOfScopeFindings, findingRow)
   section('Dropped refactorings (could not stay green)', droppedRefactors,
@@ -1079,12 +1074,10 @@ function report(setup, packPath, processed, refactor, failure) {
     escalationLines.push(`  - fix-now at cap: ${e.taskId} (depth ${e.depth}) — ${e.detail || e.count + ' open fix-now finding(s)'}`)
   }
   for (const d of residualFindings) {
-    const f = d.finding || {}
-    escalationLines.push(`  - residual at maxDepth: [${d.taskId} depth ${d.depth}] ${f.title || '(untitled)'} @ ${f.location || '?'}`)
+    escalationLines.push(`  - residual at maxDepth: [${d.taskId} depth ${d.depth}] ${findingCore(d.finding)}`)
   }
   for (const d of capSuppressed) {
-    const f = d.finding || {}
-    escalationLines.push(`  - cap-suppressed side-task: [${d.taskId}] ${f.title || '(untitled)'} @ ${f.location || '?'}`)
+    escalationLines.push(`  - cap-suppressed side-task: [${d.taskId}] ${findingCore(d.finding)}`)
   }
   if (escalationLines.length) {
     lines.push('')

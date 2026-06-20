@@ -1,7 +1,7 @@
 ---
 id: s08t2302
 slug: depthfree-detection-with-threecase-contract
-status: pending
+status: in-review
 ---
 
 # Depth-free detection with three-case contract

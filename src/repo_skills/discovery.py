@@ -1,13 +1,26 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
+from enum import Enum, auto
 from pathlib import Path
 
 from .config import SKILL_FILE
 from .manifest import Manifest, default_install_dir, default_manifest_path
 
-_MAX_DETECT_DEPTH = 3
 _GIT_DIR = ".git"
+
+
+class DetectKind(Enum):
+    NONE = auto()
+    SINGLE = auto()
+    AMBIGUOUS = auto()
+
+
+@dataclass(frozen=True)
+class DetectResult:
+    kind: DetectKind
+    path: Path | None
 
 
 def find_git_root(start: Path) -> Path | None:
@@ -23,33 +36,27 @@ def find_git_root(start: Path) -> Path | None:
         current = parent
 
 
-def detect_skills_dir(git_root: Path) -> Path | None:
+def detect_skills_dir(git_root: Path) -> DetectResult:
     skill_dirs: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(git_root):
         path = Path(dirpath)
-        rel = path.relative_to(git_root)
-        if rel.parts and rel.parts[0].startswith("."):
-            dirnames.clear()
-            continue
-
-        depth = len(rel.parts)
-        if depth >= _MAX_DETECT_DEPTH:
-            dirnames.clear()
-            continue
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
 
         if SKILL_FILE in filenames:
             skill_dirs.append(path)
+            # outermost SKILL.md wins; don't descend into a skill's internals
+            dirnames.clear()
 
     if not skill_dirs:
-        return None
+        return DetectResult(DetectKind.NONE, None)
 
     parents = [sd.parent for sd in skill_dirs]
     common = _deepest_common_ancestor(parents, fallback=git_root)
 
     if common == git_root:
-        return None
+        return DetectResult(DetectKind.AMBIGUOUS, None)
 
-    return common
+    return DetectResult(DetectKind.SINGLE, common)
 
 
 def resolve_skills_dir(git_root: Path, skills_dir: str) -> Path | None:

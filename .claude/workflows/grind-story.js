@@ -606,7 +606,8 @@ For each item, create the subtask and report its new id alongside the item's \`s
 Return one entry per item: \`{taskId: <new id>, title: <title used>, signature: <the item's signature>}\`.`
 
 // ---- orchestration -------------------------------------------------------
-const CAP = 5
+const VERIFY_CAP = 5
+const REVIEW_CAP = 10
 const GUARD_MAX = 100
 
 phase('Setup')
@@ -645,7 +646,7 @@ const seen = new Set()
 // is `git reset --hard`-discarded and recorded here, then the loop continues;
 // the report surfaces every dropped side-task with its reason. `escalations`
 // collects the non-halting convergence problems worth a human's attention (a
-// 5-cap-open `fix-now`), feeding the report's escalation section.
+// `fix-now` still open at the review cap), feeding the report's escalation section.
 const droppedSideTasks = []
 const escalations = []
 
@@ -719,11 +720,11 @@ async function reviewPhaseA(pick, depth) {
   if (reviewLenses.length === 0) return carriedDeferred
   phase('Review-A')
   let openFixNow = []
-  for (let round = 1; round <= CAP; round++) {
+  for (let round = 1; round <= REVIEW_CAP; round++) {
     const findings = await runLensRound(reviewLenses, lensPrompt, 'lens', round)
     if (findings.length === 0) {
       openFixNow = []
-      log(`Review-A round ${round}/${CAP} for ${pick.taskId}: lenses raised no findings.`)
+      log(`Review-A round ${round}/${REVIEW_CAP} for ${pick.taskId}: lenses raised no findings.`)
       break
     }
 
@@ -741,12 +742,12 @@ async function reviewPhaseA(pick, depth) {
 
     if (fixNow.length === 0) {
       openFixNow = []
-      log(`Review-A round ${round}/${CAP} for ${pick.taskId}: no fix-now findings; ${deferred.length} carried to Phase B.`)
+      log(`Review-A round ${round}/${REVIEW_CAP} for ${pick.taskId}: no fix-now findings; ${deferred.length} carried to Phase B.`)
       break
     }
     openFixNow = fixNow
-    log(`Review-A round ${round}/${CAP} for ${pick.taskId}: ${fixNow.length} fix-now finding(s); routing to a tdd fix agent.`)
-    if (round === CAP) break
+    log(`Review-A round ${round}/${REVIEW_CAP} for ${pick.taskId}: ${fixNow.length} fix-now finding(s); routing to a tdd fix agent.`)
+    if (round === REVIEW_CAP) break
     await agent(reviewFixPrompt(pick, packPath, JSON.stringify(fixNow, null, 2)), { label: `fix-A:${round}` })
   }
   if (openFixNow.length > 0) {
@@ -759,12 +760,12 @@ async function reviewPhaseA(pick, depth) {
       taskId: pick.taskId,
       depth,
       count: openFixNow.length,
-      detail: `${openFixNow.length} fix-now finding(s) still open after ${CAP} Review-A rounds`,
+      detail: `${openFixNow.length} fix-now finding(s) still open after ${REVIEW_CAP} Review-A rounds`,
     })
     await failConvergence(
       pick,
       depth,
-      `${openFixNow.length} fix-now finding(s) still open at the ${CAP}-round cap`,
+      `${openFixNow.length} fix-now finding(s) still open at the ${REVIEW_CAP}-round cap`,
       JSON.stringify(openFixNow, null, 2),
     )
   }
@@ -779,7 +780,7 @@ async function refactorPhaseB(pick, carriedDeferred) {
   const carriedDelayed = []
   if (refactorLenses.length === 0) return carriedDelayed
   phase('Refactor-B')
-  for (let round = 1; round <= CAP; round++) {
+  for (let round = 1; round <= REVIEW_CAP; round++) {
     const findings = await runLensRound(refactorLenses, refactorLensPrompt, 'refactor-lens', round)
     // Only the first round merges the Phase A deferred findings — later rounds
     // re-review the now-refactored tree fresh so they cannot re-surface stale
@@ -787,7 +788,7 @@ async function refactorPhaseB(pick, carriedDeferred) {
     if (round === 1) findings.push(...carriedDeferred)
 
     if (findings.length === 0) {
-      log(`Refactor-B round ${round}/${CAP} for ${pick.taskId}: lenses raised no findings — loop dry.`)
+      log(`Refactor-B round ${round}/${REVIEW_CAP} for ${pick.taskId}: lenses raised no findings — loop dry.`)
       break
     }
 
@@ -808,11 +809,11 @@ async function refactorPhaseB(pick, carriedDeferred) {
     for (const f of outOfScope) outOfScopeFindings.push({ taskId: pick.taskId, finding: f })
 
     if (applyNow.length === 0) {
-      log(`Refactor-B round ${round}/${CAP} for ${pick.taskId}: no apply-now; ${delayed.length} delayed, ${outOfScope.length} out-of-scope — loop dry.`)
+      log(`Refactor-B round ${round}/${REVIEW_CAP} for ${pick.taskId}: no apply-now; ${delayed.length} delayed, ${outOfScope.length} out-of-scope — loop dry.`)
       break
     }
-    log(`Refactor-B round ${round}/${CAP} for ${pick.taskId}: ${applyNow.length} apply-now refactoring(s); routing to a tdd apply agent.`)
-    if (round === CAP) {
+    log(`Refactor-B round ${round}/${REVIEW_CAP} for ${pick.taskId}: ${applyNow.length} apply-now refactoring(s); routing to a tdd apply agent.`)
+    if (round === REVIEW_CAP) {
       // Phase B is best-effort and behavior-preserving (tests stay green), so an
       // unconverged refactor loop is logged and stopped — NOT a convergence
       // failure, unlike Phase A's open fix-now.
@@ -910,15 +911,15 @@ async function fileSideTasks(pick, depth, carriedDelayed) {
 async function verifyStep(pick, depth) {
   phase('Verify')
   let lastFailures = ''
-  for (let round = 1; round <= CAP; round++) {
+  for (let round = 1; round <= VERIFY_CAP; round++) {
     const v = await agent(verifyPrompt(packPath), { label: `tox:${round}`, schema: VERIFY_SCHEMA })
     if (v && v.green) return
     lastFailures = (v && v.failures) || '(no failure detail captured)'
-    log(`tox red (round ${round}/${CAP}) for ${pick.taskId}; routing failures to a fix agent.`)
-    if (round === CAP) break
+    log(`tox red round ${round}/${VERIFY_CAP} for ${pick.taskId}; routing failures to a fix agent.`)
+    if (round === VERIFY_CAP) break
     await agent(fixPrompt(pick, packPath, lastFailures), { label: `fix:${round}` })
   }
-  await failConvergence(pick, depth, `uv run tox still red after ${CAP} fix rounds`, lastFailures)
+  await failConvergence(pick, depth, `uv run tox still red after ${VERIFY_CAP} fix rounds`, lastFailures)
 }
 
 // Move the work item to in-review then produce its single commit (including the
@@ -1064,7 +1065,7 @@ function report(setup, packPath, processed, refactor, failure) {
   section('Dropped refactorings (could not stay green)', droppedRefactors,
     (d) => `[${d.taskId}] ${d.finding || '(untitled)'} — ${d.reason || '(no reason given)'}`)
   // Escalations — the human-review surface that replaces the dropped interactive
-  // gates: the halting original subtask, any 5-cap-open fix-now, residual findings
+  // gates: the halting original subtask, any fix-now open at the review cap, residual findings
   // stranded at maxDepth, and side-task findings suppressed by the total cap.
   const escalationLines = []
   if (failure) {

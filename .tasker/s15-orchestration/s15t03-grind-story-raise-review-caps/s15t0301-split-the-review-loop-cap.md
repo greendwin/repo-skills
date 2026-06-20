@@ -1,7 +1,7 @@
 ---
 id: s15t0301
 slug: split-the-review-loop-cap
-status: pending
+status: in-review
 ---
 
 # Split the review-loop cap from the verify cap

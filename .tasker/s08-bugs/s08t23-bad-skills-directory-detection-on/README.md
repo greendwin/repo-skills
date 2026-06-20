@@ -48,5 +48,7 @@ status: pending
 - [ ] [s08t2305](s08t2305-orphan-merge-target-active-dir.md): Orphan merge target = active dir
 - [ ] [s08t2306](s08t2306-status-shows-zeroskill-sources.md): Status shows zero-skill sources
 - [ ] [s08t2307](s08t2307-remove-dead-detection-helpers.md): Remove dead detection helpers
-- [ ] [s08t2308](s08t2308-resolve-broken-source-json-handling.md): Resolve broken source.json handling (duplicate message / fatal-vs-graceful)
-- [ ] [s08t2309](s08t2309-move-v0-migration-off-sourceconfig.md): Move v0 migration off SourceConfig into a dedicated _SourceConfigV0 model
+- [x] [s08t2308](s08t2308-resolve-broken-source-json-handling.md): Resolve broken source.json handling (duplicate message / fatal-vs-graceful)
+- [x] [s08t2309](s08t2309-move-v0-migration-off-sourceconfig.md): Move v0 migration off SourceConfig into a dedicated _SourceConfigV0 model
+- [ ] [s08t2310](s08t2310-unify-versioned-config-migration-via.md): Unify versioned-config migration via a raw-dict / migrate hook on load_versioned_config
+- [ ] [s08t2311](s08t2311-reconsider-collapsing-broken-gt-none.md): Reconsider collapsing BROKEN-&gt;None in load_source_config; expose ConfigState instead of re-stat via source_config_exists

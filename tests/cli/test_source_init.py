@@ -9,6 +9,7 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 from repo_skills.config import (
     REPO_SKILLS_DIR,
     InstalledSkill,
+    SourceBrokenError,
     default_config_path,
     load_source_config,
     load_source_registry,
@@ -71,6 +72,22 @@ class TestSourceInitFreshRepo:
         gitignore = git_repo / REPO_SKILLS_DIR / ".gitignore"
         assert gitignore.exists()
         assert "*" in gitignore.read_text()
+
+
+class TestSourceInitBrokenConfig:
+    def test_malformed_config_aborts_without_overwriting(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        config_path = git_repo / REPO_SKILLS_DIR / "source.json"
+        fs.create_file(config_path, contents="{not valid json")
+        before = config_path.read_bytes()
+
+        result = assert_invoke("source", "init", expect_error=True)
+
+        assert isinstance(result.exception, SourceBrokenError)
+        assert config_path.read_bytes() == before
+        assert "initialized" not in result.output.lower()
+        assert "broken" in result.output.lower()
 
 
 class TestSourceInitPopulatedRepo:

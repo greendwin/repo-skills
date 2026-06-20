@@ -1,13 +1,14 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from pydantic import Field
+from pydantic import field_validator
 
 from repo_skills.console import fmt_ident, fmt_path
-from repo_skills.errors import AppError, ConfigBrokenError
+from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
-from repo_skills.utils import rel_posix, save_config
+from repo_skills.utils import load_config, rel_posix, save_config
 
 from ._skill_md import SKILL_FILE
 from ._utils import ConfigState, VersionedConfig, load_versioned_config
@@ -31,15 +32,22 @@ class SourceConfig(VersionedConfig):
     skills_dirs: list[str] = []
     branch: str = ""
 
-    # TODO: we need some kind of converters support in `load_source_config`
-    #       to keep latest schema version clean
-
-    # legacy v0 key, parsed only during migration; never serialized
-    skills_dir: str | None = Field(default=None, exclude=True)
-
     @property
     def active_dir(self) -> str | None:
         return self.skills_dirs[0] if self.skills_dirs else None
+
+
+class _SourceConfigV0(VersionedConfig):
+    name: str = ""
+    skills_dir: str | None = None
+    branch: str = ""
+
+    @field_validator("skills_dir", mode="before")
+    @classmethod
+    def _coerce_skills_dir(cls, value: Any) -> str | None:
+        # legacy files may carry a non-string value (e.g. a list); treat any
+        # non-string as "no skills dir" so migration is graceful, not fatal
+        return value if isinstance(value, str) else None
 
 
 @dataclass
@@ -73,21 +81,27 @@ class Source:
         return skill
 
 
+def source_config_exists(repo_root: Path) -> bool:
+    return (repo_root / SOURCE_CONFIG_PATH).is_file()
+
+
 def load_source_config(repo_root: Path) -> SourceConfig | None:
     path = repo_root / SOURCE_CONFIG_PATH
     result = load_versioned_config(SourceConfig, path, CURRENT_VERSION)
 
-    if result.state is ConfigState.MISSING:
+    if result.state in (ConfigState.MISSING, ConfigState.BROKEN):
         return None
 
-    if result.state is ConfigState.BROKEN:
-        raise ConfigBrokenError(path)
-
     if result.state is ConfigState.OUTDATED:
-        cfg = result.cfg
-        legacy_dir = cfg.skills_dir
-        cfg.skills_dirs = [legacy_dir] if legacy_dir else []
-        cfg.skills_dir = None
+        legacy = load_config(_SourceConfigV0, path)
+        if legacy is None:
+            # the file was removed between the two reads; treat as missing
+            return None
+        cfg = SourceConfig(
+            name=legacy.name,
+            skills_dirs=[legacy.skills_dir] if legacy.skills_dir else [],
+            branch=legacy.branch,
+        )
         save_source_config(cfg, repo_root)
         return cfg
 

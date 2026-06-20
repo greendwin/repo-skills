@@ -18,6 +18,7 @@ from repo_skills.cli._merge import (
 from repo_skills.config import (
     Baseline,
     InstalledSkill,
+    SourceBrokenError,
     SourceConfig,
     SourceRegistry,
     SourceSkill,
@@ -29,6 +30,7 @@ from repo_skills.config import (
 from repo_skills.errors import AppError
 from repo_skills.utils import normalize_line_endings
 from tests.cli.helper import (
+    BROKEN_CONFIG_JSON,
     INSTALL_DIR,
     SKILLS_DIR,
     SOURCE_REPO_ROOT,
@@ -2080,3 +2082,20 @@ class TestFindBaseCommitDedup:
         # installed subset matches but the commit carries an extra file, so this
         # is not an exact match; distance is floored to 1, never 0
         assert result.distance == 1
+
+
+class TestMergeBrokenSource:
+    def test_malformed_source_config_raises_source_broken(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _setup_diverged_skill(fs, git_repo)
+        config_path = git_repo / ".repo-skills" / "source.json"
+        config_path.write_text(BROKEN_CONFIG_JSON)
+        before = config_path.read_bytes()
+
+        result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
+
+        assert isinstance(result.exception, SourceBrokenError)
+        assert_words_in_message(result.output, "warning", "broken config file")
+        assert config_path.read_bytes() == before
+        assert result.output.lower().count("broken config file") == 1

@@ -32,6 +32,7 @@ from tests.cli.helper import (
     register_provider,
     register_source,
     save_manifest,
+    write_broken_source,
 )
 
 
@@ -456,5 +457,33 @@ class TestUpdateBrokenSource:
         result = assert_invoke("update", "--offline")
 
         assert_words_in_message(result.output, "warning", "broken-project")
+        assert_words_in_message(result.output, "tdd", "updated")
+        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v2"
+
+    def test_malformed_source_config_warns_and_valid_skill_still_updates(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _fake_git.branch_commits[("skills/tdd", "main")] = "c-tdd"
+        registry = SourceRegistry()
+        registry.register_source("my-project", git_repo)
+        write_broken_source(fs, registry=registry)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dirs=["skills"], branch=""), git_repo
+        )
+
+        create_source_skill(fs, "tdd", content="# tdd v2", root=SKILLS_DIR)
+        h1 = install_skill(fs, "tdd", content="# tdd v1")
+        install_skill(fs, "untracked-skill", content="# untracked")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit="old", files=h1)
+                )
+            }
+        )
+
+        result = assert_invoke("update", "--offline")
+
+        assert_words_in_message(result.output, "warning", "broken config file")
         assert_words_in_message(result.output, "tdd", "updated")
         assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v2"

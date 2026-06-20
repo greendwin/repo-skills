@@ -10,6 +10,7 @@ from tests.cli.helper import (
     assert_invoke,
     assert_words_in_message,
     register_source,
+    write_broken_source,
 )
 
 
@@ -76,3 +77,14 @@ class TestSourceListNotInited:
         result = assert_invoke("source", "list")
 
         assert_words_in_message(result.output, "no-config", "(not-inited)")
+
+
+class TestSourceListBroken:
+    @pytest.mark.usefixtures("git_repo")
+    def test_shows_broken_for_malformed_config(self, fs: FakeFilesystem) -> None:
+        write_broken_source(fs)
+
+        result = assert_invoke("source", "list")
+
+        assert "(broken)" in result.output.lower()
+        assert "(not-inited)" not in result.output.lower()

@@ -13,6 +13,7 @@ from repo_skills.config import (
     ProviderRegistry,
     SkillManifest,
     Source,
+    SourceBrokenError,
     SourceConfig,
     SourceRegistry,
     compute_file_hashes,
@@ -36,7 +37,7 @@ from repo_skills.config._skill_manifest import (
     SKILL_MANIFEST_FILE,
 )
 from repo_skills.config._source import SOURCE_CONFIG_PATH, _collect_source_skills
-from repo_skills.errors import AppError, ConfigBrokenError
+from repo_skills.errors import AppError
 from repo_skills.utils import rel_posix, to_posix_path
 from tests.cli.helper import FakeGitRepo
 
@@ -128,7 +129,9 @@ class TestSourceConfig:
         assert cfg is not None
         assert cfg.branch == ""
 
-    def test_load_legacy_migrates_to_skills_dirs(self, fs: FakeFilesystem) -> None:
+    def test_load_legacy_migrates_to_skills_dirs(
+        self, fs: FakeFilesystem, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         path = Path("/repo/.repo-skills/source.json")
         fs.create_file(
             path,
@@ -140,6 +143,9 @@ class TestSourceConfig:
         assert cfg.skills_dirs == ["skills"]
         assert cfg.name == "x"
         assert cfg.branch == "main"
+
+        # a parseable v0 file must migrate cleanly, not be flagged as broken
+        assert "broken config file" not in capsys.readouterr().out.lower()
 
         on_disk = json.loads(path.read_text())
         assert on_disk["version"] == 1
@@ -168,6 +174,40 @@ class TestSourceConfig:
         assert cfg is not None
         assert cfg.skills_dirs == []
 
+    @pytest.mark.parametrize(
+        "contents",
+        [
+            pytest.param(
+                '{"name": "x", "skills_dir": null, "branch": "m"}',
+                id="null-skills-dir",
+            ),
+            pytest.param(
+                '{"name": "x", "skills_dir": ["a", "b"], "branch": "m"}',
+                id="list-skills-dir",
+            ),
+        ],
+    )
+    def test_load_legacy_non_string_dir_migrates_to_empty_list(
+        self, fs: FakeFilesystem, contents: str
+    ) -> None:
+        path = Path("/repo/.repo-skills/source.json")
+        fs.create_file(path, contents=contents)
+
+        cfg = load_source_config(Path("/repo"))
+        assert cfg is not None
+        assert cfg.skills_dirs == []
+
+    def test_load_legacy_without_name_migrates_to_empty_name(
+        self, fs: FakeFilesystem
+    ) -> None:
+        path = Path("/repo/.repo-skills/source.json")
+        fs.create_file(path, contents='{"skills_dir": "skills"}')
+
+        cfg = load_source_config(Path("/repo"))
+        assert cfg is not None
+        assert cfg.name == ""
+        assert cfg.skills_dirs == ["skills"]
+
     def test_load_v1_does_not_resave(self, fs: FakeFilesystem) -> None:
         path = Path("/repo/.repo-skills/source.json")
         contents = (
@@ -188,15 +228,28 @@ class TestSourceConfig:
         with pytest.raises(AppError, match="newer version"):
             load_source_config(Path("/repo"))
 
-    def test_load_malformed_raises_broken(self, fs: FakeFilesystem) -> None:
+    def test_load_malformed_returns_none_and_warns(
+        self, fs: FakeFilesystem, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         path = Path("/repo/.repo-skills/source.json")
         fs.create_file(path, contents="{not valid json")
         before = path.read_text()
 
-        with pytest.raises(ConfigBrokenError):
-            load_source_config(Path("/repo"))
+        assert load_source_config(Path("/repo")) is None
 
+        warning = capsys.readouterr().out.lower()
+        assert "warning" in warning
+        assert "broken config file" in warning
         assert path.read_text() == before
+
+    def test_load_source_malformed_raises_source_broken(
+        self, fs: FakeFilesystem
+    ) -> None:
+        path = Path("/repo/.repo-skills/source.json")
+        fs.create_file(path, contents="{not valid json")
+
+        with pytest.raises(SourceBrokenError):
+            load_source(Path("/repo"), load_skills=False)
 
     @pytest.mark.usefixtures("fs")
     def test_load_source_with_empty_skills_dirs_yields_no_skills(self) -> None:

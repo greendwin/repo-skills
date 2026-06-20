@@ -1,7 +1,7 @@
 ---
 id: s08t2308
 slug: resolve-broken-source-json-handling
-status: pending
+status: done
 ---
 
 # Resolve broken source.json handling (duplicate message / fatal-vs-graceful)

@@ -30,6 +30,7 @@ from tests.cli.helper import (
     register_provider,
     register_source,
     save_manifest,
+    write_broken_source,
 )
 
 
@@ -421,6 +422,26 @@ class TestStatusBrokenSource:
 
         assert_words_in_message(result.output, "broken-project", "broken")
         assert_words_in_message(result.output, "tdd", "synced")
+
+    @pytest.mark.usefixtures("git_repo")
+    def test_shows_broken_for_malformed_source_config(self, fs: FakeFilesystem) -> None:
+        write_broken_source(fs)
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "broken-project", "broken")
+        assert "(broken)" in result.output.lower()
+        assert_words_in_message(result.output, "warning", "broken config file")
+
+    def test_malformed_source_config_warns_exactly_once(
+        self, fs: FakeFilesystem
+    ) -> None:
+        write_broken_source(fs)
+
+        result = assert_invoke("status")
+
+        assert result.output.lower().count("broken config file") == 1
+        assert "(broken)" in result.output.lower()
 
 
 class TestStatusOrphan:

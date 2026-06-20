@@ -332,6 +332,35 @@ def create_installed_skill(
     return skill_dir
 
 
+BROKEN_CONFIG_JSON = "{not valid json"
+
+
+def write_broken_source(
+    fs: FakeFilesystem,
+    *,
+    name: str = "broken-project",
+    root: Path = Path("/repos/broken-project"),
+    registry: SourceRegistry | None = None,
+) -> Path:
+    """Create a broken source at ``root`` and register it.
+
+    Writes ``root/.git`` and a malformed ``root/.repo-skills/source.json``
+    (``BROKEN_CONFIG_JSON``), then registers ``name -> root``. Pass an existing
+    ``registry`` to append to it (and save it) so multi-source tests can register
+    several sources; otherwise a fresh single-source registry is saved.
+    """
+    fs.create_dir(root / ".git")
+    fs.create_file(
+        root / ".repo-skills" / "source.json",
+        contents=BROKEN_CONFIG_JSON,
+    )
+    if registry is None:
+        registry = SourceRegistry()
+    registry.register_source(name, root)
+    save_source_registry(registry)
+    return root
+
+
 def register_source(
     git_repo: Path,
     *,

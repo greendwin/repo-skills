@@ -1,7 +1,7 @@
 ---
 id: s08t2309
 slug: move-v0-migration-off-sourceconfig
-status: pending
+status: in-review
 ---
 
 # Move v0 migration off SourceConfig into a dedicated _SourceConfigV0 model

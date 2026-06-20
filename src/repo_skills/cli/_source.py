@@ -9,6 +9,7 @@ from typer_di import Depends, TyperDI
 
 from repo_skills.config import (
     REPO_SKILLS_DIR,
+    SourceBrokenError,
     SourceConfig,
     load_skill_manifest,
     load_source_config,
@@ -16,6 +17,7 @@ from repo_skills.config import (
     save_skill_manifest,
     save_source_config,
     save_source_registry,
+    source_config_exists,
 )
 from repo_skills.console import console, fmt_data, fmt_ident, fmt_path
 from repo_skills.discovery import detect_skills_dir, resolve_skills_dir
@@ -113,6 +115,10 @@ def _init_or_config_source(git: GitRepo, requested: _RequestedChanges) -> None:
 
     cfg = load_source_config(git.root)
     if cfg is None:
+        # a config that exists on disk but won't load is broken, not fresh;
+        # fresh-initialising would clobber the unparseable file (data loss)
+        if source_config_exists(git.root):
+            raise SourceBrokenError(git.root)
         _handle_fresh_init(git, requested)
         return
 
@@ -239,7 +245,11 @@ def source_list() -> None:
 
         config = load_source_config(entry.repo_root)
         if config is None:
-            message += "  [red](not-inited)[/red]"
+            # a file that exists but loads to None is broken, not uninitialized
+            if source_config_exists(entry.repo_root):
+                message += "  [red](broken)[/red]"
+            else:
+                message += "  [red](not-inited)[/red]"
         elif config.branch:
             message += f"  [dim](branch: {config.branch})[/dim]"
         console.print(message)

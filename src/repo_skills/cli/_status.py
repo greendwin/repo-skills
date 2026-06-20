@@ -88,6 +88,7 @@ def status(
         provider_width=provider_width,
         outdated=outdated,
         mergeable_providers=_mergeable_providers(untracked),
+        loaded_source_names=set(loaded_sources),
     )
 
     all_sources = sorted(
@@ -268,6 +269,7 @@ class _StatusView(ConfigContext):
     provider_width: int
     outdated: set[str]
     mergeable_providers: dict[str, list[str]]
+    loaded_source_names: set[str]
 
 
 def _mergeable_providers(untracked: list[UntrackedEntry]) -> dict[str, list[str]]:
@@ -281,10 +283,11 @@ def _mergeable_providers(untracked: list[UntrackedEntry]) -> dict[str, list[str]
 
 
 def _render_source_section(view: _StatusView, source_name: str) -> None:
-    try:
-        _ = view.source_registry.get_source_no_skills(source_name)
+    # a registered source that failed to load during the scan is broken; rely on
+    # the scan's result instead of re-loading, which would re-print the warning
+    if source_name in view.loaded_source_names:
         console.print(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
-    except SourceBrokenError:
+    else:
         console.print(
             f"[yellow]Source[/yellow] {fmt_ident(source_name)}  [red](broken)[/red]"
         )

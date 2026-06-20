@@ -1,7 +1,7 @@
 ---
 id: s14t02
 slug: phase-a-implement-review-loop
-status: pending
+status: done
 ---
 
 # Phase A: implement review loop with triage and fix-reconverge

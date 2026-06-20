@@ -7,6 +7,7 @@ export const meta = {
     { title: 'Bootstrap', detail: 'build the shared context pack once per run' },
     { title: 'Pick', detail: 'list the story subtree, take the next pending work item, set it in-progress' },
     { title: 'Implement', detail: 'tdd implement the work item to green targeted tests' },
+    { title: 'Review-A', detail: 'code-reviewer lenses in parallel → triage → tdd fixes fix-now, until clean (cap 5)' },
     { title: 'Verify', detail: 'uv run tox (all envs) green gate, with bounded fix-reconverge' },
     { title: 'Commit', detail: 'stage + one commit-summary-style commit per work item' },
     { title: 'Status', detail: 'move the work item to in-review (never done)' },
@@ -72,6 +73,59 @@ const COMMIT_SCHEMA = {
   required: ['sha', 'message'],
 }
 
+// The code-reviewer roster, resolved from the pack rather than hardcoded so it
+// never drifts from the repo configs that the whole skill family depends on.
+const ROSTER_SCHEMA = {
+  type: 'object',
+  properties: {
+    lenses: {
+      type: 'array',
+      description: 'the code-reviewer lens names in roster order (empty when the roster is empty)',
+      items: { type: 'string' },
+    },
+  },
+  required: ['lenses'],
+}
+
+const FINDINGS_SCHEMA = {
+  type: 'object',
+  properties: {
+    lens: { type: 'string', description: 'the lens that produced these findings' },
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          location: { type: 'string', description: 'file:line or symbol the finding refers to' },
+          severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'nit'] },
+          rationale: { type: 'string' },
+          'suggested-fix': { type: 'string' },
+          lens: { type: 'string' },
+        },
+        required: ['title', 'location', 'severity', 'rationale', 'suggested-fix', 'lens'],
+      },
+    },
+  },
+  required: ['lens', 'findings'],
+}
+
+const TRIAGE_SCHEMA = {
+  type: 'object',
+  properties: {
+    buckets: {
+      type: 'object',
+      properties: {
+        'fix-now': { type: 'array', items: { type: 'object' } },
+        'deferred-to-refactor': { type: 'array', items: { type: 'object' } },
+        'out-of-scope': { type: 'array', items: { type: 'object' } },
+      },
+      required: ['fix-now', 'deferred-to-refactor', 'out-of-scope'],
+    },
+  },
+  required: ['buckets'],
+}
+
 // ---- agent prompts -------------------------------------------------------
 const branchPrompt = `You are the setup step of an autonomous grind-story workflow for story ${storyId}.
 
@@ -126,6 +180,61 @@ Contract: return only when your targeted tests are GREEN.
 Boundaries — do NOT commit, do NOT change the task's status, do NOT run the full \`uv run tox\` (a later step gates that). Only write the source/test files this task needs.
 
 Report what you implemented and which files you created or changed.`
+
+const rosterPrompt = (packPath) => `You are the roster-resolution step of an autonomous grind-story workflow.
+
+Read the context pack first: ${packPath}. It resolves this repo's \`code-reviewer\` lens roster (do not re-open the source configs).
+
+Report the \`code-reviewer\` roster as an ordered list of lens names exactly as the pack names them (e.g. general, tests, performance). If the pack resolves the \`code-reviewer\` roster as EMPTY, return an empty list.
+
+Do not review anything and do not edit files. Return only the lens names.`
+
+const lensPrompt = (lens, packPath, baseRef) => `You are the \`${lens}\` code-reviewer lens of an autonomous grind-story workflow — a READ-ONLY reviewer. You never edit the tree; you only report findings.
+
+Read the context pack first: ${packPath}. It resolves what the \`${lens}\` lens must check (conventions, ADRs, and the lens's own focus).
+
+Review the change currently under review: inspect \`git diff ${baseRef}...HEAD\` plus any uncommitted working-tree changes (\`git diff\` and \`git status\`) for currency — that diff IS the change you review. Apply the \`${lens}\` lens's focus as resolved in the pack.
+
+Return your findings as a list; for EACH finding fill every field:
+- \`title\` — one line naming the problem.
+- \`location\` — file:line (or symbol) it occurs at.
+- \`severity\` — one of blocker / major / minor / nit.
+- \`rationale\` — why it is a problem.
+- \`suggested-fix\` — a concrete inline fix; you do NOT apply it.
+- \`lens\` — "${lens}".
+
+If you find nothing, return an empty findings list. Do not edit any file.`
+
+const triagePrompt = (packPath, findingsJson) => `You are the triage step of an autonomous grind-story workflow. You exercise judgement the orchestrator JS cannot — you do not write code.
+
+Read the context pack first: ${packPath} (it resolves the ADRs and conventions the findings may cite).
+
+Here are the raw findings from the \`code-reviewer\` lenses, as JSON:
+---
+${findingsJson}
+---
+
+First DEDUP: collapse findings that refer to the same underlying issue — overlapping \`location\` plus overlapping description — into one, keeping the strongest severity. Then BUCKET every surviving finding into exactly one of:
+- \`fix-now\` — the change under review introduced it AND it threatens delivered behavior: a correctness bug, a security hole, data loss, a missing/weak test for new behavior, or an ADR violation.
+- \`deferred-to-refactor\` — a legitimate quality issue that does NOT threaten delivered behavior (style, structure, naming, duplication, perf nits). When you are UNCERTAIN whether something belongs in fix-now, put it here.
+- \`out-of-scope\` — pre-existing noise unrelated to this change, or ADR-conflicting suggestions. Reported, never acted on.
+
+Rules: never silently drop a finding (every input finding lands in exactly one bucket), and never scope-creep into work the change did not touch. Return the three buckets; each entry keeps the finding's original fields.`
+
+const reviewFixPrompt = (pick, packPath, fixJson) => `You are the fix step of an autonomous grind-story workflow, running the \`tdd\` skill to resolve \`fix-now\` review findings for task ${pick.taskId}.
+
+Read the context pack first: ${packPath}.
+
+These review findings were triaged \`fix-now\` — each threatens delivered behavior and must be fixed under tests:
+---
+${fixJson}
+---
+
+For each finding: write a failing behavior-level test that captures the correct behavior (red), then make it pass (green). Honor the conventions in the pack (\`assert_invoke\` not \`CliRunner\`, \`pyfakefs\` not \`tmp_path\`, \`monkeypatch\` not \`unittest.mock.patch\`; no \`type: ignore\`; no inline imports; no task ids in code comments). Test behavior through the public interface, not internals.
+
+Contract: return only when your targeted tests are GREEN.
+
+Boundaries — do NOT commit, do NOT change the task's status, do NOT run the full \`uv run tox\`. Only write the source/test files these findings require. Report what you changed.`
 
 const verifyPrompt = (packPath) => `You are the green-gate step of an autonomous grind-story workflow.
 
@@ -185,7 +294,16 @@ const pack = await agent(bootstrapPrompt, { label: 'context-pack', schema: PACK_
 if (!pack) return `grind-story: bootstrap step failed for story ${storyId} — no context pack was written.`
 const packPath = pack.packPath
 
+// Resolve the code-reviewer roster from the pack once — it does not change per
+// subtask. An empty roster means Phase A is skipped for the whole run.
+const roster = await agent(rosterPrompt(packPath), { label: 'roster:code-reviewer', schema: ROSTER_SCHEMA })
+const reviewLenses = (roster && Array.isArray(roster.lenses)) ? roster.lenses.filter((l) => typeof l === 'string' && l.trim()) : []
+if (reviewLenses.length === 0) {
+  log('Phase A skipped for the run: the code-reviewer roster resolved empty.')
+}
+
 const processed = []
+const deferredFindings = []
 const seen = new Set()
 
 while (processed.length < GUARD_MAX) {
@@ -205,6 +323,53 @@ while (processed.length < GUARD_MAX) {
   phase('Implement')
   await agent(implementPrompt(pick, packPath), { label: `impl:${pick.taskId}` })
 
+  // Phase A — code-reviewer lenses → triage → tdd fixes fix-now, re-converging
+  // until no fix-now remains or the round cap is hit. Skipped on an empty roster.
+  if (reviewLenses.length > 0) {
+    phase('Review-A')
+    let openFixNow = []
+    for (let round = 1; round <= CAP; round++) {
+      const lensRuns = reviewLenses.map((lens) =>
+        agent(lensPrompt(lens, packPath, setup.baseRef), { label: `lens:${lens}:${round}`, schema: FINDINGS_SCHEMA }),
+      )
+      const lensResults = await parallel(lensRuns)
+      const findings = []
+      for (const r of lensResults) {
+        // A lens that died or returned null is filtered out; the round continues.
+        if (r && Array.isArray(r.findings)) findings.push(...r.findings)
+      }
+      if (findings.length === 0) {
+        openFixNow = []
+        log(`Review-A round ${round}/${CAP} for ${pick.taskId}: lenses raised no findings.`)
+        break
+      }
+
+      const triage = await agent(triagePrompt(packPath, JSON.stringify(findings, null, 2)), {
+        label: `triage-A:${round}`,
+        schema: TRIAGE_SCHEMA,
+      })
+      const buckets = (triage && triage.buckets) || {}
+      const fixNow = Array.isArray(buckets['fix-now']) ? buckets['fix-now'] : []
+      const deferred = Array.isArray(buckets['deferred-to-refactor']) ? buckets['deferred-to-refactor'] : []
+      for (const f of deferred) deferredFindings.push({ taskId: pick.taskId, finding: f })
+
+      if (fixNow.length === 0) {
+        openFixNow = []
+        log(`Review-A round ${round}/${CAP} for ${pick.taskId}: no fix-now findings; ${deferred.length} carried to Phase B.`)
+        break
+      }
+      openFixNow = fixNow
+      log(`Review-A round ${round}/${CAP} for ${pick.taskId}: ${fixNow.length} fix-now finding(s); routing to a tdd fix agent.`)
+      if (round === CAP) break
+      await agent(reviewFixPrompt(pick, packPath, JSON.stringify(fixNow, null, 2)), { label: `fix-A:${round}` })
+    }
+    if (openFixNow.length > 0) {
+      // Cap reached with fix-now still open. Record it (Slice 5 owns hard
+      // escalation); do not commit red — the green gate still has to pass.
+      log(`Review-A cap reached for ${pick.taskId} with ${openFixNow.length} fix-now finding(s) still open — recorded for escalation.`)
+    }
+  }
+
   phase('Verify')
   let green = false
   let lastFailures = ''
@@ -218,7 +383,7 @@ while (processed.length < GUARD_MAX) {
   }
   if (!green) {
     log(`HARD FAILURE: ${pick.taskId} could not reach green tox after ${CAP} rounds — stopping the run.`)
-    return report(setup, packPath, processed, {
+    return report(setup, packPath, processed, deferredFindings, {
       taskId: pick.taskId,
       title: pick.title,
       reason: `uv run tox still red after ${CAP} fix rounds`,
@@ -230,7 +395,7 @@ while (processed.length < GUARD_MAX) {
   const commit = await agent(commitPrompt(pick, packPath), { label: `commit:${pick.taskId}`, schema: COMMIT_SCHEMA })
   if (!commit) {
     log(`HARD FAILURE: ${pick.taskId} reached green but the commit step failed — stopping the run.`)
-    return report(setup, packPath, processed, {
+    return report(setup, packPath, processed, deferredFindings, {
       taskId: pick.taskId,
       title: pick.title,
       reason: 'commit step returned no result',
@@ -246,10 +411,10 @@ while (processed.length < GUARD_MAX) {
   processed.push({ taskId: pick.taskId, title: pick.title, sha: commit.sha, message: commit.message })
 }
 
-return report(setup, packPath, processed, null)
+return report(setup, packPath, processed, deferredFindings, null)
 
 // ---- report --------------------------------------------------------------
-function report(setup, packPath, processed, failure) {
+function report(setup, packPath, processed, deferredFindings, failure) {
   const lines = []
   lines.push(`grind-story — story ${storyId}`)
   lines.push(`branch: ${setup.branch} (base ${setup.baseRef})`)
@@ -263,6 +428,14 @@ function report(setup, packPath, processed, failure) {
       const sha = (p.sha || '').slice(0, 12)
       const subject = (p.message || '').split('\n')[0]
       lines.push(`  - ${p.taskId} "${p.title || ''}" → ${sha} : ${subject}`)
+    }
+  }
+  if (deferredFindings && deferredFindings.length) {
+    lines.push('')
+    lines.push(`Deferred-to-refactor findings carried to Phase B (${deferredFindings.length}):`)
+    for (const d of deferredFindings) {
+      const f = d.finding || {}
+      lines.push(`  - [${d.taskId}] ${f.title || '(untitled)'} @ ${f.location || '?'} (${f.severity || '?'})`)
     }
   }
   if (failure) {

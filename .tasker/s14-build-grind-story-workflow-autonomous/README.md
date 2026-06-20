@@ -1,7 +1,7 @@
 ---
 id: s14
 slug: build-grind-story-workflow-autonomous
-status: in-progress
+status: pending
 ---
 
 # Build `grind-story` Workflow — autonomous per-story implement+refactor loop
@@ -49,8 +49,8 @@ We want a deterministic, reusable `Workflow` script (`.claude/workflows/grind-st
 
 ## Subtasks
 
-- [~] [s14t01](s14t01-tracer-bullet-skeleton-grind-story.md): **review** Tracer bullet: skeleton grind-story loop end-to-end
-- [ ] [s14t02](s14t02-phase-a-implement-review-loop.md): Phase A: implement review loop with triage and fix-reconverge
+- [x] [s14t01](s14t01-tracer-bullet-skeleton-grind-story.md): Tracer bullet: skeleton grind-story loop end-to-end
+- [x] [s14t02](s14t02-phase-a-implement-review-loop.md): Phase A: implement review loop with triage and fix-reconverge
 - [ ] [s14t03](s14t03-phase-b-refactor-loop-with.md): Phase B: refactor loop with duplication and thermo-nuclear lenses
 - [ ] [s14t04](s14t04-side-task-filing-from-delayed.md): Side-task filing from `delayed` and depth-bounded re-queue
 - [ ] [s14t05](s14t05-failure-semantics-and-full-run.md): Failure semantics and full run report

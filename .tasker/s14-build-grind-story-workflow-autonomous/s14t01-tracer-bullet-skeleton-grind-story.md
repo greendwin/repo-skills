@@ -1,7 +1,7 @@
 ---
 id: s14t01
 slug: tracer-bullet-skeleton-grind-story
-status: in-review
+status: done
 ---
 
 # Tracer bullet: skeleton grind-story loop end-to-end

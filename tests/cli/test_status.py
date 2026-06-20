@@ -307,14 +307,14 @@ def _create_source_skill(
 ) -> None:
     source_cfg = load_source_config(git_root)
     assert source_cfg is not None
-    skill_dir = git_root / source_cfg.skills_dir / name
+    skill_dir = git_root / source_cfg.skills_dirs[0] / name
     fs.create_file(skill_dir / "SKILL.md", contents=f"# {name}")
 
 
 def _init_source_config(
     fs: FakeFilesystem, git_root: Path = SOURCE_REPO_ROOT, skills_dir: str = "skills"
 ) -> None:
-    cfg = SourceConfig(name=git_root.name, skills_dir=skills_dir)
+    cfg = SourceConfig(name=git_root.name, skills_dirs=[skills_dir])
     save_source_config(cfg, git_root)
 
 

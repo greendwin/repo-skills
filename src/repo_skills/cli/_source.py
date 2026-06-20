@@ -133,7 +133,7 @@ def _handle_fresh_init(git: GitRepo, requested: _RequestedChanges) -> None:
 
     config = SourceConfig(
         name=source_name,
-        skills_dir=rel_skills,
+        skills_dirs=[rel_skills],
         branch=effective_branch,
     )
     save_source_config(config, git.root)
@@ -170,10 +170,14 @@ def _handle_reinit(
         config.branch = requested.branch
         cfg_changed = True
 
-    if requested.skills_dir is not None and requested.skills_dir != config.skills_dir:
-        old_dir, new_dir = fmt_data(config.skills_dir), fmt_data(requested.skills_dir)
+    # TODO: if many dirs were provided here, we must show all of them
+    # TODO: also it's invalid to to compare only active_dir,
+    #       since we can want to strip other dirs
+    active_dir = config.active_dir or ""
+    if requested.skills_dir is not None and requested.skills_dir != active_dir:
+        old_dir, new_dir = fmt_data(active_dir), fmt_data(requested.skills_dir)
         changes.append(f"  skills_dir: {old_dir} → {new_dir}")
-        config.skills_dir = requested.skills_dir
+        config.skills_dirs = [requested.skills_dir]
         cfg_changed = True
 
     if cfg_changed:

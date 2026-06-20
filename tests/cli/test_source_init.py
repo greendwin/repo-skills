@@ -57,7 +57,7 @@ class TestSourceInitFreshRepo:
         source_cfg = load_source_config(git_repo)
         assert source_cfg is not None
         assert source_cfg.name == "my-project"
-        assert source_cfg.skills_dir == "skills"
+        assert source_cfg.skills_dirs == ["skills"]
         assert source_cfg.branch == "main"
 
         assert (git_repo / "skills" / ".gitkeep").exists()
@@ -83,7 +83,7 @@ class TestSourceInitPopulatedRepo:
 
         source_cfg = load_source_config(git_repo)
         assert source_cfg is not None
-        assert source_cfg.skills_dir == "skills"
+        assert source_cfg.skills_dirs == ["skills"]
         assert not (git_repo / "skills" / ".gitkeep").exists()
 
 
@@ -260,7 +260,7 @@ class TestTopLevelInit:
         source_cfg = load_source_config(git_repo)
         assert source_cfg is not None
         assert source_cfg.name == "my-project"
-        assert source_cfg.skills_dir == "skills"
+        assert source_cfg.skills_dirs == ["skills"]
         assert source_cfg.branch == "main"
 
         assert (git_repo / "skills" / ".gitkeep").exists()
@@ -347,7 +347,7 @@ class TestSourceInitAutoDetect:
 
         source_cfg = load_source_config(git_repo)
         assert source_cfg is not None
-        assert source_cfg.skills_dir == "my-skills"
+        assert source_cfg.skills_dirs == ["my-skills"]
 
     def test_detects_skills_with_categories(
         self, fs: FakeFilesystem, git_repo: Path
@@ -359,7 +359,7 @@ class TestSourceInitAutoDetect:
 
         source_cfg = load_source_config(git_repo)
         assert source_cfg is not None
-        assert source_cfg.skills_dir == "skills"
+        assert source_cfg.skills_dirs == ["skills"]
 
 
 class TestSourceInitSkillsDir:
@@ -373,7 +373,7 @@ class TestSourceInitSkillsDir:
         source_cfg = load_source_config(git_repo)
         assert source_cfg is not None
         assert source_cfg.name == "my-project"
-        assert source_cfg.skills_dir == "my-skills"
+        assert source_cfg.skills_dirs == ["my-skills"]
         assert source_cfg.branch == "main"
 
         assert not (git_repo / "skills").exists()
@@ -398,7 +398,7 @@ class TestSourceInitSkillsDir:
 
         source_cfg = load_source_config(git_repo)
         assert source_cfg is not None
-        assert source_cfg.skills_dir == "chosen-skills"
+        assert source_cfg.skills_dirs == ["chosen-skills"]
 
     def test_skills_dir_is_normalized_before_storing(
         self, fs: FakeFilesystem, git_repo: Path
@@ -409,7 +409,7 @@ class TestSourceInitSkillsDir:
 
         source_cfg = load_source_config(git_repo)
         assert source_cfg is not None
-        assert source_cfg.skills_dir == "my-skills"
+        assert source_cfg.skills_dirs == ["my-skills"]
 
     def test_explicit_default_name_still_requires_existing_dir(
         self, fs: FakeFilesystem, git_repo: Path
@@ -433,7 +433,7 @@ class TestSourceInitSkillsDir:
 
         source_cfg = load_source_config(git_repo)
         assert source_cfg is not None
-        assert source_cfg.skills_dir == "new-skills"
+        assert source_cfg.skills_dirs == ["new-skills"]
 
         assert_words_in_message(
             result.output, "updated", "skills_dir", "skills", "new-skills"
@@ -462,7 +462,7 @@ class TestSourceInitSkillsDir:
         assert source_cfg is not None
         assert source_cfg.name == "new-name"
         assert source_cfg.branch == "develop"
-        assert source_cfg.skills_dir == "new-skills"
+        assert source_cfg.skills_dirs == ["new-skills"]
 
         registry = load_source_registry()
         assert "new-name" in registry.sources
@@ -485,7 +485,7 @@ class TestSourceInitSkillsDir:
 
         source_cfg = load_source_config(git_repo)
         assert source_cfg is not None
-        assert source_cfg.skills_dir == "skills"
+        assert source_cfg.skills_dirs == ["skills"]
 
     @pytest.mark.parametrize(
         ("skills_dir", "setup", "extra_words"),
@@ -556,7 +556,7 @@ class TestCommandSurface:
 
         source_cfg = load_source_config(git_repo)
         assert source_cfg is not None
-        assert source_cfg.skills_dir == "my-skills"
+        assert source_cfg.skills_dirs == ["my-skills"]
 
         assert_words_in_message(result.output, "initialized", "my-project")
 

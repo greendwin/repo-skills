@@ -725,10 +725,10 @@ class TestMergeUntracked:
         registry.register_source("other-project", other_repo)
         save_source_registry(registry)
         save_source_config(
-            SourceConfig(name="my-project", skills_dir="skills"), git_repo
+            SourceConfig(name="my-project", skills_dirs=["skills"]), git_repo
         )
         save_source_config(
-            SourceConfig(name="other-project", skills_dir="skills"), other_repo
+            SourceConfig(name="other-project", skills_dirs=["skills"]), other_repo
         )
         create_source_skill(fs, "tdd", content="# original")
         create_source_skill(fs, "tdd", content="# original", root=other_repo / "skills")
@@ -762,10 +762,10 @@ class TestMergeUntracked:
         registry.register_source("other-project", other_repo)
         save_source_registry(registry)
         save_source_config(
-            SourceConfig(name="my-project", skills_dir="skills"), git_repo
+            SourceConfig(name="my-project", skills_dirs=["skills"]), git_repo
         )
         save_source_config(
-            SourceConfig(name="other-project", skills_dir="skills"), other_repo
+            SourceConfig(name="other-project", skills_dirs=["skills"]), other_repo
         )
         create_source_skill(fs, "tdd", content="# original")
         create_source_skill(fs, "tdd", content="# original", root=other_repo / "skills")
@@ -786,10 +786,10 @@ class TestMergeUntracked:
         registry.register_source("other-project", other_repo)
         save_source_registry(registry)
         save_source_config(
-            SourceConfig(name="my-project", skills_dir="skills"), git_repo
+            SourceConfig(name="my-project", skills_dirs=["skills"]), git_repo
         )
         save_source_config(
-            SourceConfig(name="other-project", skills_dir="skills"), other_repo
+            SourceConfig(name="other-project", skills_dirs=["skills"]), other_repo
         )
         create_source_skill(fs, "tdd", content="# original")
         create_source_skill(fs, "tdd", content="# original", root=other_repo / "skills")
@@ -827,10 +827,10 @@ class TestMergeOrphan:
         registry.register_source("other-project", other_repo)
         save_source_registry(registry)
         save_source_config(
-            SourceConfig(name="my-project", skills_dir="skills"), git_repo
+            SourceConfig(name="my-project", skills_dirs=["skills"]), git_repo
         )
         save_source_config(
-            SourceConfig(name="other-project", skills_dir="skills"), other_repo
+            SourceConfig(name="other-project", skills_dirs=["skills"]), other_repo
         )
         install_skill(fs, "my-new-skill", content="# brand new")
 
@@ -850,10 +850,10 @@ class TestMergeOrphan:
         registry.register_source("other-project", other_repo)
         save_source_registry(registry)
         save_source_config(
-            SourceConfig(name="my-project", skills_dir="skills"), git_repo
+            SourceConfig(name="my-project", skills_dirs=["skills"]), git_repo
         )
         save_source_config(
-            SourceConfig(name="other-project", skills_dir="skills"), other_repo
+            SourceConfig(name="other-project", skills_dirs=["skills"]), other_repo
         )
         install_skill(fs, "my-new-skill", content="# brand new")
 
@@ -981,6 +981,17 @@ class TestMergeOrphan:
         assert_words_in_message(result.output, "merge", "complete")
         source_skill = git_repo / "skills" / "my-new-skill" / "SKILL.md"
         assert source_skill.read_text() == "# from cursor"
+
+    def test_errors_when_source_has_no_skills_dir(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        save_source_config(SourceConfig(name="my-project", skills_dirs=[]), git_repo)
+        install_skill(fs, "my-new-skill", content="# brand new")
+
+        result = assert_invoke("merge", "my-new-skill", "--offline", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "no skills directory")
 
 
 class TestMergeValidation:
@@ -1429,10 +1440,10 @@ class TestDetectMergeRepo:
         registry.register_source("other-project", OTHER_REPO_ROOT)
         save_source_registry(registry)
         save_source_config(
-            SourceConfig(name="my-project", skills_dir="skills"), SOURCE_REPO_ROOT
+            SourceConfig(name="my-project", skills_dirs=["skills"]), SOURCE_REPO_ROOT
         )
         save_source_config(
-            SourceConfig(name="other-project", skills_dir="skills"), OTHER_REPO_ROOT
+            SourceConfig(name="other-project", skills_dirs=["skills"]), OTHER_REPO_ROOT
         )
 
         hashes = install_skill(fs, "tdd", content="# original")
@@ -1519,10 +1530,10 @@ class TestDetectMergeRepo:
         registry.register_source("other-project", OTHER_REPO_ROOT)
         save_source_registry(registry)
         save_source_config(
-            SourceConfig(name="my-project", skills_dir="skills"), SOURCE_REPO_ROOT
+            SourceConfig(name="my-project", skills_dirs=["skills"]), SOURCE_REPO_ROOT
         )
         save_source_config(
-            SourceConfig(name="other-project", skills_dir="skills"), OTHER_REPO_ROOT
+            SourceConfig(name="other-project", skills_dirs=["skills"]), OTHER_REPO_ROOT
         )
 
         hashes = install_skill(fs, "tdd", content="# original")
@@ -1564,10 +1575,10 @@ class TestDetectMergeRepo:
         registry.register_source("other-project", OTHER_REPO_ROOT)
         save_source_registry(registry)
         save_source_config(
-            SourceConfig(name="my-project", skills_dir="skills"), SOURCE_REPO_ROOT
+            SourceConfig(name="my-project", skills_dirs=["skills"]), SOURCE_REPO_ROOT
         )
         save_source_config(
-            SourceConfig(name="other-project", skills_dir="skills"), OTHER_REPO_ROOT
+            SourceConfig(name="other-project", skills_dirs=["skills"]), OTHER_REPO_ROOT
         )
 
         create_source_skill(fs, "tdd", content="# merged")

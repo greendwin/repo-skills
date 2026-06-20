@@ -44,7 +44,7 @@ def _add_second_source(fs: FakeFilesystem) -> None:
     registry.register_source("other-project", OTHER_REPO_ROOT)
     save_source_registry(registry)
 
-    cfg = SourceConfig(name="other-project", skills_dir="skills", branch="")
+    cfg = SourceConfig(name="other-project", skills_dirs=["skills"], branch="")
     save_source_config(cfg, OTHER_REPO_ROOT)
 
 

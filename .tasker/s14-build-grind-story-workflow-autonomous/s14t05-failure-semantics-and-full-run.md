@@ -1,7 +1,7 @@
 ---
 id: s14t05
 slug: failure-semantics-and-full-run
-status: pending
+status: done
 ---
 
 # Failure semantics and full run report

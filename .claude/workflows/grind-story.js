@@ -88,6 +88,15 @@ function resolveDepth(taskId, description) {
   return marker.depth
 }
 
+// Resolve the origin marker of a work item from its description: the `- origin:`
+// line of a side-task, or an empty string for an original subtask (no marker).
+// Threaded into the report so every committed side-task shows where it came from.
+function resolveOrigin(description) {
+  const marker = parseDepthMarker(description)
+  if (marker === null || marker.malformed) return ''
+  return marker.origin || ''
+}
+
 // Build the description body for a filed side-task: the marker block followed by
 // the originating finding's detail so a later pick can run it through the full
 // cycle like any original subtask.
@@ -194,6 +203,29 @@ const FILE_SIDE_TASKS_SCHEMA = {
     },
   },
   required: ['created'],
+}
+
+// The implement agent reports whether it reached its green-tests contract. A
+// `tdd`-never-green outcome is a convergence failure the kind-split must act on,
+// so it must be observable rather than silently swallowed.
+const IMPLEMENT_SCHEMA = {
+  type: 'object',
+  properties: {
+    green: { type: 'boolean', description: 'true when the targeted tests are green' },
+    summary: { type: 'string', description: 'what was implemented, or why it could not reach green' },
+  },
+  required: ['green'],
+}
+
+// The reset agent reports whether the side-task's uncommitted changes were
+// discarded back to a clean tree at the prior (preserved) commit.
+const RESET_SCHEMA = {
+  type: 'object',
+  properties: {
+    clean: { type: 'boolean', description: 'true when the working tree is clean after the reset' },
+    head: { type: 'string', description: 'sha HEAD points at after the reset (the preserved prior commit)' },
+  },
+  required: ['clean'],
 }
 
 const VERIFY_SCHEMA = {
@@ -360,11 +392,20 @@ Work item: task ${pick.taskId}${pick.isStory ? ' (this IS the story task itself 
 
 The plan is PRE-APPROVED. Use \`tdd\`'s "skip review" path: skip planning/approval, go straight to tracer-bullet red→green cycles. Implement the task's acceptance criteria with behavior-level tests through the public interface. Honor the conventions in the pack (\`assert_invoke\` not \`CliRunner\`, \`pyfakefs\` not \`tmp_path\`, \`monkeypatch\` not \`unittest.mock.patch\`; no \`type: ignore\`; no inline imports; no task ids in code comments).
 
-Contract: return only when your targeted tests are GREEN.
+Contract: drive toward GREEN targeted tests. Return green=true with a short summary once your targeted tests pass. If you genuinely cannot make them pass (the approach is unworkable, the acceptance criteria are contradictory, or repeated red persists), return green=false with the reason — do NOT fake green by deleting or weakening tests.
 
 Boundaries — do NOT commit, do NOT change the task's status, do NOT run the full \`uv run tox\` (a later step gates that). Only write the source/test files this task needs.
 
 Report what you implemented and which files you created or changed.`
+
+const resetPrompt = (pick, baseRef) => `You are the discard step of an autonomous grind-story workflow. A side-task could not converge and its uncommitted changes must be thrown away so the run can continue from a clean tree.
+
+Discard ONLY the uncommitted working-tree changes for the failed side-task ${pick.taskId}, preserving every prior commit on the \`grind/${storyId}\` branch:
+1. \`git reset --hard HEAD\` — this resets tracked changes back to the last commit (the prior subtask, already committed). It must NOT move the branch off its commits and must NOT touch \`${baseRef}\` history.
+2. \`git clean -fd\` to remove untracked files this side-task created — but NEVER delete anything outside the working tree (the context pack under \`/tmp/grind-story/\` is outside the tree and must be left alone).
+3. Confirm with \`git status --porcelain\` (expect empty) and \`git rev-parse HEAD\`.
+
+Do NOT reset to ${baseRef}; do NOT delete branches or commits; do NOT touch \`/tmp/grind-story/\`. Return clean=true only if \`git status --porcelain\` is empty afterward, plus the HEAD sha.`
 
 const rosterPrompt = (packPath) => `You are the roster-resolution step of an autonomous grind-story workflow.
 
@@ -585,6 +626,14 @@ const outOfScopeFindings = []
 const droppedRefactors = []
 const seen = new Set()
 
+// Kind-split failure bookkeeping. A side-task (depth >= 1) that cannot converge
+// is `git reset --hard`-discarded and recorded here, then the loop continues;
+// the report surfaces every dropped side-task with its reason. `escalations`
+// collects the non-halting convergence problems worth a human's attention (a
+// 5-cap-open `fix-now`), feeding the report's escalation section.
+const droppedSideTasks = []
+const escalations = []
+
 // Side-task filing state, threaded across iterations so the run converges:
 // `filedSignatures` dedupes re-surfaced findings against everything already
 // filed this run; `filedSideTasks` and `residualFindings` feed the report;
@@ -594,6 +643,41 @@ const filedSideTasks = []
 const residualFindings = []
 const capSuppressed = []
 let sideTaskCount = 0
+
+// Kind-split on a convergence failure (tdd never green, fix-now open at the cap,
+// or tox red at the cap), mirroring dev-loop's green contract:
+//   depth 0 (original subtask) -> HALT: leave the tree dirty for inspection,
+//     prior commits preserved, the report names the failure point.
+//   depth >= 1 (side-task)      -> DROP: `git reset --hard` (via an agent) to
+//     discard just this side-task's uncommitted changes — the tree is clean
+//     because the prior subtask is already committed — record it dropped, and
+//     CONTINUE with the next pending work item.
+// Returns {halt:true, failure} for an original subtask, or {dropped:true} once a
+// side-task's changes are discarded.
+async function handleConvergenceFailure(pick, depth, reason, failures) {
+  if (depth === 0) {
+    log(`HARD FAILURE: ${pick.taskId} (depth 0) could not converge — ${reason}. Halting the run.`)
+    return { halt: true, failure: { taskId: pick.taskId, title: pick.title, reason, failures } }
+  }
+  log(`${pick.taskId} (depth ${depth}) could not converge — ${reason}. Discarding its changes (git reset --hard) and continuing.`)
+  const reset = await agent(resetPrompt(pick, setup.baseRef), { label: `reset:${pick.taskId}`, schema: RESET_SCHEMA })
+  if (!reset || !reset.clean) {
+    // The discard itself failed, so the tree is in an unknown state — escalate to
+    // a halt rather than continue over a dirty tree.
+    log(`HARD FAILURE: could not cleanly discard side-task ${pick.taskId} — halting to avoid building on a dirty tree.`)
+    return {
+      halt: true,
+      failure: {
+        taskId: pick.taskId,
+        title: pick.title,
+        reason: `side-task git reset --hard did not leave a clean tree (${reason})`,
+        failures,
+      },
+    }
+  }
+  droppedSideTasks.push({ taskId: pick.taskId, title: pick.title, depth, reason })
+  return { dropped: true }
+}
 
 while (processed.length < GUARD_MAX) {
   phase('Pick')
@@ -607,13 +691,25 @@ while (processed.length < GUARD_MAX) {
     break
   }
   seen.add(pick.taskId)
-  // Depth governs whether THIS work item may spawn refactor side-tasks. Original
-  // subtasks carry no marker (=> depth 0); a filed side-task carries `depth: d`.
+  // Depth governs whether THIS work item may spawn refactor side-tasks AND which
+  // side of the kind-split a convergence failure takes. Original subtasks carry
+  // no marker (=> depth 0); a filed side-task carries `depth: d`. Its origin
+  // marker is threaded into the report's task -> commit -> origin map.
   const depth = resolveDepth(pick.taskId, pick.description)
+  const origin = resolveOrigin(pick.description)
   log(`Processing ${pick.taskId} (depth ${depth}): ${pick.title || '(untitled)'}`)
 
   phase('Implement')
-  await agent(implementPrompt(pick, packPath), { label: `impl:${pick.taskId}` })
+  const impl = await agent(implementPrompt(pick, packPath), { label: `impl:${pick.taskId}`, schema: IMPLEMENT_SCHEMA })
+  if (!impl || !impl.green) {
+    // `tdd` never reached green — a convergence failure. Halt (original) or
+    // discard-and-continue (side-task) per the kind-split.
+    const outcome = await handleConvergenceFailure(pick, depth, 'tdd never reached green targeted tests', (impl && impl.summary) || '')
+    if (outcome.halt) {
+      return report(setup, packPath, processed, refactorOutcomes(), outcome.failure)
+    }
+    continue
+  }
 
   // The `deferred-to-refactor` findings raised for THIS subtask in Phase A,
   // merged into Phase B's refactor pool below.
@@ -667,9 +763,27 @@ while (processed.length < GUARD_MAX) {
       await agent(reviewFixPrompt(pick, packPath, JSON.stringify(fixNow, null, 2)), { label: `fix-A:${round}` })
     }
     if (openFixNow.length > 0) {
-      // Cap reached with fix-now still open. Record it (Slice 5 owns hard
-      // escalation); do not commit red — the green gate still has to pass.
-      log(`Review-A cap reached for ${pick.taskId} with ${openFixNow.length} fix-now finding(s) still open — recorded for escalation.`)
+      // Cap reached with fix-now still open — a convergence failure: the change
+      // carries an unresolved behavior-threatening finding, so it must not be
+      // committed. Kind-split: halt an original subtask (escalating the open
+      // finding), discard-and-continue a side-task.
+      escalations.push({
+        kind: 'fix-now-cap-open',
+        taskId: pick.taskId,
+        depth,
+        count: openFixNow.length,
+        detail: `${openFixNow.length} fix-now finding(s) still open after ${CAP} Review-A rounds`,
+      })
+      const outcome = await handleConvergenceFailure(
+        pick,
+        depth,
+        `${openFixNow.length} fix-now finding(s) still open at the ${CAP}-round cap`,
+        JSON.stringify(openFixNow, null, 2),
+      )
+      if (outcome.halt) {
+        return report(setup, packPath, processed, refactorOutcomes(), outcome.failure)
+      }
+      continue
     }
   }
 
@@ -815,24 +929,32 @@ while (processed.length < GUARD_MAX) {
     await agent(fixPrompt(pick, packPath, lastFailures), { label: `fix:${round}` })
   }
   if (!green) {
-    log(`HARD FAILURE: ${pick.taskId} could not reach green tox after ${CAP} rounds — stopping the run.`)
-    return report(setup, packPath, processed, refactorOutcomes(), {
-      taskId: pick.taskId,
-      title: pick.title,
-      reason: `uv run tox still red after ${CAP} fix rounds`,
-      failures: lastFailures,
-    })
+    // tox red at the cap — a convergence failure. Kind-split: halt an original
+    // subtask (dirty tree preserved for inspection), discard-and-continue a
+    // side-task.
+    const outcome = await handleConvergenceFailure(
+      pick,
+      depth,
+      `uv run tox still red after ${CAP} fix rounds`,
+      lastFailures,
+    )
+    if (outcome.halt) {
+      return report(setup, packPath, processed, refactorOutcomes(), outcome.failure)
+    }
+    continue
   }
 
   phase('Commit')
   const commit = await agent(commitPrompt(pick, packPath), { label: `commit:${pick.taskId}`, schema: COMMIT_SCHEMA })
   if (!commit) {
-    log(`HARD FAILURE: ${pick.taskId} reached green but the commit step failed — stopping the run.`)
-    return report(setup, packPath, processed, refactorOutcomes(), {
-      taskId: pick.taskId,
-      title: pick.title,
-      reason: 'commit step returned no result',
-    })
+    // The commit step itself failed after a green gate. Kind-split as well: an
+    // original subtask halts (its green changes left dirty for inspection); a
+    // side-task is discarded and the loop continues.
+    const outcome = await handleConvergenceFailure(pick, depth, 'commit step returned no result', '')
+    if (outcome.halt) {
+      return report(setup, packPath, processed, refactorOutcomes(), outcome.failure)
+    }
+    continue
   }
   if (commit.skipped && commit.skipped.length) {
     log(`Skipped untracked files (not staged): ${commit.skipped.join(', ')}`)
@@ -841,7 +963,7 @@ while (processed.length < GUARD_MAX) {
   phase('Status')
   await agent(statusPrompt(pick, packPath), { label: `review:${pick.taskId}` })
 
-  processed.push({ taskId: pick.taskId, title: pick.title, sha: commit.sha, message: commit.message })
+  processed.push({ taskId: pick.taskId, title: pick.title, sha: commit.sha, message: commit.message, depth, origin })
 }
 
 return report(setup, packPath, processed, refactorOutcomes(), null)
@@ -856,6 +978,8 @@ function refactorOutcomes() {
     filedSideTasks,
     residualFindings,
     capSuppressed,
+    droppedSideTasks,
+    escalations,
   }
 }
 
@@ -868,6 +992,8 @@ function report(setup, packPath, processed, refactor, failure) {
   const filedSideTasks = (refactor && refactor.filedSideTasks) || []
   const residualFindings = (refactor && refactor.residualFindings) || []
   const capSuppressed = (refactor && refactor.capSuppressed) || []
+  const droppedSideTasks = (refactor && refactor.droppedSideTasks) || []
+  const escalations = (refactor && refactor.escalations) || []
   const lines = []
   lines.push(`grind-story — story ${storyId}`)
   lines.push(`branch: ${setup.branch} (base ${setup.baseRef})`)
@@ -876,11 +1002,21 @@ function report(setup, packPath, processed, refactor, failure) {
   if (processed.length === 0) {
     lines.push('No work items were committed.')
   } else {
-    lines.push(`Committed ${processed.length} work item(s) (each → in-review, tox green):`)
+    lines.push(`Committed ${processed.length} work item(s) (task → commit-sha → origin; each → in-review, tox green):`)
     for (const p of processed) {
       const sha = (p.sha || '').slice(0, 12)
       const subject = (p.message || '').split('\n')[0]
-      lines.push(`  - ${p.taskId} "${p.title || ''}" → ${sha} : ${subject}`)
+      // Original subtasks (depth 0, no marker) carry no origin; a side-task shows
+      // the originating task + finding from its depth marker.
+      const originTag = p.origin ? ` ← origin ${p.origin}` : ' (origin: original subtask)'
+      lines.push(`  - ${p.taskId} "${p.title || ''}" → ${sha}${originTag} : ${subject}`)
+    }
+  }
+  if (droppedSideTasks && droppedSideTasks.length) {
+    lines.push('')
+    lines.push(`Dropped side-tasks (could not converge; git reset --hard-discarded, run continued) (${droppedSideTasks.length}):`)
+    for (const d of droppedSideTasks) {
+      lines.push(`  - ${d.taskId} (depth ${d.depth}) "${d.title || ''}" — ${d.reason || '(no reason given)'}`)
     }
   }
   if (deferredFindings && deferredFindings.length) {
@@ -936,6 +1072,29 @@ function report(setup, packPath, processed, refactor, failure) {
     for (const d of droppedRefactors) {
       lines.push(`  - [${d.taskId}] ${d.finding || '(untitled)'} — ${d.reason || '(no reason given)'}`)
     }
+  }
+  // Escalations — the human-review surface that replaces the dropped interactive
+  // gates: the halting original subtask, any 5-cap-open fix-now, residual findings
+  // stranded at maxDepth, and side-task findings suppressed by the total cap.
+  const escalationLines = []
+  if (failure) {
+    escalationLines.push(`  - HALT: ${failure.taskId} "${failure.title || ''}" — ${failure.reason}`)
+  }
+  for (const e of escalations) {
+    escalationLines.push(`  - fix-now at cap: ${e.taskId} (depth ${e.depth}) — ${e.detail || e.count + ' open fix-now finding(s)'}`)
+  }
+  for (const d of residualFindings) {
+    const f = d.finding || {}
+    escalationLines.push(`  - residual at maxDepth: [${d.taskId} depth ${d.depth}] ${f.title || '(untitled)'} @ ${f.location || '?'}`)
+  }
+  for (const d of capSuppressed) {
+    const f = d.finding || {}
+    escalationLines.push(`  - cap-suppressed side-task: [${d.taskId}] ${f.title || '(untitled)'} @ ${f.location || '?'}`)
+  }
+  if (escalationLines.length) {
+    lines.push('')
+    lines.push(`Escalations for human review (${escalationLines.length}):`)
+    lines.push(...escalationLines)
   }
   if (failure) {
     lines.push('')

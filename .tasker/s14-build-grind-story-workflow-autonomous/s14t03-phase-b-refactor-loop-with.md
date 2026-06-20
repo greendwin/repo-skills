@@ -1,7 +1,7 @@
 ---
 id: s14t03
 slug: phase-b-refactor-loop-with
-status: pending
+status: done
 ---
 
 # Phase B: refactor loop with duplication and thermo-nuclear lenses

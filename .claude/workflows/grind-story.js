@@ -8,6 +8,7 @@ export const meta = {
     { title: 'Pick', detail: 'list the story subtree, take the next pending work item, set it in-progress' },
     { title: 'Implement', detail: 'tdd implement the work item to green targeted tests' },
     { title: 'Review-A', detail: 'code-reviewer lenses in parallel → triage → tdd fixes fix-now, until clean (cap 5)' },
+    { title: 'Refactor-B', detail: 'refactor-reviewer lenses in parallel → apply-biased triage → tdd applies apply-now behavior-preservingly, until dry (cap 5)' },
     { title: 'Verify', detail: 'uv run tox (all envs) green gate, with bounded fix-reconverge' },
     { title: 'Commit', detail: 'stage + one commit-summary-style commit per work item' },
     { title: 'Status', detail: 'move the work item to in-review (never done)' },
@@ -126,6 +127,45 @@ const TRIAGE_SCHEMA = {
   required: ['buckets'],
 }
 
+// Phase B refactor triage: the apply-biased buckets, the policy flip toward
+// applying genuinely-local quality work and deferring big structural work.
+const REFACTOR_TRIAGE_SCHEMA = {
+  type: 'object',
+  properties: {
+    buckets: {
+      type: 'object',
+      properties: {
+        'apply-now': { type: 'array', items: { type: 'object' } },
+        'delayed': { type: 'array', items: { type: 'object' } },
+        'out-of-scope': { type: 'array', items: { type: 'object' } },
+      },
+      required: ['apply-now', 'delayed', 'out-of-scope'],
+    },
+  },
+  required: ['buckets'],
+}
+
+// Per-finding outcome from the apply agent — a refactor it cannot keep green is
+// dropped (with a reason), never forced through by changing expected behavior.
+const APPLY_SCHEMA = {
+  type: 'object',
+  properties: {
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          finding: { type: 'string', description: 'title of the finding this result is for' },
+          outcome: { type: 'string', enum: ['applied', 'dropped'] },
+          reason: { type: 'string', description: 'why it was dropped (or a note when applied)' },
+        },
+        required: ['finding', 'outcome'],
+      },
+    },
+  },
+  required: ['results'],
+}
+
 // ---- agent prompts -------------------------------------------------------
 const branchPrompt = `You are the setup step of an autonomous grind-story workflow for story ${storyId}.
 
@@ -236,6 +276,63 @@ Contract: return only when your targeted tests are GREEN.
 
 Boundaries — do NOT commit, do NOT change the task's status, do NOT run the full \`uv run tox\`. Only write the source/test files these findings require. Report what you changed.`
 
+const refactorRosterPrompt = (packPath) => `You are the roster-resolution step of an autonomous grind-story workflow.
+
+Read the context pack first: ${packPath}. It resolves this repo's \`refactor-reviewer\` lens roster (do not re-open the source configs).
+
+Report the \`refactor-reviewer\` roster as an ordered list of lens names exactly as the pack names them (e.g. duplication, thermo-nuclear). If the pack resolves the \`refactor-reviewer\` roster as EMPTY, return an empty list.
+
+Do not review anything and do not edit files. Return only the lens names.`
+
+const refactorLensPrompt = (lens, packPath, baseRef) => `You are the \`${lens}\` refactor-reviewer lens of an autonomous grind-story workflow — a READ-ONLY reviewer. You never edit the tree; you only report findings.
+
+Read the context pack first: ${packPath}. It resolves what the \`${lens}\` lens must check (conventions, ADRs, and the lens's own focus).${lens === 'thermo-nuclear' ? ' The `thermo-nuclear` lens delegates to the `thermo-nuclear-code-quality-review` skill — apply that skill\'s focus (structural regressions, dramatic-simplification / code-judo that DELETES complexity, spaghetti conditionals, abstraction quality, mislayered logic).' : ''}
+
+Review the change currently under review: inspect \`git diff ${baseRef}...HEAD\` plus any uncommitted working-tree changes (\`git diff\` and \`git status\`) for currency — that diff IS the change you review. Apply the \`${lens}\` lens's focus as resolved in the pack.
+
+Return your findings as a list; for EACH finding fill every field:
+- \`title\` — one line naming the refactoring opportunity.
+- \`location\` — file:line (or symbol) it occurs at.
+- \`severity\` — one of blocker / major / minor / nit.
+- \`rationale\` — why the refactoring improves the code.
+- \`suggested-fix\` — a concrete inline refactoring; you do NOT apply it.
+- \`lens\` — "${lens}".
+
+If you find nothing, return an empty findings list. Do not edit any file.`
+
+const refactorTriagePrompt = (packPath, findingsJson) => `You are the refactor-triage step of an autonomous grind-story workflow. You exercise judgement the orchestrator JS cannot — you do not write code.
+
+Read the context pack first: ${packPath} (it resolves the ADRs and conventions the findings may cite).
+
+Here are the raw refactor findings — the \`refactor-reviewer\` lens output merged with the \`deferred-to-refactor\` findings carried from Phase A — as JSON:
+---
+${findingsJson}
+---
+
+First DEDUP: collapse findings that refer to the same underlying issue — overlapping \`location\` plus overlapping description — into one, keeping the strongest severity. Then BUCKET every surviving finding into exactly one of:
+- \`apply-now\` — improves quality, is scoped to the current task, and has a LOCAL blast radius: a refactoring the \`tdd\` apply agent can land behavior-preservingly right here (e.g. obvious local duplication collapse).
+- \`delayed\` — genuinely valuable structural work that is big, touches OTHER systems, or extends scope: rule-of-three duplication across modules, real code-judo that deletes complexity but reaches beyond this task. Collected as side-task seeds; NOT applied in place here.
+- \`out-of-scope\` — an ADR-conflicting "improvement" (the ADR always wins) or unrelated noise. Reported only, never applied and never filed.
+
+Bias AGGRESSIVELY toward \`delayed\`: route genuinely valuable structural work there rather than forcing it in place. Reserve \`out-of-scope\` STRICTLY for ADR-conflicts and noise. An ADR-conflicting suggestion is always \`out-of-scope\`, never \`apply-now\` or \`delayed\`.
+
+Rules: never silently drop a finding (every input finding lands in exactly one bucket), and never scope-creep. Return the three buckets; each entry keeps the finding's original fields.`
+
+const applyPrompt = (pick, packPath, applyJson) => `You are the apply step of an autonomous grind-story workflow, running the \`tdd\` skill to apply \`apply-now\` refactorings for task ${pick.taskId} BEHAVIOR-PRESERVINGLY.
+
+Read the context pack first: ${packPath}.
+
+These refactor findings were triaged \`apply-now\` — each is a local, scoped quality improvement to land under the green-test contract:
+---
+${applyJson}
+---
+
+For each finding: apply the refactoring while keeping the existing tests green. You MAY rework production code and fix test references to renamed/moved internals (same assertion, same expected value), but you must NEVER change expected behavior to force a refactor through. A refactoring you cannot keep green is DROPPED and reported with a reason — never forced. Honor the conventions in the pack (\`assert_invoke\` not \`CliRunner\`, \`pyfakefs\` not \`tmp_path\`, \`monkeypatch\` not \`unittest.mock.patch\`; no \`type: ignore\`; no inline imports; no task ids in code comments).
+
+Contract: leave the targeted tests GREEN. Boundaries — do NOT commit, do NOT change the task's status, do NOT run the full \`uv run tox\`. Only write the source/test files these refactorings require.
+
+Return one result per input finding: \`{finding: <its title>, outcome: applied|dropped, reason: <why dropped, or a note>}\`.`
+
 const verifyPrompt = (packPath) => `You are the green-gate step of an autonomous grind-story workflow.
 
 Read the context pack first: ${packPath}.
@@ -302,8 +399,19 @@ if (reviewLenses.length === 0) {
   log('Phase A skipped for the run: the code-reviewer roster resolved empty.')
 }
 
+// Resolve the refactor-reviewer roster once too — it likewise does not change
+// per subtask. An empty roster means Phase B is skipped for the whole run.
+const refactorRoster = await agent(refactorRosterPrompt(packPath), { label: 'roster:refactor-reviewer', schema: ROSTER_SCHEMA })
+const refactorLenses = (refactorRoster && Array.isArray(refactorRoster.lenses)) ? refactorRoster.lenses.filter((l) => typeof l === 'string' && l.trim()) : []
+if (refactorLenses.length === 0) {
+  log('Phase B skipped for the run: the refactor-reviewer roster resolved empty.')
+}
+
 const processed = []
 const deferredFindings = []
+const delayedFindings = []
+const outOfScopeFindings = []
+const droppedRefactors = []
 const seen = new Set()
 
 while (processed.length < GUARD_MAX) {
@@ -322,6 +430,10 @@ while (processed.length < GUARD_MAX) {
 
   phase('Implement')
   await agent(implementPrompt(pick, packPath), { label: `impl:${pick.taskId}` })
+
+  // The `deferred-to-refactor` findings raised for THIS subtask in Phase A,
+  // merged into Phase B's refactor pool below.
+  const carriedDeferred = []
 
   // Phase A — code-reviewer lenses → triage → tdd fixes fix-now, re-converging
   // until no fix-now remains or the round cap is hit. Skipped on an empty roster.
@@ -351,7 +463,10 @@ while (processed.length < GUARD_MAX) {
       const buckets = (triage && triage.buckets) || {}
       const fixNow = Array.isArray(buckets['fix-now']) ? buckets['fix-now'] : []
       const deferred = Array.isArray(buckets['deferred-to-refactor']) ? buckets['deferred-to-refactor'] : []
-      for (const f of deferred) deferredFindings.push({ taskId: pick.taskId, finding: f })
+      for (const f of deferred) {
+        deferredFindings.push({ taskId: pick.taskId, finding: f })
+        carriedDeferred.push(f)
+      }
 
       if (fixNow.length === 0) {
         openFixNow = []
@@ -370,6 +485,66 @@ while (processed.length < GUARD_MAX) {
     }
   }
 
+  // Phase B — refactor-reviewer lenses (merged with Phase A's deferred findings)
+  // → apply-biased triage → tdd applies apply-now behavior-preservingly, looping
+  // until no new apply-now or the round cap is hit. Skipped on an empty roster.
+  if (refactorLenses.length > 0) {
+    phase('Refactor-B')
+    for (let round = 1; round <= CAP; round++) {
+      const lensRuns = refactorLenses.map((lens) =>
+        agent(refactorLensPrompt(lens, packPath, setup.baseRef), { label: `refactor-lens:${lens}:${round}`, schema: FINDINGS_SCHEMA }),
+      )
+      const lensResults = await parallel(lensRuns)
+      const findings = []
+      for (const r of lensResults) {
+        // A lens that died or returned null is filtered out; the round continues.
+        if (r && Array.isArray(r.findings)) findings.push(...r.findings)
+      }
+      // Only the first round merges the Phase A deferred findings — later rounds
+      // re-review the now-refactored tree fresh so they cannot re-surface stale
+      // findings already applied or routed.
+      if (round === 1) findings.push(...carriedDeferred)
+
+      if (findings.length === 0) {
+        log(`Refactor-B round ${round}/${CAP} for ${pick.taskId}: lenses raised no findings — loop dry.`)
+        break
+      }
+
+      const triage = await agent(refactorTriagePrompt(packPath, JSON.stringify(findings, null, 2)), {
+        label: `triage-B:${round}`,
+        schema: REFACTOR_TRIAGE_SCHEMA,
+      })
+      const buckets = (triage && triage.buckets) || {}
+      const applyNow = Array.isArray(buckets['apply-now']) ? buckets['apply-now'] : []
+      const delayed = Array.isArray(buckets['delayed']) ? buckets['delayed'] : []
+      const outOfScope = Array.isArray(buckets['out-of-scope']) ? buckets['out-of-scope'] : []
+      // `delayed` seeds Slice 4's side-tasks; `out-of-scope` is reported only.
+      for (const f of delayed) delayedFindings.push({ taskId: pick.taskId, finding: f })
+      for (const f of outOfScope) outOfScopeFindings.push({ taskId: pick.taskId, finding: f })
+
+      if (applyNow.length === 0) {
+        log(`Refactor-B round ${round}/${CAP} for ${pick.taskId}: no apply-now; ${delayed.length} delayed, ${outOfScope.length} out-of-scope — loop dry.`)
+        break
+      }
+      log(`Refactor-B round ${round}/${CAP} for ${pick.taskId}: ${applyNow.length} apply-now refactoring(s); routing to a tdd apply agent.`)
+      if (round === CAP) {
+        log(`Refactor-B cap reached for ${pick.taskId} with apply-now work still surfacing — stopping the refactor loop.`)
+        break
+      }
+      const applied = await agent(applyPrompt(pick, packPath, JSON.stringify(applyNow, null, 2)), {
+        label: `apply-B:${round}`,
+        schema: APPLY_SCHEMA,
+      })
+      const results = (applied && Array.isArray(applied.results)) ? applied.results : []
+      for (const res of results) {
+        if (res && res.outcome === 'dropped') {
+          droppedRefactors.push({ taskId: pick.taskId, finding: res.finding, reason: res.reason || '(no reason given)' })
+          log(`Refactor dropped for ${pick.taskId}: "${res.finding}" — ${res.reason || '(no reason given)'}`)
+        }
+      }
+    }
+  }
+
   phase('Verify')
   let green = false
   let lastFailures = ''
@@ -383,7 +558,7 @@ while (processed.length < GUARD_MAX) {
   }
   if (!green) {
     log(`HARD FAILURE: ${pick.taskId} could not reach green tox after ${CAP} rounds — stopping the run.`)
-    return report(setup, packPath, processed, deferredFindings, {
+    return report(setup, packPath, processed, refactorOutcomes(), {
       taskId: pick.taskId,
       title: pick.title,
       reason: `uv run tox still red after ${CAP} fix rounds`,
@@ -395,7 +570,7 @@ while (processed.length < GUARD_MAX) {
   const commit = await agent(commitPrompt(pick, packPath), { label: `commit:${pick.taskId}`, schema: COMMIT_SCHEMA })
   if (!commit) {
     log(`HARD FAILURE: ${pick.taskId} reached green but the commit step failed — stopping the run.`)
-    return report(setup, packPath, processed, deferredFindings, {
+    return report(setup, packPath, processed, refactorOutcomes(), {
       taskId: pick.taskId,
       title: pick.title,
       reason: 'commit step returned no result',
@@ -411,10 +586,19 @@ while (processed.length < GUARD_MAX) {
   processed.push({ taskId: pick.taskId, title: pick.title, sha: commit.sha, message: commit.message })
 }
 
-return report(setup, packPath, processed, deferredFindings, null)
+return report(setup, packPath, processed, refactorOutcomes(), null)
+
+// Bundle the refactor-phase collections threaded into the report.
+function refactorOutcomes() {
+  return { deferredFindings, delayedFindings, outOfScopeFindings, droppedRefactors }
+}
 
 // ---- report --------------------------------------------------------------
-function report(setup, packPath, processed, deferredFindings, failure) {
+function report(setup, packPath, processed, refactor, failure) {
+  const deferredFindings = (refactor && refactor.deferredFindings) || []
+  const delayedFindings = (refactor && refactor.delayedFindings) || []
+  const outOfScopeFindings = (refactor && refactor.outOfScopeFindings) || []
+  const droppedRefactors = (refactor && refactor.droppedRefactors) || []
   const lines = []
   lines.push(`grind-story — story ${storyId}`)
   lines.push(`branch: ${setup.branch} (base ${setup.baseRef})`)
@@ -432,10 +616,33 @@ function report(setup, packPath, processed, deferredFindings, failure) {
   }
   if (deferredFindings && deferredFindings.length) {
     lines.push('')
-    lines.push(`Deferred-to-refactor findings carried to Phase B (${deferredFindings.length}):`)
+    lines.push(`Deferred-to-refactor findings carried into Phase B (${deferredFindings.length}):`)
     for (const d of deferredFindings) {
       const f = d.finding || {}
       lines.push(`  - [${d.taskId}] ${f.title || '(untitled)'} @ ${f.location || '?'} (${f.severity || '?'})`)
+    }
+  }
+  if (delayedFindings && delayedFindings.length) {
+    lines.push('')
+    lines.push(`Delayed refactor findings collected for side-task filing (${delayedFindings.length}):`)
+    for (const d of delayedFindings) {
+      const f = d.finding || {}
+      lines.push(`  - [${d.taskId}] ${f.title || '(untitled)'} @ ${f.location || '?'} (${f.severity || '?'})`)
+    }
+  }
+  if (outOfScopeFindings && outOfScopeFindings.length) {
+    lines.push('')
+    lines.push(`Out-of-scope refactor findings (reported only, not filed) (${outOfScopeFindings.length}):`)
+    for (const d of outOfScopeFindings) {
+      const f = d.finding || {}
+      lines.push(`  - [${d.taskId}] ${f.title || '(untitled)'} @ ${f.location || '?'} (${f.severity || '?'})`)
+    }
+  }
+  if (droppedRefactors && droppedRefactors.length) {
+    lines.push('')
+    lines.push(`Dropped refactorings (could not stay green) (${droppedRefactors.length}):`)
+    for (const d of droppedRefactors) {
+      lines.push(`  - [${d.taskId}] ${d.finding || '(untitled)'} — ${d.reason || '(no reason given)'}`)
     }
   }
   if (failure) {

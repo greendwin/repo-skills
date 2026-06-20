@@ -9,6 +9,8 @@ from repo_skills.discovery import (
     detect_skills_dir,
     find_repo_skills_dir,
     has_any_skill,
+    normalize_repo_dir,
+    path_within,
 )
 
 
@@ -147,6 +149,87 @@ def test_find_repo_skills_dir_returns_none_outside_repo(
 
     result = find_repo_skills_dir(cwd=Path("/tmp/random"))
     assert result is None
+
+
+def test_path_within_equal_to_root(fs: FakeFilesystem) -> None:
+    fs.create_dir("/projects/repo")
+
+    assert path_within(Path("/projects/repo"), Path("/projects/repo")) is True
+
+
+def test_path_within_nested_under_root(fs: FakeFilesystem) -> None:
+    fs.create_dir("/projects/repo/skills/tdd")
+
+    assert (
+        path_within(Path("/projects/repo/skills/tdd"), Path("/projects/repo")) is True
+    )
+
+
+def test_path_within_escaping_sibling(fs: FakeFilesystem) -> None:
+    fs.create_dir("/projects/repo")
+    fs.create_dir("/projects/sibling")
+
+    assert (
+        path_within(Path("/projects/repo/../sibling"), Path("/projects/repo")) is False
+    )
+
+
+def test_path_within_prefix_sibling_is_not_inside(fs: FakeFilesystem) -> None:
+    fs.create_dir("/projects/repo")
+    fs.create_dir("/projects/repo-2")
+
+    assert path_within(Path("/projects/repo-2"), Path("/projects/repo")) is False
+
+
+def test_path_within_symlink_is_not_followed(fs: FakeFilesystem) -> None:
+    # containment is lexical: a symlink that physically points outside the root
+    # is still inside it, because its path text stays under the root and the
+    # link target is never resolved
+    root = Path("/projects/repo")
+    fs.create_dir(root)
+    fs.create_dir("/outside/escape")
+    fs.create_symlink("/projects/repo/link", "/outside/escape")
+
+    assert path_within(Path("/projects/repo/link"), root) is True
+
+
+def test_path_within_absolute_outside_is_false(fs: FakeFilesystem) -> None:
+    fs.create_dir("/projects/repo")
+    fs.create_dir("/other/place")
+
+    assert path_within(Path("/other/place"), Path("/projects/repo")) is False
+
+
+def test_path_within_collapses_dotdot_lexically() -> None:
+    # ``..`` is collapsed textually (no filesystem access), so a traversal that
+    # lands back under the root counts as inside even for non-existent paths
+    assert (
+        path_within(Path("/projects/repo/skills/../other"), Path("/projects/repo"))
+        is True
+    )
+
+
+def test_path_within_relative_inputs_normalized_against_base() -> None:
+    # relative inputs are normalized lexically against their own text, never the
+    # process CWD, so containment stays predictable
+    assert path_within(Path("repo/skills"), Path("repo")) is True
+    assert path_within(Path("repo/../sibling"), Path("repo")) is False
+
+
+def test_normalize_repo_dir_accepts_symlinked_dir_targeting_outside(
+    fs: FakeFilesystem,
+) -> None:
+    # a skills dir reached through an in-repo symlink whose target lives outside
+    # the repo is still accepted: containment is lexical, so the link is not
+    # followed and its path stays within the repo
+    git_root = Path("/projects/repo")
+    fs.create_dir(git_root)
+    fs.create_dir("/outside/skills")
+    fs.create_symlink("/projects/repo/skills", "/outside/skills")
+
+    result = normalize_repo_dir(git_root, "skills")
+
+    assert result == Path("/projects/repo/skills")
 
 
 def test_find_repo_skills_dir_falls_back_to_manifest(

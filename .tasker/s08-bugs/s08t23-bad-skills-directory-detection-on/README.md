@@ -57,10 +57,10 @@ status: in-progress
 - [~] [s08t2314](s08t2314-refactor-reinit-change-message-displays.md): **review** Refactor: Reinit change message displays skills_dirs sorted, hiding the active-dir order
 - [~] [s08t2315](s08t2315-refactor-no-skills-note-fires.md): **review** Refactor: "no skills" note fires on a no-op reinit with an unchanged, populated-but-empty dir
 - [~] [s08t2316](s08t2316-refactor-repeated-skills-dir-values.md): **review** Refactor: Repeated --skills-dir values are stored verbatim without de-duplication
-- [ ] [s08t2317](s08t2317-refactor-parts-prefix-path-containment.md): Refactor: parts-prefix path containment logic conceptually overlaps the AMBIGUOUS equality check
-- [ ] [s08t2318](s08t2318-refactor-normalize-skills-dirs-mixes.md): Refactor: `_normalize_skills_dirs` mixes path validation/normalization with user-facing console output
-- [ ] [s08t2319](s08t2319-refactor-dirs-change-line-renders.md): Refactor: `dirs` change line renders a sorted list, hiding active-dir (first-element) ordering
-- [ ] [s08t2320](s08t2320-refactor-manual-parts-prefix-containment.md): Refactor: Manual `.parts`-prefix containment in `_within` overlaps with the zip-prefix loop in `_deepest_common_ancestor
-- [ ] [s08t2321](s08t2321-refactor-within-prefix-check-could.md): Refactor: _within prefix check could lean on stdlib is_relative_to with the symlink concern documented at the call site
-- [ ] [s08t2322](s08t2322-refactor-path-containment-check-duplicated.md): Refactor: Path-containment check duplicated between new _within helper and _merge.py
-- [ ] [s08t2323](s08t2323-refactor-dir-has-skills-uses.md): Refactor: _dir_has_skills uses the heavy classification walk just to ask a yes/no question
+- [~] [s08t2317](s08t2317-refactor-parts-prefix-path-containment.md): **review** Refactor: parts-prefix path containment logic conceptually overlaps the AMBIGUOUS equality check
+- [~] [s08t2318](s08t2318-refactor-normalize-skills-dirs-mixes.md): **review** Refactor: `_normalize_skills_dirs` mixes path validation/normalization with user-facing console output
+- [~] [s08t2319](s08t2319-refactor-dirs-change-line-renders.md): **review** Refactor: `dirs` change line renders a sorted list, hiding active-dir (first-element) ordering
+- [~] [s08t2320](s08t2320-refactor-manual-parts-prefix-containment.md): **review** Refactor: Manual `.parts`-prefix containment in `_within` overlaps with the zip-prefix loop in `_deepest_common_ancestor
+- [~] [s08t2321](s08t2321-refactor-within-prefix-check-could.md): **review** Refactor: _within prefix check could lean on stdlib is_relative_to with the symlink concern documented at the call site
+- [~] [s08t2322](s08t2322-refactor-path-containment-check-duplicated.md): **review** Refactor: Path-containment check duplicated between new _within helper and _merge.py
+- [~] [s08t2323](s08t2323-refactor-dir-has-skills-uses.md): **review** Refactor: _dir_has_skills uses the heavy classification walk just to ask a yes/no question

@@ -1,7 +1,7 @@
 ---
 id: s08t2319
 slug: refactor-dirs-change-line-renders
-status: pending
+status: in-review
 ---
 
 # Refactor: `dirs` change line renders a sorted list, hiding active-dir (first-element) ordering

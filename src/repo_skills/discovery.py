@@ -73,15 +73,17 @@ def has_any_skill(root: Path) -> bool:
     return next(_iter_skill_dirs(root), None) is not None
 
 
-def _within(path: Path, root: Path) -> bool:
-    """Return whether ``path`` is ``root`` itself or nested inside it.
+def path_within(path: Path, root: Path) -> bool:
+    """Return whether ``path`` lands on or inside ``root``.
 
-    Both inputs must already be absolute and resolved. Compared by ``parts``
-    (not ``is_relative_to``) to avoid differing or raising across drive-relative
-    or symlinked roots; the prefix check stays robust now both inputs are
-    ``.resolve()``d.
+    Containment is judged lexically: both inputs are normalized with
+    ``os.path.normpath`` (``..`` collapsed, ``.`` dropped) and compared by
+    path components, so symlinks are never followed and the check rests purely
+    on the textual targets. Callers need not pre-normalize.
     """
-    return path.parts[: len(root.parts)] == root.parts
+    norm_path = Path(os.path.normpath(path))
+    norm_root = Path(os.path.normpath(root))
+    return norm_path.parts[: len(norm_root.parts)] == norm_root.parts
 
 
 def normalize_repo_dir(git_root: Path, skills_dir: str) -> Path | None:
@@ -89,11 +91,12 @@ def normalize_repo_dir(git_root: Path, skills_dir: str) -> Path | None:
 
     Accepts any path (existing or not, including the repo root itself) as long
     as it does not escape the repo; an absolute path outside the repo or a
-    ``../`` traversal beyond the root returns ``None``.
+    ``../`` traversal beyond the root returns ``None``. Resolution is lexical
+    (symlinks are not followed), and the returned path is exactly the one whose
+    containment was validated.
     """
-    root = git_root.resolve()
-    target = (root / skills_dir).resolve()
-    if not _within(target, root):
+    target = Path(os.path.normpath(git_root / skills_dir))
+    if not path_within(target, git_root):
         return None
 
     return target

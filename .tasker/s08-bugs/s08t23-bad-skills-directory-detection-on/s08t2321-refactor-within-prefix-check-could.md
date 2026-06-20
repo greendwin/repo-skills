@@ -1,7 +1,7 @@
 ---
 id: s08t2321
 slug: refactor-within-prefix-check-could
-status: pending
+status: in-review
 ---
 
 # Refactor: _within prefix check could lean on stdlib is_relative_to with the symlink concern documented at the call site

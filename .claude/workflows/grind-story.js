@@ -96,6 +96,50 @@ function resolveMarker(taskId, description) {
   return { depth: marker.depth, origin: marker.origin || '' }
 }
 
+// Normalize a raw pick agent result into the uniform `{done, kind, items}`
+// contract the loop consumes. A `done` (or empty/shapeless) result collapses to
+// `{done: true, items: []}`. Otherwise every well-formed item (one carrying a
+// `taskId`) is kept, the `kind` defaults to `feature` unless the agent tagged it
+// `refactor`, and an items-less-but-not-done result is treated as done so the
+// loop terminates rather than spinning on a malformed pick.
+function normalizePick(raw) {
+  // The terminal "nothing to do" pick. A fresh instance per call so a caller
+  // mutating the returned object can never corrupt a shared sentinel. By
+  // construction `done` is true exactly when `items` is empty, and both
+  // early-exit branches below return this same shape — the invariant the loop
+  // relies on (done ⇔ items empty) holds for every normalized pick.
+  // The kind vocabulary's single normalizer: the default kind is `feature`
+  // unless the agent tagged it `refactor`. Used for both the `donePick` default
+  // and the live-pick branch so the "default is feature" rule lives in one place.
+  const normalizeKind = (k) => (k === 'refactor' ? 'refactor' : 'feature')
+  const donePick = () => ({ done: true, kind: normalizeKind(), items: [] })
+  if (!raw || raw.done) return donePick()
+  const items = (Array.isArray(raw.items) ? raw.items : [])
+    .filter((it) => it && typeof it.taskId === 'string' && it.taskId)
+    .map((it) => ({
+      taskId: it.taskId,
+      title: typeof it.title === 'string' ? it.title : '',
+      description: typeof it.description === 'string' ? it.description : '',
+      isStory: it.isStory === true,
+    }))
+  if (items.length === 0) return donePick()
+  const kind = normalizeKind(raw.kind)
+  return { done: false, kind, items }
+}
+
+// Group-aware repeat guard: return the first item of a pick group whose taskId
+// is already in `seen`, or null when the whole group is fresh. Every item is
+// checked so a group cannot smuggle an already-attempted id past the guard.
+function firstRepeat(items, seen) {
+  return items.find((it) => seen.has(it.taskId)) || null
+}
+
+// Record every taskId of a pick group in `seen` so the whole group — not just
+// its first element — is excluded from later picks.
+function recordSeen(items, seen) {
+  for (const it of items) seen.add(it.taskId)
+}
+
 // Build the description body for a filed side-task: the marker block followed by
 // the originating finding's detail so a later pick can run it through the full
 // cycle like any original subtask.
@@ -154,16 +198,41 @@ const PACK_SCHEMA = {
   required: ['packPath'],
 }
 
-const PICK_SCHEMA = {
+// The uniform pick contract: a pick is either `done`, or a `kind`-tagged group
+// of `items`. A `feature` pick carries exactly one depth-0 subtask; a `refactor`
+// pick carries one marker-bearing side-task (grouping of up to 5 arrives in a
+// later slice). The loop iterates `items`; the refactor/feature split is
+// currently driven by each item's depth marker (resolveMarker), not `kind` —
+// `kind` is carried for the grouping/branching that arrives in a later slice and
+// is not yet consumed. Even a one-element group flows through the existing
+// per-item machinery unchanged.
+const PICK_ITEM = {
   type: 'object',
   properties: {
-    done: { type: 'boolean', description: 'true when no pending work item remains' },
-    taskId: { type: 'string', description: 'id of the chosen work item (omit when done)' },
+    taskId: { type: 'string', description: 'id of the chosen work item' },
     title: { type: 'string', description: 'title of the chosen work item' },
     isStory: { type: 'boolean', description: 'true when the work item is the story task itself' },
     description: {
       type: 'string',
       description: "the chosen work item's verbatim description body (used to parse its depth marker)",
+    },
+  },
+  required: ['taskId'],
+}
+
+const PICK_SCHEMA = {
+  type: 'object',
+  properties: {
+    done: { type: 'boolean', description: 'true when no pending work item remains' },
+    kind: {
+      type: 'string',
+      enum: ['refactor', 'feature'],
+      description: "`refactor` when the items are marker-bearing side-tasks; `feature` for an original depth-0 subtask",
+    },
+    items: {
+      type: 'array',
+      description: 'the chosen work items — exactly one element in this slice (feature: one subtask; refactor: one side-task)',
+      items: PICK_ITEM,
     },
   },
   required: ['done'],
@@ -384,13 +453,16 @@ ALREADY-ATTEMPTED this run — NEVER select any of these ids even if their statu
 ` : ''}
 Select the next work item and move it to in-progress:
 1. Using the read-task and list-tasks verbs from the pack, load story ${storyId} and enumerate its subtasks at any depth.
-2. Choose the first subtask whose status is \`pending\` (natural order) AND whose id is not in the already-attempted list above.
-3. Degenerate case: if story ${storyId} has NO subtasks at all, the work item is the story task ${storyId} itself — but only if its own status is \`pending\` and it is not in the already-attempted list.
-4. If no pending work item exists (no eligible pending subtask, and either the story has subtasks or the story itself is not eligible), nothing is left.
+2. Among the eligible subtasks — status \`pending\` AND id NOT in the already-attempted list above — classify each by its description:
+   - A REFACTOR task carries a \`## Refactor side-task\` marker block in its description.
+   - A FEATURE task is an original subtask with NO such marker block.
+3. PREFER refactor tasks: if any eligible refactor task exists, choose the first one (natural order) and set kind="refactor". Otherwise choose the first eligible feature subtask (natural order) and set kind="feature". This drains refactor side-tasks ahead of feature work so feature work lands on already-refactored code.
+4. Degenerate case: if story ${storyId} has NO subtasks at all, the work item is the story task ${storyId} itself with kind="feature" — but only if its own status is \`pending\` and it is not in the already-attempted list.
+5. If no pending work item exists (no eligible pending subtask, and either the story has subtasks or the story itself is not eligible), nothing is left.
 
 If you selected a work item:
-- Move it to the \`in-progress\` status role using the set-status verb from the pack.
-- Return done=false, taskId=<id>, title=<its title>, isStory=<true only if it is the story task itself>, and description=<the work item's verbatim description body, exactly as stored, so the orchestrator can parse any depth marker>.
+- Move it (the single item you return) to the \`in-progress\` status role using the set-status verb from the pack BEFORE returning, so a mid-run crash leaves consistent tracker state.
+- Return done=false, kind=<"refactor" or "feature">, and items=[ a single object {taskId:<id>, title:<its title>, isStory:<true only if it is the story task itself>, description:<the work item's verbatim description body, exactly as stored, so the orchestrator can parse any depth marker>} ]. In this slice items has EXACTLY ONE element.
 
 If nothing is left, return done=true.
 
@@ -610,6 +682,12 @@ const VERIFY_CAP = 5
 const REVIEW_CAP = 10
 const GUARD_MAX = 100
 
+// Shared `<phase> round <round>/<cap> for <taskId>` log prefix for the three
+// structurally identical bounded retry loops (Review-A, Refactor-B, Verify), so
+// the phase/cap pair lives at the loop that owns it and a future cap change
+// cannot drift between the loop bound and the log text.
+const roundTag = (phase, round, cap, taskId) => `${phase} round ${round}/${cap} for ${taskId}`
+
 phase('Setup')
 const setup = await agent(branchPrompt, { label: 'branch', schema: BRANCH_SCHEMA })
 if (!setup) return `grind-story: setup step failed for story ${storyId} — could not create the grind branch.`
@@ -680,23 +758,23 @@ class SkipItem {}
 //     prior subtask is already committed — record it dropped, then throw SkipItem
 //     to continue with the next pending work item. A reset that does not leave a
 //     clean tree escalates to Halt rather than building on a dirty tree.
-async function failConvergence(pick, depth, reason, failures) {
+async function failConvergence(item, depth, reason, failures) {
   if (depth === 0) {
-    log(`HARD FAILURE: ${pick.taskId} (depth 0) could not converge — ${reason}. Halting the run.`)
-    throw new Halt({ taskId: pick.taskId, title: pick.title, reason, failures })
+    log(`HARD FAILURE: ${item.taskId} (depth 0) could not converge — ${reason}. Halting the run.`)
+    throw new Halt({ taskId: item.taskId, title: item.title, reason, failures })
   }
-  log(`${pick.taskId} (depth ${depth}) could not converge — ${reason}. Discarding its changes (git reset --hard) and continuing.`)
-  const reset = await agent(resetPrompt(pick, setup.baseRef), { label: `reset:${pick.taskId}`, schema: RESET_SCHEMA })
+  log(`${item.taskId} (depth ${depth}) could not converge — ${reason}. Discarding its changes (git reset --hard) and continuing.`)
+  const reset = await agent(resetPrompt(item, setup.baseRef), { label: `reset:${item.taskId}`, schema: RESET_SCHEMA })
   if (!reset || !reset.clean) {
-    log(`HARD FAILURE: could not cleanly discard side-task ${pick.taskId} — halting to avoid building on a dirty tree.`)
+    log(`HARD FAILURE: could not cleanly discard side-task ${item.taskId} — halting to avoid building on a dirty tree.`)
     throw new Halt({
-      taskId: pick.taskId,
-      title: pick.title,
+      taskId: item.taskId,
+      title: item.title,
       reason: `side-task git reset --hard did not leave a clean tree (${reason})`,
       failures,
     })
   }
-  droppedSideTasks.push({ taskId: pick.taskId, title: pick.title, depth, reason })
+  droppedSideTasks.push({ taskId: item.taskId, title: item.title, depth, reason })
   throw new SkipItem()
 }
 
@@ -715,7 +793,7 @@ async function runLensRound(lenses, promptFn, labelPrefix, round) {
 // until no fix-now remains or the round cap is hit. Skipped on an empty roster.
 // Returns the `deferred-to-refactor` findings to carry into Phase B; throws
 // (Halt / SkipItem) via failConvergence when fix-now is still open at the cap.
-async function reviewPhaseA(pick, depth) {
+async function reviewPhaseA(item, depth) {
   const carriedDeferred = []
   if (reviewLenses.length === 0) return carriedDeferred
   phase('Review-A')
@@ -724,7 +802,7 @@ async function reviewPhaseA(pick, depth) {
     const findings = await runLensRound(reviewLenses, lensPrompt, 'lens', round)
     if (findings.length === 0) {
       openFixNow = []
-      log(`Review-A round ${round}/${REVIEW_CAP} for ${pick.taskId}: lenses raised no findings.`)
+      log(`${roundTag('Review-A', round, REVIEW_CAP, item.taskId)}: lenses raised no findings.`)
       break
     }
 
@@ -736,19 +814,19 @@ async function reviewPhaseA(pick, depth) {
     const fixNow = arr(buckets, 'fix-now')
     const deferred = arr(buckets, 'deferred-to-refactor')
     for (const f of deferred) {
-      deferredFindings.push({ taskId: pick.taskId, finding: f })
+      deferredFindings.push({ taskId: item.taskId, finding: f })
       carriedDeferred.push(f)
     }
 
     if (fixNow.length === 0) {
       openFixNow = []
-      log(`Review-A round ${round}/${REVIEW_CAP} for ${pick.taskId}: no fix-now findings; ${deferred.length} carried to Phase B.`)
+      log(`${roundTag('Review-A', round, REVIEW_CAP, item.taskId)}: no fix-now findings; ${deferred.length} carried to Phase B.`)
       break
     }
     openFixNow = fixNow
-    log(`Review-A round ${round}/${REVIEW_CAP} for ${pick.taskId}: ${fixNow.length} fix-now finding(s); routing to a tdd fix agent.`)
+    log(`${roundTag('Review-A', round, REVIEW_CAP, item.taskId)}: ${fixNow.length} fix-now finding(s); routing to a tdd fix agent.`)
     if (round === REVIEW_CAP) break
-    await agent(reviewFixPrompt(pick, packPath, JSON.stringify(fixNow, null, 2)), { label: `fix-A:${round}` })
+    await agent(reviewFixPrompt(item, packPath, JSON.stringify(fixNow, null, 2)), { label: `fix-A:${round}` })
   }
   if (openFixNow.length > 0) {
     // Cap reached with fix-now still open — a convergence failure: the change
@@ -757,13 +835,13 @@ async function reviewPhaseA(pick, depth) {
     // finding) or discards-and-continues a side-task.
     escalations.push({
       kind: 'fix-now-cap-open',
-      taskId: pick.taskId,
+      taskId: item.taskId,
       depth,
       count: openFixNow.length,
       detail: `${openFixNow.length} fix-now finding(s) still open after ${REVIEW_CAP} Review-A rounds`,
     })
     await failConvergence(
-      pick,
+      item,
       depth,
       `${openFixNow.length} fix-now finding(s) still open at the ${REVIEW_CAP}-round cap`,
       JSON.stringify(openFixNow, null, 2),
@@ -776,7 +854,7 @@ async function reviewPhaseA(pick, depth) {
 // → apply-biased triage → tdd applies apply-now behavior-preservingly, looping
 // until no new apply-now or the round cap is hit. Skipped on an empty roster.
 // Returns the `delayed` findings to seed side-task filing.
-async function refactorPhaseB(pick, carriedDeferred) {
+async function refactorPhaseB(item, carriedDeferred) {
   const carriedDelayed = []
   if (refactorLenses.length === 0) return carriedDelayed
   phase('Refactor-B')
@@ -788,7 +866,7 @@ async function refactorPhaseB(pick, carriedDeferred) {
     if (round === 1) findings.push(...carriedDeferred)
 
     if (findings.length === 0) {
-      log(`Refactor-B round ${round}/${REVIEW_CAP} for ${pick.taskId}: lenses raised no findings — loop dry.`)
+      log(`${roundTag('Refactor-B', round, REVIEW_CAP, item.taskId)}: lenses raised no findings — loop dry.`)
       break
     }
 
@@ -803,32 +881,32 @@ async function refactorPhaseB(pick, carriedDeferred) {
     // `delayed` seeds the side-tasks filed after Phase B; `out-of-scope` is
     // reported only. Both are recorded globally for the report.
     for (const f of delayed) {
-      delayedFindings.push({ taskId: pick.taskId, finding: f })
+      delayedFindings.push({ taskId: item.taskId, finding: f })
       carriedDelayed.push(f)
     }
-    for (const f of outOfScope) outOfScopeFindings.push({ taskId: pick.taskId, finding: f })
+    for (const f of outOfScope) outOfScopeFindings.push({ taskId: item.taskId, finding: f })
 
     if (applyNow.length === 0) {
-      log(`Refactor-B round ${round}/${REVIEW_CAP} for ${pick.taskId}: no apply-now; ${delayed.length} delayed, ${outOfScope.length} out-of-scope — loop dry.`)
+      log(`${roundTag('Refactor-B', round, REVIEW_CAP, item.taskId)}: no apply-now; ${delayed.length} delayed, ${outOfScope.length} out-of-scope — loop dry.`)
       break
     }
-    log(`Refactor-B round ${round}/${REVIEW_CAP} for ${pick.taskId}: ${applyNow.length} apply-now refactoring(s); routing to a tdd apply agent.`)
+    log(`${roundTag('Refactor-B', round, REVIEW_CAP, item.taskId)}: ${applyNow.length} apply-now refactoring(s); routing to a tdd apply agent.`)
     if (round === REVIEW_CAP) {
       // Phase B is best-effort and behavior-preserving (tests stay green), so an
       // unconverged refactor loop is logged and stopped — NOT a convergence
       // failure, unlike Phase A's open fix-now.
-      log(`Refactor-B cap reached for ${pick.taskId} with apply-now work still surfacing — stopping the refactor loop.`)
+      log(`Refactor-B cap reached for ${item.taskId} with apply-now work still surfacing — stopping the refactor loop.`)
       break
     }
-    const applied = await agent(applyPrompt(pick, packPath, JSON.stringify(applyNow, null, 2)), {
+    const applied = await agent(applyPrompt(item, packPath, JSON.stringify(applyNow, null, 2)), {
       label: `apply-B:${round}`,
       schema: APPLY_SCHEMA,
     })
     const results = arr(applied, 'results')
     for (const res of results) {
       if (res && res.outcome === 'dropped') {
-        droppedRefactors.push({ taskId: pick.taskId, finding: res.finding, reason: res.reason || '(no reason given)' })
-        log(`Refactor dropped for ${pick.taskId}: "${res.finding}" — ${res.reason || '(no reason given)'}`)
+        droppedRefactors.push({ taskId: item.taskId, finding: res.finding, reason: res.reason || '(no reason given)' })
+        log(`Refactor dropped for ${item.taskId}: "${res.finding}" — ${res.reason || '(no reason given)'}`)
       }
     }
   }
@@ -842,11 +920,11 @@ async function refactorPhaseB(pick, carriedDeferred) {
 // deduped (against this run's already-filed set AND the story's existing
 // children) and filed flat under the story at depth+1, bounded by the total
 // cap; the overflow is reported as suppressed-by-cap.
-async function fileSideTasks(pick, depth, carriedDelayed) {
+async function fileSideTasks(item, depth, carriedDelayed) {
   if (carriedDelayed.length === 0) return
   if (depth >= maxDepth) {
-    for (const f of carriedDelayed) residualFindings.push({ taskId: pick.taskId, depth, finding: f })
-    log(`${pick.taskId} is at depth ${depth} (maxDepth ${maxDepth}) — its ${carriedDelayed.length} delayed finding(s) reported as residual, not filed.`)
+    for (const f of carriedDelayed) residualFindings.push({ taskId: item.taskId, depth, finding: f })
+    log(`${item.taskId} is at depth ${depth} (maxDepth ${maxDepth}) — its ${carriedDelayed.length} delayed finding(s) reported as residual, not filed.`)
     return
   }
   phase('File-side-tasks')
@@ -855,7 +933,7 @@ async function fileSideTasks(pick, depth, carriedDelayed) {
   // returns raw origin/finding fields; `findingSignature` canonicalizes them so
   // the signature format lives in exactly one place.
   const existing = await agent(existingSideTasksPrompt(packPath), {
-    label: `dedupe-scan:${pick.taskId}`,
+    label: `dedupe-scan:${item.taskId}`,
     schema: EXISTING_SIDE_TASKS_SCHEMA,
   })
   const existingRows = arr(existing, 'sideTasks')
@@ -866,41 +944,41 @@ async function fileSideTasks(pick, depth, carriedDelayed) {
 
   const toFile = []
   for (const finding of carriedDelayed) {
-    const sig = findingSignature(pick.taskId, finding)
+    const sig = findingSignature(item.taskId, finding)
     if (filedSignatures.has(sig)) {
-      log(`Skipping already-filed delayed finding "${(finding && finding.title) || '(untitled)'}" from ${pick.taskId}.`)
+      log(`Skipping already-filed delayed finding "${(finding && finding.title) || '(untitled)'}" from ${item.taskId}.`)
       continue
     }
     // Claim the signature now so duplicates within the same batch collapse.
     filedSignatures.add(sig)
     if (sideTaskCount + toFile.length >= totalSideTaskCap) {
-      capSuppressed.push({ taskId: pick.taskId, finding })
+      capSuppressed.push({ taskId: item.taskId, finding })
       continue
     }
     const childDepth = depth + 1
     toFile.push({
       signature: sig,
       title: `Refactor: ${(finding && finding.title) || 'deferred finding'}`.slice(0, 120),
-      description: buildSideTaskDescription(childDepth, pick.taskId, finding),
+      description: buildSideTaskDescription(childDepth, item.taskId, finding),
     })
   }
 
-  if (capSuppressed.some((c) => c.taskId === pick.taskId)) {
-    const n = capSuppressed.filter((c) => c.taskId === pick.taskId).length
-    log(`Total side-task cap (${totalSideTaskCap}) reached — ${n} delayed finding(s) from ${pick.taskId} suppressed, not filed.`)
+  if (capSuppressed.some((c) => c.taskId === item.taskId)) {
+    const n = capSuppressed.filter((c) => c.taskId === item.taskId).length
+    log(`Total side-task cap (${totalSideTaskCap}) reached — ${n} delayed finding(s) from ${item.taskId} suppressed, not filed.`)
   }
 
   if (toFile.length > 0) {
-    const filed = await agent(fileSideTasksPrompt(packPath, pick.taskId, toFile), {
-      label: `file-side-tasks:${pick.taskId}`,
+    const filed = await agent(fileSideTasksPrompt(packPath, item.taskId, toFile), {
+      label: `file-side-tasks:${item.taskId}`,
       schema: FILE_SIDE_TASKS_SCHEMA,
     })
     const created = arr(filed, 'created')
     for (const c of created) {
       if (!c || !c.taskId) continue
       sideTaskCount += 1
-      filedSideTasks.push({ originTaskId: pick.taskId, childTaskId: c.taskId, title: c.title, depth: depth + 1 })
-      log(`Filed side-task ${c.taskId} (depth ${depth + 1}) from ${pick.taskId}: "${c.title || ''}".`)
+      filedSideTasks.push({ originTaskId: item.taskId, childTaskId: c.taskId, title: c.title, depth: depth + 1 })
+      log(`Filed side-task ${c.taskId} (depth ${depth + 1}) from ${item.taskId}: "${c.title || ''}".`)
     }
   }
 }
@@ -908,43 +986,69 @@ async function fileSideTasks(pick, depth, carriedDelayed) {
 // Run the full `uv run tox` gate, routing failures to a fix agent and
 // re-verifying until green or the round cap is hit. Throws (Halt / SkipItem) via
 // failConvergence when tox is still red at the cap.
-async function verifyStep(pick, depth) {
+async function verifyStep(item, depth) {
   phase('Verify')
   let lastFailures = ''
   for (let round = 1; round <= VERIFY_CAP; round++) {
     const v = await agent(verifyPrompt(packPath), { label: `tox:${round}`, schema: VERIFY_SCHEMA })
     if (v && v.green) return
     lastFailures = (v && v.failures) || '(no failure detail captured)'
-    log(`tox red round ${round}/${VERIFY_CAP} for ${pick.taskId}; routing failures to a fix agent.`)
+    log(`${roundTag('tox red', round, VERIFY_CAP, item.taskId)}; routing failures to a fix agent.`)
     if (round === VERIFY_CAP) break
-    await agent(fixPrompt(pick, packPath, lastFailures), { label: `fix:${round}` })
+    await agent(fixPrompt(item, packPath, lastFailures), { label: `fix:${round}` })
   }
-  await failConvergence(pick, depth, `uv run tox still red after ${VERIFY_CAP} fix rounds`, lastFailures)
+  await failConvergence(item, depth, `uv run tox still red after ${VERIFY_CAP} fix rounds`, lastFailures)
 }
 
 // Move the work item to in-review then produce its single commit (including the
 // `.tasker` status edit). Throws (Halt / SkipItem) via failConvergence when the
 // commit step fails after a green gate. Records the commit in `processed`.
-async function statusAndCommit(pick, depth, origin) {
+async function statusAndCommit(item, depth, origin) {
   // Move to in-review BEFORE committing so the task-tracker's `.tasker` status
   // edit is part of this work item's commit rather than left dirty and swept
   // into the next item's commit (or stranded uncommitted for the last item).
   phase('Status')
-  await agent(statusPrompt(pick, packPath), { label: `review:${pick.taskId}` })
+  await agent(statusPrompt(item, packPath), { label: `review:${item.taskId}` })
 
   phase('Commit')
-  const commit = await agent(commitPrompt(pick, packPath), { label: `commit:${pick.taskId}`, schema: COMMIT_SCHEMA })
+  const commit = await agent(commitPrompt(item, packPath), { label: `commit:${item.taskId}`, schema: COMMIT_SCHEMA })
   if (!commit) {
     // The commit step itself failed after a green gate. failConvergence halts an
     // original subtask (its green changes, now in-review, left dirty for
     // inspection) or discards a side-task — `git reset --hard` also reverts the
     // in-review status edit back to in-progress — and continues.
-    await failConvergence(pick, depth, 'commit step returned no result', '')
+    await failConvergence(item, depth, 'commit step returned no result', '')
   }
   if (commit.skipped && commit.skipped.length) {
     log(`Skipped untracked files (not staged): ${commit.skipped.join(', ')}`)
   }
-  processed.push({ taskId: pick.taskId, title: pick.title, sha: commit.sha, message: commit.message, depth, origin })
+  processed.push({ taskId: item.taskId, title: item.title, sha: commit.sha, message: commit.message, depth, origin })
+}
+
+// Run one work item through the full per-item pipeline. A pick item flows here
+// whether it arrived alone (a feature subtask) or as one element of a group (a
+// refactor side-task); grouping is uniform so a one-element group is just the
+// degenerate case of the same path.
+async function processItem(item) {
+  // Depth governs whether THIS work item may spawn refactor side-tasks AND which
+  // side of the kind-split a convergence failure takes. Original subtasks carry
+  // no marker (=> depth 0); a filed side-task carries `depth: d`. Its origin
+  // marker is threaded into the report's task -> commit -> origin map.
+  const { depth, origin } = resolveMarker(item.taskId, item.description)
+  log(`Processing ${item.taskId} (depth ${depth}): ${item.title || '(untitled)'}`)
+
+  phase('Implement')
+  const impl = await agent(implementPrompt(item, packPath), { label: `impl:${item.taskId}`, schema: IMPLEMENT_SCHEMA })
+  if (!impl || !impl.green) {
+    // `tdd` never reached green — a convergence failure (throws Halt / SkipItem).
+    await failConvergence(item, depth, 'tdd never reached green targeted tests', (impl && impl.summary) || '')
+  }
+
+  const carriedDeferred = await reviewPhaseA(item, depth)
+  const carriedDelayed = await refactorPhaseB(item, carriedDeferred)
+  await fileSideTasks(item, depth, carriedDelayed)
+  await verifyStep(item, depth)
+  await statusAndCommit(item, depth, origin)
 }
 
 while (processed.length < GUARD_MAX) {
@@ -952,38 +1056,28 @@ while (processed.length < GUARD_MAX) {
   // Exclude everything already attempted this run so a dropped side-task (which
   // `failConvergence` resets back to `pending`) is never re-picked — that would
   // otherwise trip the re-pick guard below and abandon the remaining queue.
-  const pick = await agent(pickPrompt(packPath, Array.from(seen)), { label: 'pick', schema: PICK_SCHEMA })
-  if (!pick || pick.done || !pick.taskId) {
+  const raw = await agent(pickPrompt(packPath, Array.from(seen)), { label: 'pick', schema: PICK_SCHEMA })
+  const pick = normalizePick(raw)
+  // `normalizePick` guarantees done ⇔ items empty, so `pick.done` alone covers
+  // the terminal "nothing to do" case.
+  if (pick.done) {
     log('No pending work items remain.')
     break
   }
-  if (seen.has(pick.taskId)) {
-    // Backstop: the pick agent ignored the exclusion list and re-served an
-    // already-attempted id. Stop rather than risk a loop.
-    log(`Re-picked ${pick.taskId} — stopping to avoid a loop (already attempted this run).`)
+  // Backstop: the pick agent ignored the exclusion list and re-served an
+  // already-attempted id. Stop rather than risk a loop. Every returned item is
+  // checked so a group cannot smuggle a repeat past the guard.
+  const repeat = firstRepeat(pick.items, seen)
+  if (repeat) {
+    log(`Re-picked ${repeat.taskId} — stopping to avoid a loop (already attempted this run).`)
     break
   }
-  seen.add(pick.taskId)
-  // Depth governs whether THIS work item may spawn refactor side-tasks AND which
-  // side of the kind-split a convergence failure takes. Original subtasks carry
-  // no marker (=> depth 0); a filed side-task carries `depth: d`. Its origin
-  // marker is threaded into the report's task -> commit -> origin map.
-  const { depth, origin } = resolveMarker(pick.taskId, pick.description)
-  log(`Processing ${pick.taskId} (depth ${depth}): ${pick.title || '(untitled)'}`)
+  recordSeen(pick.items, seen)
 
   try {
-    phase('Implement')
-    const impl = await agent(implementPrompt(pick, packPath), { label: `impl:${pick.taskId}`, schema: IMPLEMENT_SCHEMA })
-    if (!impl || !impl.green) {
-      // `tdd` never reached green — a convergence failure (throws Halt / SkipItem).
-      await failConvergence(pick, depth, 'tdd never reached green targeted tests', (impl && impl.summary) || '')
-    }
-
-    const carriedDeferred = await reviewPhaseA(pick, depth)
-    const carriedDelayed = await refactorPhaseB(pick, carriedDeferred)
-    await fileSideTasks(pick, depth, carriedDelayed)
-    await verifyStep(pick, depth)
-    await statusAndCommit(pick, depth, origin)
+    // In this slice `items` always has exactly one element; the loop body still
+    // iterates so grouping (a later slice) flows through unchanged.
+    for (const item of pick.items) await processItem(item)
   } catch (e) {
     // The kind-split surfaces here exactly once: SkipItem abandons this work item
     // and continues; Halt ends the run with the report.

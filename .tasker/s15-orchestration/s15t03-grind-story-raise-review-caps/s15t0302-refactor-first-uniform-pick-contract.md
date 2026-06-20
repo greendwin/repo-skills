@@ -1,7 +1,7 @@
 ---
 id: s15t0302
 slug: refactor-first-uniform-pick-contract
-status: pending
+status: in-review
 ---
 
 # Refactor-first, uniform pick contract (single-item groups)

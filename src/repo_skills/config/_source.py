@@ -38,6 +38,11 @@ class SourceConfig(VersionedConfig):
 
     @property
     def active_dir(self) -> str | None:
+        """The canonical write target for new and merged skills.
+
+        The first entry of ``skills_dirs`` is active; the rest are read-only scan
+        locations, so ordering is significant. Returns ``None`` when none configured.
+        """
         return self.skills_dirs[0] if self.skills_dirs else None
 
 

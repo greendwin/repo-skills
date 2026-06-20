@@ -1,7 +1,7 @@
 ---
 id: s08t2305
 slug: orphan-merge-target-active-dir
-status: pending
+status: in-review
 ---
 
 # Orphan merge target = active dir

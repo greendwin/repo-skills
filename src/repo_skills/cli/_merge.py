@@ -401,7 +401,9 @@ def _merge_orphan(
     active_dir = source.config.active_dir
     if active_dir is None:
         raise AppError(
-            f"Source {fmt_ident(source.name)} has no skills directory configured."
+            f"Source {fmt_ident(source.name)} has no skills directory configured.",
+            hint=f"Run {fmt_command('skills source config --skills-dir <dir>')} "
+            "to set one.",
         )
     skill_rel_path = f"{active_dir}/{skill_name}"
     skill_dst = source.repo_root / skill_rel_path

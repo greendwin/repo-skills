@@ -1,5 +1,5 @@
 ---
-id: s14
+id: s15t02
 slug: build-grind-story-workflow-autonomous
 status: done
 ---
@@ -49,9 +49,9 @@ We want a deterministic, reusable `Workflow` script (`.claude/workflows/grind-st
 
 ## Subtasks
 
-- [x] [s14t01](s14t01-tracer-bullet-skeleton-grind-story.md): Tracer bullet: skeleton grind-story loop end-to-end
-- [x] [s14t02](s14t02-phase-a-implement-review-loop.md): Phase A: implement review loop with triage and fix-reconverge
-- [x] [s14t03](s14t03-phase-b-refactor-loop-with.md): Phase B: refactor loop with duplication and thermo-nuclear lenses
-- [x] [s14t04](s14t04-side-task-filing-from-delayed.md): Side-task filing from `delayed` and depth-bounded re-queue
-- [x] [s14t05](s14t05-failure-semantics-and-full-run.md): Failure semantics and full run report
-- [x] [s14t06](s14t06-sync-task-status-into-the.md): Sync task status into the work-item commit
+- [x] [s15t0201](s15t0201-tracer-bullet-skeleton-grind-story.md): Tracer bullet: skeleton grind-story loop end-to-end
+- [x] [s15t0202](s15t0202-phase-a-implement-review-loop.md): Phase A: implement review loop with triage and fix-reconverge
+- [x] [s15t0203](s15t0203-phase-b-refactor-loop-with.md): Phase B: refactor loop with duplication and thermo-nuclear lenses
+- [x] [s15t0204](s15t0204-side-task-filing-from-delayed.md): Side-task filing from `delayed` and depth-bounded re-queue
+- [x] [s15t0205](s15t0205-failure-semantics-and-full-run.md): Failure semantics and full run report
+- [x] [s15t0206](s15t0206-sync-task-status-into-the.md): Sync task status into the work-item commit

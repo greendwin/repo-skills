@@ -1,5 +1,5 @@
 ---
-id: s12
+id: s15t01
 slug: compact-devloop-planning-via-a
 status: done
 ---
@@ -47,7 +47,7 @@ All edited skill files live under `~/.claude` (outside the repo tree); only `/wo
 
 ## Subtasks
 
-- [x] [s12t01](s12t01-author-devtdd-skill-with-plan.md): Fold mode: dispatch into /tdd; extract human routine to a sidecar
-- [x] [s12t02](s12t02-add-execute-mode-to-devtdd.md): Migrate every /dev-tdd reference back to /tdd
-- [x] [s12t03](s12t03-rewrite-devloop-steps-13-to.md): Delete the /dev-tdd skill file
-- [x] [s12t04](s12t04-delete-the-orphaned-tdd-agent.md): Delete the orphaned tdd agent wrapper
+- [x] [s15t0101](s15t0101-author-devtdd-skill-with-plan.md): Fold mode: dispatch into /tdd; extract human routine to a sidecar
+- [x] [s15t0102](s15t0102-add-execute-mode-to-devtdd.md): Migrate every /dev-tdd reference back to /tdd
+- [x] [s15t0103](s15t0103-rewrite-devloop-steps-13-to.md): Delete the /dev-tdd skill file
+- [x] [s15t0104](s15t0104-delete-the-orphaned-tdd-agent.md): Delete the orphaned tdd agent wrapper

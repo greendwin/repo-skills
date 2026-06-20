@@ -2,7 +2,78 @@ from pathlib import Path
 
 from pyfakefs.fake_filesystem import FakeFilesystem
 
-from repo_skills.discovery import find_repo_skills_dir
+from repo_skills.discovery import (
+    DetectKind,
+    detect_skills_dir,
+    find_repo_skills_dir,
+)
+
+
+def test_detect_skills_dir_single_common_parent(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_file(root / "claude/skills/grill-me/SKILL.md")
+    fs.create_file(root / "claude/skills/tdd/SKILL.md")
+
+    result = detect_skills_dir(root)
+    assert result.kind is DetectKind.SINGLE
+    assert result.path == root / "claude/skills"
+
+
+def test_detect_skills_dir_ambiguous(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_file(root / "claude/skills/grill-me/SKILL.md")
+    fs.create_file(root / "copilot/foo/SKILL.md")
+
+    result = detect_skills_dir(root)
+    assert result.kind is DetectKind.AMBIGUOUS
+    assert result.path is None
+
+
+def test_detect_skills_dir_none(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_file(root / "src/module.py")
+
+    result = detect_skills_dir(root)
+    assert result.kind is DetectKind.NONE
+    assert result.path is None
+
+
+def test_detect_skills_dir_deep_nesting(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_file(root / "a/b/c/skill/SKILL.md")
+
+    result = detect_skills_dir(root)
+    assert result.kind is DetectKind.SINGLE
+    assert result.path == root / "a/b/c"
+
+
+def test_detect_skills_dir_ignores_dot_dirs(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_file(root / ".hidden/skill/SKILL.md")
+
+    result = detect_skills_dir(root)
+    assert result.kind is DetectKind.NONE
+    assert result.path is None
+
+
+def test_detect_skills_dir_ignores_nested_dot_dirs(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_file(root / "pkg/skill/SKILL.md")
+    fs.create_file(root / "pkg/.venv/lib/innerskill/SKILL.md")
+
+    result = detect_skills_dir(root)
+    assert result.kind is DetectKind.SINGLE
+    assert result.path == root / "pkg"
+
+
+def test_detect_skills_dir_ignores_nested_skill_file(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_file(root / "pkg/skill/SKILL.md")
+    fs.create_file(root / "pkg/skill/inner/SKILL.md")
+
+    result = detect_skills_dir(root)
+    assert result.kind is DetectKind.SINGLE
+    assert result.path == root / "pkg"
 
 
 def test_find_repo_skills_dir_from_git_root(

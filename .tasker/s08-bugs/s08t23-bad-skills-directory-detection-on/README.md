@@ -42,7 +42,7 @@ status: pending
 ## Subtasks
 
 - [x] [s08t2301](s08t2301-versioned-skillsdirs-config-legacy-migration.md): Versioned skills_dirs config + legacy migration
-- [ ] [s08t2302](s08t2302-depthfree-detection-with-threecase-contract.md): Depth-free detection with three-case contract
+- [x] [s08t2302](s08t2302-depthfree-detection-with-threecase-contract.md): Depth-free detection with three-case contract
 - [ ] [s08t2303](s08t2303-source-init-branching-skillsdir-flag.md): Source init branching + --skills-dir flag
 - [ ] [s08t2304](s08t2304-multidir-scan-collision-exclusion.md): Multi-dir scan + collision exclusion
 - [ ] [s08t2305](s08t2305-orphan-merge-target-active-dir.md): Orphan merge target = active dir

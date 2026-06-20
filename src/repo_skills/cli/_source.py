@@ -20,7 +20,7 @@ from repo_skills.config import (
     save_source_registry,
 )
 from repo_skills.console import console, fmt_data, fmt_ident, fmt_path
-from repo_skills.discovery import detect_skills_dir, resolve_skills_dir
+from repo_skills.discovery import DetectKind, detect_skills_dir, resolve_skills_dir
 from repo_skills.errors import AppError, NoopError
 from repo_skills.git import GitRepo
 from repo_skills.utils import rel_posix, write_text
@@ -132,9 +132,12 @@ def _handle_fresh_init(git: GitRepo, requested: _RequestedChanges) -> None:
 
     if requested.skills_dir is not None:
         rel_skills = requested.skills_dir
-    elif (detected := detect_skills_dir(git.root)) is not None:
-        rel_skills = rel_posix(detected, git.root)
+    elif (detected := detect_skills_dir(git.root)).kind is DetectKind.SINGLE:
+        assert detected.path is not None
+        # SINGLE always carries a path; the None-check is type narrowing
+        rel_skills = rel_posix(detected.path, git.root)
     else:
+        # TODO: when ambigous, we should not just use 'skills' dir, we must raise
         rel_skills = DEFAULT_SKILLS_DIR
         write_text(git.root / rel_skills / GIT_KEEP_FILE, "")
 

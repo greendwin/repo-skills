@@ -7,8 +7,8 @@ export const meta = {
     { title: 'Bootstrap', detail: 'build the shared context pack once per run' },
     { title: 'Pick', detail: 'list the story subtree, take the next pending work item, set it in-progress' },
     { title: 'Implement', detail: 'tdd implement the work item to green targeted tests' },
-    { title: 'Review-A', detail: 'code-reviewer lenses in parallel → triage → tdd fixes fix-now, until clean (cap 5)' },
-    { title: 'Refactor-B', detail: 'refactor-reviewer lenses in parallel → apply-biased triage → tdd applies apply-now behavior-preservingly, until dry (cap 5)' },
+    { title: 'Review-A', detail: 'code-reviewer lenses in parallel → triage → tdd fixes fix-now, until clean (cap 10)' },
+    { title: 'Refactor-B', detail: 'refactor-reviewer lenses in parallel → apply-biased triage → tdd applies apply-now behavior-preservingly, until dry (cap 10)' },
     { title: 'File-side-tasks', detail: 'file delayed refactor findings as depth-bounded, deduped, capped flat side-tasks under the story' },
     { title: 'Verify', detail: 'uv run tox (all envs) green gate, with bounded fix-reconverge' },
     { title: 'Status', detail: 'move the work item to in-review (never done) before committing' },
@@ -101,8 +101,30 @@ function resolveMarker(taskId, description) {
 // `{done: true, items: []}`. Otherwise every well-formed item (one carrying a
 // `taskId`) is kept, the `kind` defaults to `feature` unless the agent tagged it
 // `refactor`, and an items-less-but-not-done result is treated as done so the
-// loop terminates rather than spinning on a malformed pick.
+// loop terminates rather than spinning on a malformed pick. The surviving
+// well-formed members are then clamped to the kind's group cap — one for a
+// feature pick, five for a refactor pick — so the cap holds even when the agent
+// over-serves.
+//
+// The clamp is the deterministic, authoritative backstop: at most `cap` items
+// ever reach `processItem`, regardless of what the agent returns. But the pick
+// agent moves every member it returns to `in-progress` BEFORE returning, so a
+// silent `slice` would strand the over-served members (6+) in a non-terminal
+// `in-progress` status the pick loop never re-selects (it only picks `pending`),
+// orphaning them. To make truncation a loud, self-healing backstop rather than a
+// silent drop, the live (non-done) result also carries `overserved` — the
+// taskIds of the well-formed members dropped beyond the cap — and a clamp logs
+// loudly. The caller resets those ids back to `pending` so they re-enter the
+// queue instead of being orphaned. In the obedient common case the agent honors
+// the hard cap, `slice` is a no-op, and `overserved` is empty (zero cost).
 function normalizePick(raw) {
+  // Grouping bounds enforced regardless of the pick agent's judgment: a
+  // `feature` pick is a single tracer-bullet subtask, so it is clamped to one
+  // item; a `refactor` pick may batch up to five small, local, non-overlapping
+  // side-tasks into one pass. These caps are the hard backstop behind the
+  // prompt's grouping guidance.
+  const FEATURE_GROUP_CAP = 1
+  const REFACTOR_GROUP_CAP = 5
   // The terminal "nothing to do" pick. A fresh instance per call so a caller
   // mutating the returned object can never corrupt a shared sentinel. By
   // construction `done` is true exactly when `items` is empty, and both
@@ -124,7 +146,15 @@ function normalizePick(raw) {
     }))
   if (items.length === 0) return donePick()
   const kind = normalizeKind(raw.kind)
-  return { done: false, kind, items }
+  const cap = kind === 'refactor' ? REFACTOR_GROUP_CAP : FEATURE_GROUP_CAP
+  // The clamp dropped members the agent already moved to `in-progress`: surface
+  // their ids loudly so the caller can reset them to `pending` rather than leave
+  // them orphaned. Empty (and zero-cost) on the obedient common path.
+  const overserved = items.slice(cap).map((it) => it.taskId)
+  if (overserved.length > 0 && typeof log === 'function') {
+    log(`Pick agent over-served a ${kind} group: ${items.length} well-formed members for a hard cap of ${cap}. Truncating and resetting the dropped ${overserved.length} (${overserved.join(', ')}) back to pending so they are not stranded in-progress.`)
+  }
+  return { done: false, kind, items: items.slice(0, cap), overserved }
 }
 
 // Group-aware repeat guard: return the first item of a pick group whose taskId
@@ -200,12 +230,11 @@ const PACK_SCHEMA = {
 
 // The uniform pick contract: a pick is either `done`, or a `kind`-tagged group
 // of `items`. A `feature` pick carries exactly one depth-0 subtask; a `refactor`
-// pick carries one marker-bearing side-task (grouping of up to 5 arrives in a
-// later slice). The loop iterates `items`; the refactor/feature split is
-// currently driven by each item's depth marker (resolveMarker), not `kind` —
-// `kind` is carried for the grouping/branching that arrives in a later slice and
-// is not yet consumed. Even a one-element group flows through the existing
-// per-item machinery unchanged.
+// pick batches 1–5 small, local, non-overlapping marker-bearing side-tasks. The
+// loop iterates `items`. `kind` is consumed in `normalizePick` to pick the group
+// cap (1 for feature, 5 for refactor); the per-item refactor/feature execution
+// split is still driven by each item's depth marker (resolveMarker), not `kind`.
+// Even a one-element group flows through the existing per-item machinery unchanged.
 const PICK_ITEM = {
   type: 'object',
   properties: {
@@ -231,7 +260,7 @@ const PICK_SCHEMA = {
     },
     items: {
       type: 'array',
-      description: 'the chosen work items — exactly one element in this slice (feature: one subtask; refactor: one side-task)',
+      description: 'the chosen work items — a feature pick carries exactly one subtask; a refactor pick batches 1–5 small, local, non-overlapping side-tasks (hard cap 5)',
       items: PICK_ITEM,
     },
   },
@@ -303,6 +332,20 @@ const RESET_SCHEMA = {
     head: { type: 'string', description: 'sha HEAD points at after the reset (the preserved prior commit)' },
   },
   required: ['clean'],
+}
+
+// The over-serve cleanup agent reports which over-served ids it moved back to
+// `pending` so they re-enter the queue instead of being orphaned in-progress.
+const RESET_TO_PENDING_SCHEMA = {
+  type: 'object',
+  properties: {
+    reset: {
+      type: 'array',
+      items: { type: 'string', description: 'a task id moved back to pending' },
+      description: 'the over-served ids reset to pending',
+    },
+  },
+  required: ['reset'],
 }
 
 const VERIFY_SCHEMA = {
@@ -456,23 +499,27 @@ Select the next work item and move it to in-progress:
 2. Among the eligible subtasks — status \`pending\` AND id NOT in the already-attempted list above — classify each by its description:
    - A REFACTOR task carries a \`## Refactor side-task\` marker block in its description.
    - A FEATURE task is an original subtask with NO such marker block.
-3. PREFER refactor tasks: if any eligible refactor task exists, choose the first one (natural order) and set kind="refactor". Otherwise choose the first eligible feature subtask (natural order) and set kind="feature". This drains refactor side-tasks ahead of feature work so feature work lands on already-refactored code.
-4. Degenerate case: if story ${storyId} has NO subtasks at all, the work item is the story task ${storyId} itself with kind="feature" — but only if its own status is \`pending\` and it is not in the already-attempted list.
-5. If no pending work item exists (no eligible pending subtask, and either the story has subtasks or the story itself is not eligible), nothing is left.
+3. PREFER refactor tasks: if any eligible refactor task exists, the pick is a REFACTOR pick (kind="refactor"); otherwise it is a FEATURE pick (kind="feature"). This drains refactor side-tasks ahead of feature work so feature work lands on already-refactored code.
+4. Build the \`items\` group for the chosen kind:
+   - FEATURE pick: choose the FIRST eligible feature subtask (natural order) — EXACTLY ONE item. Feature subtasks are tracer-bullet units with distinct acceptance criteria and must NEVER be batched; never mix a feature task into a refactor group.
+   - REFACTOR pick: starting from the first eligible refactor task (natural order), BATCH a group of small, local, non-overlapping refactor side-tasks to land in one pass. Judge feasible work size from each candidate's description (title/location/severity/suggested-fix/rationale): prefer same-area, non-conflicting changes; STOP adding once the combined change looks too big to land+review cleanly in one pass. The group is 1–5 members — a HARD cap of 5, never more, even when more refactors are eligible; fewer than 5 eligible means a smaller group (1–4); a single eligible refactor is a valid group of one. Every member must be an eligible refactor task (a \`## Refactor side-task\` marker block) and NOT in the already-attempted list.
+5. Degenerate case: if story ${storyId} has NO subtasks at all, the work item is the story task ${storyId} itself with kind="feature" (a single-item group) — but only if its own status is \`pending\` and it is not in the already-attempted list.
+6. If no pending work item exists (no eligible pending subtask, and either the story has subtasks or the story itself is not eligible), nothing is left.
 
 If you selected a work item:
-- Move it (the single item you return) to the \`in-progress\` status role using the set-status verb from the pack BEFORE returning, so a mid-run crash leaves consistent tracker state.
-- Return done=false, kind=<"refactor" or "feature">, and items=[ a single object {taskId:<id>, title:<its title>, isStory:<true only if it is the story task itself>, description:<the work item's verbatim description body, exactly as stored, so the orchestrator can parse any depth marker>} ]. In this slice items has EXACTLY ONE element.
+- Apply the HARD cap of 5 YOURSELF before returning: a REFACTOR group is at most 5 members and a FEATURE group is exactly 1 — never return more. Decide the exact group first, then act on ONLY those members.
+- Move EXACTLY the members you return — and no others — to the \`in-progress\` status role using the set-status verb from the pack BEFORE returning, so a mid-run crash leaves consistent tracker state. Do NOT set \`in-progress\` on any task you are not returning; over-serving (moving more than 5 to in-progress, or moving any you then omit) strands tasks in a non-terminal status.
+- Return done=false, kind=<"refactor" or "feature">, and items=[ one object per member {taskId:<id>, title:<its title>, isStory:<true only if it is the story task itself>, description:<the work item's verbatim description body, exactly as stored, so the orchestrator can parse any depth marker>} ]. A FEATURE pick carries EXACTLY ONE item; a REFACTOR pick carries 1–5 items (hard cap 5).
 
 If nothing is left, return done=true.
 
 Only query and set status — do not implement anything, do not edit files.`
 
-const implementPrompt = (pick, packPath) => `You are the implementation step of an autonomous grind-story workflow, running the \`tdd\` skill in execute mode.
+const implementPrompt = (item, packPath) => `You are the implementation step of an autonomous grind-story workflow, running the \`tdd\` skill in execute mode.
 
 Read the context pack first: ${packPath}.
 
-Work item: task ${pick.taskId}${pick.isStory ? ' (this IS the story task itself — it has no subtasks)' : ''}. Load it via the read-task verb from the pack${pick.isStory ? '.' : `, and read parent story ${storyId} for the decisions/constraints that scope it.`}
+Work item: task ${item.taskId}${item.isStory ? ' (this IS the story task itself — it has no subtasks)' : ''}. Load it via the read-task verb from the pack${item.isStory ? '.' : `, and read parent story ${storyId} for the decisions/constraints that scope it.`}
 
 The plan is PRE-APPROVED. Use \`tdd\`'s "skip review" path: skip planning/approval, go straight to tracer-bullet red→green cycles. Implement the task's acceptance criteria with behavior-level tests through the public interface. Honor the conventions in the pack (\`assert_invoke\` not \`CliRunner\`, \`pyfakefs\` not \`tmp_path\`, \`monkeypatch\` not \`unittest.mock.patch\`; no \`type: ignore\`; no inline imports; no task ids in code comments).
 
@@ -482,9 +529,9 @@ Boundaries — do NOT commit, do NOT change the task's status, do NOT run the fu
 
 Report what you implemented and which files you created or changed.`
 
-const resetPrompt = (pick, baseRef) => `You are the discard step of an autonomous grind-story workflow. A side-task could not converge and its uncommitted changes must be thrown away so the run can continue from a clean tree.
+const resetPrompt = (item, baseRef) => `You are the discard step of an autonomous grind-story workflow. A side-task could not converge and its uncommitted changes must be thrown away so the run can continue from a clean tree.
 
-Discard ONLY the uncommitted working-tree changes for the failed side-task ${pick.taskId}, preserving every prior commit on the \`grind/${storyId}\` branch:
+Discard ONLY the uncommitted working-tree changes for the failed side-task ${item.taskId}, preserving every prior commit on the \`grind/${storyId}\` branch:
 1. \`git reset --hard HEAD\` — this resets tracked changes back to the last commit (the prior subtask, already committed). It must NOT move the branch off its commits and must NOT touch \`${baseRef}\` history.
 2. \`git clean -fd\` to remove untracked files this side-task created — but NEVER delete anything outside the working tree (the context pack under \`/tmp/grind-story/\` is outside the tree and must be left alone).
 3. Confirm with \`git status --porcelain\` (expect empty) and \`git rev-parse HEAD\`.
@@ -644,6 +691,14 @@ Staging:
 
 Return the resulting commit sha (\`git rev-parse HEAD\`), the exact message you used, and the list of skipped untracked files.`
 
+const resetToPendingPrompt = (packPath, ids, kind) => `You are the over-serve cleanup step of an autonomous grind-story workflow.
+
+Read the context pack first: ${packPath} (it resolves this repo's task-tracker verbs and status roles).
+
+The pick agent over-served a ${kind} group: it moved more members to \`in-progress\` than that group's hard cap allows, so these tasks were truncated from the batch and must NOT be left stranded in a non-terminal status. Move EACH of these tasks back to the \`pending\` status role using the set-status verb resolved in the pack so a later pick can re-select them: ${ids.join(', ')}.
+
+Do nothing else. Set status only — do not implement anything, do not edit other files. Confirm the ids you reset.`
+
 const statusPrompt = (pick, packPath) => `You are the status step of an autonomous grind-story workflow.
 
 Read the context pack first: ${packPath}.
@@ -678,9 +733,17 @@ For each item, create the subtask and report its new id alongside the item's \`s
 Return one entry per item: \`{taskId: <new id>, title: <title used>, signature: <the item's signature>}\`.`
 
 // ---- orchestration -------------------------------------------------------
-const VERIFY_CAP = 5
-const REVIEW_CAP = 10
 const GUARD_MAX = 100
+
+// Single source of truth for each bounded retry loop's round cap, so a phase and
+// its cap can never drift apart and the split (a smaller Verify cap, a larger
+// review/refactor cap) lives in one pure, testable place. Verify is cheap to
+// re-run, so it caps low; Review-A and Refactor-B converge slower and share the
+// higher cap. Pure (no free variables) so it is reachable through the test seam.
+function phaseCap(phase) {
+  const PHASE_CAPS = { 'Verify': 5, 'Review-A': 10, 'Refactor-B': 10 }
+  return PHASE_CAPS[phase]
+}
 
 // Shared `<phase> round <round>/<cap> for <taskId>` log prefix for the three
 // structurally identical bounded retry loops (Review-A, Refactor-B, Verify), so
@@ -796,13 +859,15 @@ async function runLensRound(lenses, promptFn, labelPrefix, round) {
 async function reviewPhaseA(item, depth) {
   const carriedDeferred = []
   if (reviewLenses.length === 0) return carriedDeferred
-  phase('Review-A')
+  const ph = 'Review-A'
+  phase(ph)
+  const cap = phaseCap(ph)
   let openFixNow = []
-  for (let round = 1; round <= REVIEW_CAP; round++) {
+  for (let round = 1; round <= cap; round++) {
     const findings = await runLensRound(reviewLenses, lensPrompt, 'lens', round)
     if (findings.length === 0) {
       openFixNow = []
-      log(`${roundTag('Review-A', round, REVIEW_CAP, item.taskId)}: lenses raised no findings.`)
+      log(`${roundTag(ph, round, cap, item.taskId)}: lenses raised no findings.`)
       break
     }
 
@@ -820,12 +885,12 @@ async function reviewPhaseA(item, depth) {
 
     if (fixNow.length === 0) {
       openFixNow = []
-      log(`${roundTag('Review-A', round, REVIEW_CAP, item.taskId)}: no fix-now findings; ${deferred.length} carried to Phase B.`)
+      log(`${roundTag(ph, round, cap, item.taskId)}: no fix-now findings; ${deferred.length} carried to Phase B.`)
       break
     }
     openFixNow = fixNow
-    log(`${roundTag('Review-A', round, REVIEW_CAP, item.taskId)}: ${fixNow.length} fix-now finding(s); routing to a tdd fix agent.`)
-    if (round === REVIEW_CAP) break
+    log(`${roundTag(ph, round, cap, item.taskId)}: ${fixNow.length} fix-now finding(s); routing to a tdd fix agent.`)
+    if (round === cap) break
     await agent(reviewFixPrompt(item, packPath, JSON.stringify(fixNow, null, 2)), { label: `fix-A:${round}` })
   }
   if (openFixNow.length > 0) {
@@ -838,12 +903,12 @@ async function reviewPhaseA(item, depth) {
       taskId: item.taskId,
       depth,
       count: openFixNow.length,
-      detail: `${openFixNow.length} fix-now finding(s) still open after ${REVIEW_CAP} Review-A rounds`,
+      detail: `${openFixNow.length} fix-now finding(s) still open after ${cap} Review-A rounds`,
     })
     await failConvergence(
       item,
       depth,
-      `${openFixNow.length} fix-now finding(s) still open at the ${REVIEW_CAP}-round cap`,
+      `${openFixNow.length} fix-now finding(s) still open at the ${cap}-round cap`,
       JSON.stringify(openFixNow, null, 2),
     )
   }
@@ -857,8 +922,10 @@ async function reviewPhaseA(item, depth) {
 async function refactorPhaseB(item, carriedDeferred) {
   const carriedDelayed = []
   if (refactorLenses.length === 0) return carriedDelayed
-  phase('Refactor-B')
-  for (let round = 1; round <= REVIEW_CAP; round++) {
+  const ph = 'Refactor-B'
+  phase(ph)
+  const cap = phaseCap(ph)
+  for (let round = 1; round <= cap; round++) {
     const findings = await runLensRound(refactorLenses, refactorLensPrompt, 'refactor-lens', round)
     // Only the first round merges the Phase A deferred findings — later rounds
     // re-review the now-refactored tree fresh so they cannot re-surface stale
@@ -866,7 +933,7 @@ async function refactorPhaseB(item, carriedDeferred) {
     if (round === 1) findings.push(...carriedDeferred)
 
     if (findings.length === 0) {
-      log(`${roundTag('Refactor-B', round, REVIEW_CAP, item.taskId)}: lenses raised no findings — loop dry.`)
+      log(`${roundTag(ph, round, cap, item.taskId)}: lenses raised no findings — loop dry.`)
       break
     }
 
@@ -887,11 +954,11 @@ async function refactorPhaseB(item, carriedDeferred) {
     for (const f of outOfScope) outOfScopeFindings.push({ taskId: item.taskId, finding: f })
 
     if (applyNow.length === 0) {
-      log(`${roundTag('Refactor-B', round, REVIEW_CAP, item.taskId)}: no apply-now; ${delayed.length} delayed, ${outOfScope.length} out-of-scope — loop dry.`)
+      log(`${roundTag(ph, round, cap, item.taskId)}: no apply-now; ${delayed.length} delayed, ${outOfScope.length} out-of-scope — loop dry.`)
       break
     }
-    log(`${roundTag('Refactor-B', round, REVIEW_CAP, item.taskId)}: ${applyNow.length} apply-now refactoring(s); routing to a tdd apply agent.`)
-    if (round === REVIEW_CAP) {
+    log(`${roundTag(ph, round, cap, item.taskId)}: ${applyNow.length} apply-now refactoring(s); routing to a tdd apply agent.`)
+    if (round === cap) {
       // Phase B is best-effort and behavior-preserving (tests stay green), so an
       // unconverged refactor loop is logged and stopped — NOT a convergence
       // failure, unlike Phase A's open fix-now.
@@ -963,8 +1030,8 @@ async function fileSideTasks(item, depth, carriedDelayed) {
     })
   }
 
-  if (capSuppressed.some((c) => c.taskId === item.taskId)) {
-    const n = capSuppressed.filter((c) => c.taskId === item.taskId).length
+  const n = capSuppressed.filter((c) => c.taskId === item.taskId).length
+  if (n > 0) {
     log(`Total side-task cap (${totalSideTaskCap}) reached — ${n} delayed finding(s) from ${item.taskId} suppressed, not filed.`)
   }
 
@@ -987,17 +1054,19 @@ async function fileSideTasks(item, depth, carriedDelayed) {
 // re-verifying until green or the round cap is hit. Throws (Halt / SkipItem) via
 // failConvergence when tox is still red at the cap.
 async function verifyStep(item, depth) {
-  phase('Verify')
+  const ph = 'Verify'
+  phase(ph)
+  const cap = phaseCap(ph)
   let lastFailures = ''
-  for (let round = 1; round <= VERIFY_CAP; round++) {
+  for (let round = 1; round <= cap; round++) {
     const v = await agent(verifyPrompt(packPath), { label: `tox:${round}`, schema: VERIFY_SCHEMA })
     if (v && v.green) return
     lastFailures = (v && v.failures) || '(no failure detail captured)'
-    log(`${roundTag('tox red', round, VERIFY_CAP, item.taskId)}; routing failures to a fix agent.`)
-    if (round === VERIFY_CAP) break
+    log(`${roundTag(ph, round, cap, item.taskId)}: tox red; routing failures to a fix agent.`)
+    if (round === cap) break
     await agent(fixPrompt(item, packPath, lastFailures), { label: `fix:${round}` })
   }
-  await failConvergence(item, depth, `uv run tox still red after ${VERIFY_CAP} fix rounds`, lastFailures)
+  await failConvergence(item, depth, `uv run tox still red after ${cap} fix rounds`, lastFailures)
 }
 
 // Move the work item to in-review then produce its single commit (including the
@@ -1064,6 +1133,20 @@ while (processed.length < GUARD_MAX) {
     log('No pending work items remain.')
     break
   }
+  // Self-heal an over-serve: the pick agent moved more members to `in-progress`
+  // than the hard cap allows, so `normalizePick` truncated the batch and surfaced
+  // the dropped ids. Reset them to `pending` (only an agent can write the tracker)
+  // so they re-enter the queue on a later pick instead of being orphaned
+  // in-progress. They are NOT recorded in `seen` — they were never attempted.
+  // This runs before the repeat-guard below on purpose: over-served ids must
+  // return to `pending` regardless of whether this run continues or halts, so the
+  // tracker is left clean for the next invocation either way.
+  if (pick.overserved && pick.overserved.length) {
+    await agent(resetToPendingPrompt(packPath, pick.overserved, pick.kind), {
+      label: 'reset-overserved',
+      schema: RESET_TO_PENDING_SCHEMA,
+    })
+  }
   // Backstop: the pick agent ignored the exclusion list and re-served an
   // already-attempted id. Stop rather than risk a loop. Every returned item is
   // checked so a group cannot smuggle a repeat past the guard.
@@ -1075,8 +1158,8 @@ while (processed.length < GUARD_MAX) {
   recordSeen(pick.items, seen)
 
   try {
-    // In this slice `items` always has exactly one element; the loop body still
-    // iterates so grouping (a later slice) flows through unchanged.
+    // A feature pick carries one item; a refactor pick batches 1–5. The loop
+    // body iterates uniformly so a one-element group is just the degenerate case.
     for (const item of pick.items) await processItem(item)
   } catch (e) {
     // The kind-split surfaces here exactly once: SkipItem abandons this work item

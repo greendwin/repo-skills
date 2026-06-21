@@ -1,11 +1,6 @@
-// Behavior-level tests for the grind-story multi-item repeat guard.
-//
-// `grind-story.js` is loaded by the harness as a function body (it ends in a
-// top-level `return`), so it cannot be imported directly. These tests extract
-// the pure `firstRepeat` and `recordSeen` helpers from the source by name and
-// evaluate them in isolation, exercising the group-aware repeat-guard contract
-// through that public seam. Run with:
-// `node --test .claude/workflows/grind-story.repeat-guard.test.mjs`.
+// Behavior-level tests for `firstRepeat`/`recordSeen` — extracted from
+// grind-story.js via _extract-fn.mjs (see that file for why they are sliced
+// rather than imported). Exercises the group-aware repeat-guard contract.
 
 import test from 'node:test'
 import assert from 'node:assert/strict'

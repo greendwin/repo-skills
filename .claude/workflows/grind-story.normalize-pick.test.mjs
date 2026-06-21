@@ -1,10 +1,6 @@
-// Behavior-level tests for the grind-story pick contract normalization.
-//
-// `grind-story.js` is loaded by the harness as a function body (it ends in a
-// top-level `return`), so it cannot be imported directly. These tests extract
-// the pure `normalizePick` helper from the source by name and evaluate it in
-// isolation, exercising the uniform `{done, kind, items}` contract through that
-// public seam. Run with: `node --test '.claude/workflows/*.test.mjs'`.
+// Behavior-level tests for `normalizePick` — extracted from grind-story.js via
+// _extract-fn.mjs (see that file for why it is sliced rather than imported).
+// Exercises the uniform `{done, kind, items}` contract through that public seam.
 
 import test from 'node:test'
 import assert from 'node:assert/strict'

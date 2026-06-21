@@ -57,7 +57,7 @@ status: in-progress
 
 - [~] [s15t0301](s15t0301-split-the-review-loop-cap.md): **review** Split the review-loop cap from the verify cap
 - [~] [s15t0302](s15t0302-refactor-first-uniform-pick-contract.md): **review** Refactor-first, uniform pick contract (single-item groups)
-- [ ] [s15t0303](s15t0303-batched-refactor-pick-group-up.md): Batched refactor pick (group up to 5)
+- [~] [s15t0303](s15t0303-batched-refactor-pick-group-up.md): **review** Batched refactor pick (group up to 5)
 - [ ] [s15t0304](s15t0304-one-pass-group-execution-apply.md): One-pass group execution: apply + single commit
 - [ ] [s15t0305](s15t0305-drop-cancel-semantics-for-refactor.md): Drop/cancel semantics for refactor tasks
 - [ ] [s15t0306](s15t0306-refactor-round-loop-with-cap.md): Refactor: round-loop-with-cap-break skeleton duplicated across three phases

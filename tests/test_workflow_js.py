@@ -16,6 +16,16 @@ from tests._node_gate import (
 WORKFLOWS_DIR = Path(__file__).resolve().parent.parent / ".claude" / "workflows"
 
 
+def _as_text(stream: str | bytes | None) -> str:
+    """Render a captured subprocess stream as text for a failure message."""
+
+    if stream is None:
+        return ""
+    if isinstance(stream, bytes):
+        return stream.decode(errors="replace")
+    return stream
+
+
 def _js_test_files() -> list[Path]:
     return sorted(WORKFLOWS_DIR.glob("*.test.mjs"))
 
@@ -33,11 +43,24 @@ def test_workflow_js_suite_passes() -> None:
     test_files = _js_test_files()
     assert test_files, "expected at least one .test.mjs suite under .claude/workflows"
 
-    result = subprocess.run(
-        ["node", "--test", *[str(path) for path in test_files]],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["node", "--test", *[str(path) for path in test_files]],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired as expired:
+        # `text=True` makes the captured streams str, but `TimeoutExpired`
+        # types them as `str | bytes | None`; render defensively so a timed-out
+        # run reports readable output regardless of the captured type.
+        stdout = _as_text(expired.stdout)
+        stderr = _as_text(expired.stderr)
+        pytest.fail(
+            "workflow JS test suite timed out before completing:\n"
+            f"stdout:\n{stdout}\n"
+            f"stderr:\n{stderr}"
+        )
 
     assert result.returncode == 0, (
         "workflow JS test suite failed:\n"

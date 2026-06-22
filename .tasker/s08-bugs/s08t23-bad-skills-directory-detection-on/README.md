@@ -47,7 +47,7 @@ status: in-progress
 - [~] [s08t2304](s08t2304-multidir-scan-collision-exclusion.md): **review** Multi-dir scan + collision exclusion
 - [~] [s08t2305](s08t2305-orphan-merge-target-active-dir.md): **review** Orphan merge target = active dir
 - [~] [s08t2306](s08t2306-status-shows-zeroskill-sources.md): **review** Status shows zero-skill sources
-- [ ] [s08t2307](s08t2307-remove-dead-detection-helpers.md): Remove dead detection helpers
+- [~] [s08t2307](s08t2307-remove-dead-detection-helpers.md): **review** Remove dead detection helpers
 - [~] [s08t2308](s08t2308-resolve-broken-source-json-handling.md): **review** Resolve broken source.json handling (duplicate message / fatal-vs-graceful)
 - [~] [s08t2309](s08t2309-move-v0-migration-off-sourceconfig.md): **review** Move v0 migration off SourceConfig into a dedicated _SourceConfigV0 model
 - [~] [s08t2310](s08t2310-unify-versioned-config-migration-via.md): **review** Unify versioned-config migration via a raw-dict / migrate hook on load_versioned_config

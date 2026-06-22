@@ -8,33 +8,11 @@ import typer
 from typer_di import Depends
 
 from repo_skills.config import Source
-from repo_skills.discovery import find_git_root, find_install_dir, find_repo_skills_dir
+from repo_skills.discovery import find_git_root, find_install_dir
 from repo_skills.errors import AppError
 from repo_skills.git import GitRepo, SyncedRepo, ensure_on_branch
 from repo_skills.git_real import RealGitRepo
 from repo_skills.manifest import default_manifest_path
-
-
-def resolve_repo_dir(
-    repo_skills_dir: Annotated[
-        Optional[str],
-        typer.Option(
-            "--repo-skills-dir",
-            help="Path to the repo skills directory.",
-            file_okay=False,
-            dir_okay=True,
-            exists=True,
-        ),
-    ] = None,
-) -> Path:
-    if repo_skills_dir:
-        return Path(repo_skills_dir)
-
-    repo_dir = find_repo_skills_dir()
-    if repo_dir is None:
-        raise AppError("Cannot find skills repo. Run from within the repo.")
-
-    return repo_dir
 
 
 def resolve_install_dir_opt(

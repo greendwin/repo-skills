@@ -6,7 +6,7 @@ from enum import Enum, auto
 from pathlib import Path
 
 from .config import iter_skill_dirs
-from .manifest import Manifest, default_install_dir, default_manifest_path
+from .manifest import default_install_dir
 
 _GIT_DIR = ".git"
 
@@ -90,30 +90,6 @@ def normalize_repo_dir(git_root: Path, skills_dir: str) -> Path | None:
         return None
 
     return target
-
-
-def find_repo_skills_dir(
-    cwd: Path | None = None,
-    manifest_path: Path | None = None,
-) -> Path | None:
-    if cwd is None:
-        cwd = Path.cwd()
-    root = find_git_root(cwd)
-    if root is not None:
-        skills_dir = root / "skills"
-        if skills_dir.is_dir():
-            return skills_dir
-
-    if manifest_path is None:
-        manifest_path = default_manifest_path()
-
-    manifest = Manifest.load(manifest_path)
-    if manifest.repo_path is not None:
-        skills_dir = Path(manifest.repo_path) / "skills"
-        if skills_dir.is_dir():
-            return skills_dir
-
-    return None
 
 
 def find_install_dir() -> Path | None:

@@ -1,7 +1,7 @@
 ---
 id: s15t0313
 slug: refactor-repeat-guard-backstop-runs
-status: pending
+status: in-review
 ---
 
 # Refactor: Repeat-guard backstop runs after the pick agent has already moved the re-served task to in-progress

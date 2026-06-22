@@ -1,7 +1,7 @@
 ---
 id: s15t0312
 slug: refactor-normalizepick-can-silently-strip
-status: pending
+status: in-review
 ---
 
 # Refactor: normalizePick can silently strip an item the pick agent already moved to in-progress, leaving a task stranded

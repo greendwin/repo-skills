@@ -1,7 +1,7 @@
 ---
 id: s15t0311
 slug: refactor-normalizepick-test-asserts-shape
-status: pending
+status: done
 ---
 
 # Refactor: normalizePick test asserts shape but not the documented 'one-element in this slice' invariant for multi-item i

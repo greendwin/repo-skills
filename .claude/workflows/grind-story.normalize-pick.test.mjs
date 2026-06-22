@@ -13,13 +13,15 @@ const normalizePick = extractFunction('normalizePick')
 // pick so the terminal shape lives in one place across the suite.
 const DONE = { done: true, kind: 'feature', items: [] }
 
-test('a done pick collapses to an empty feature group', () => {
+test('a done pick collapses to an empty feature group with no stalled marker', () => {
   assert.deepEqual(normalizePick({ done: true }), DONE)
+  assert.equal(normalizePick({ done: true }).stalled, undefined)
 })
 
-test('a null/shapeless pick is treated as done', () => {
+test('a null/shapeless pick is treated as a genuine done, not a stall', () => {
   assert.deepEqual(normalizePick(null), DONE)
   assert.deepEqual(normalizePick(undefined), DONE)
+  assert.equal(normalizePick(null).stalled, undefined)
 })
 
 test('a feature pick yields kind feature with its single item', () => {
@@ -75,8 +77,24 @@ test('isStory is preserved only when literally true', () => {
   assert.equal(truthy.items[0].isStory, false)
 })
 
-test('a non-done pick with no usable items terminates the loop', () => {
-  assert.deepEqual(normalizePick({ done: false, items: [] }), DONE)
-  assert.deepEqual(normalizePick({ done: false }), DONE)
-  assert.deepEqual(normalizePick({ done: false, items: 'nope' }), DONE)
+test('a non-done pick that collapses to zero usable items is flagged stalled', () => {
+  // The pick agent said done=false but every returned item failed the taskId
+  // filter (or items was not an array), so zero usable members survive. The pick
+  // agent moves items to in-progress BEFORE returning, so this collapse may have
+  // stranded a task — the terminal pick must carry a `stalled` marker so the loop
+  // can warn distinctly rather than report the reassuring generic "nothing left".
+  for (const raw of [
+    { done: false, items: [] },
+    { done: false },
+    { done: false, items: 'nope' },
+    { done: false, items: [{ title: 'no id' }, null, { taskId: '' }] },
+  ]) {
+    const out = normalizePick(raw)
+    // The done ⇔ items-empty invariant the loop relies on still holds...
+    assert.equal(out.done, true)
+    assert.equal(out.kind, 'feature')
+    assert.deepEqual(out.items, [])
+    // ...but unlike a genuine done, the stalled collapse is observable.
+    assert.equal(out.stalled, true)
+  }
 })

@@ -1,7 +1,7 @@
 ---
 id: s15t0306
 slug: refactor-round-loop-with-cap
-status: pending
+status: done
 ---
 
 # Refactor: round-loop-with-cap-break skeleton duplicated across three phases

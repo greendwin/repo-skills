@@ -1,7 +1,7 @@
 ---
 id: s15t0308
 slug: refactor-extractfunction-helper-and-source
-status: pending
+status: done
 ---
 
 # Refactor: extractFunction helper and source-loading preamble duplicated verbatim across the two .test.mjs suites

@@ -1,7 +1,7 @@
 ---
 id: s15t0314
 slug: refactor-for-const-item-of
-status: pending
+status: in-review
 ---
 
 # Refactor: `for (const item of pick.items) await processItem(item)` comment overclaims correctness for future multi-item 

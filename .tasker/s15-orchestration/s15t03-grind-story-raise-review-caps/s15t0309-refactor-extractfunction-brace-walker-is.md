@@ -1,7 +1,7 @@
 ---
 id: s15t0309
 slug: refactor-extractfunction-brace-walker-is
-status: pending
+status: in-review
 ---
 
 # Refactor: extractFunction brace-walker is a fragile test seam (no string/comment awareness)

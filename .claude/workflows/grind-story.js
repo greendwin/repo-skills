@@ -129,12 +129,22 @@ function normalizePick(raw) {
   // mutating the returned object can never corrupt a shared sentinel. By
   // construction `done` is true exactly when `items` is empty, and both
   // early-exit branches below return this same shape — the invariant the loop
-  // relies on (done ⇔ items empty) holds for every normalized pick.
+  // relies on (done ⇔ items empty) holds for every normalized pick. The optional
+  // `stalled` flag distinguishes the two collapses: a genuine "nothing left"
+  // (agent said done, or null/shapeless result) carries no marker, while a
+  // non-done pick whose every item failed the filter is flagged `stalled` —
+  // the pick agent moves items to `in-progress` before returning, so a stalled
+  // collapse may have left a task stranded and the loop must warn distinctly.
   // The kind vocabulary's single normalizer: the default kind is `feature`
   // unless the agent tagged it `refactor`. Used for both the `donePick` default
   // and the live-pick branch so the "default is feature" rule lives in one place.
   const normalizeKind = (k) => (k === 'refactor' ? 'refactor' : 'feature')
-  const donePick = () => ({ done: true, kind: normalizeKind(), items: [] })
+  const donePick = (stalled) => ({
+    done: true,
+    kind: normalizeKind(),
+    items: [],
+    ...(stalled ? { stalled: true } : {}),
+  })
   if (!raw || raw.done) return donePick()
   const items = (Array.isArray(raw.items) ? raw.items : [])
     .filter((it) => it && typeof it.taskId === 'string' && it.taskId)
@@ -144,7 +154,7 @@ function normalizePick(raw) {
       description: typeof it.description === 'string' ? it.description : '',
       isStory: it.isStory === true,
     }))
-  if (items.length === 0) return donePick()
+  if (items.length === 0) return donePick(true)
   const kind = normalizeKind(raw.kind)
   const cap = kind === 'refactor' ? REFACTOR_GROUP_CAP : FEATURE_GROUP_CAP
   // The clamp dropped members the agent already moved to `in-progress`: surface
@@ -808,8 +818,11 @@ let sideTaskCount = 0
 //   `SkipItem` -> abandon just this work item and continue with the next.
 class Halt {
   constructor(failure) { this.failure = failure }
+  get loopAction() { return 'halt' }
 }
-class SkipItem {}
+class SkipItem {
+  get loopAction() { return 'skip' }
+}
 
 // Kind-split on a convergence failure (tdd never green, fix-now open at the cap,
 // or tox red at the cap), mirroring dev-loop's green contract. This function
@@ -1120,6 +1133,33 @@ async function processItem(item) {
   await statusAndCommit(item, depth, origin)
 }
 
+// Drive a group's items through `processOne`, abandoning only the member whose
+// failure classifies as 'skip' (its siblings still run) and stopping the whole
+// group only on a 'halt' failure (returned to the caller so it can end the run).
+// Any other error propagates. Self-contained (no free variables) so it is
+// reachable through the test seam.
+async function runGroup(items, processOne, classify) {
+  for (const item of items) {
+    try {
+      await processOne(item)
+    } catch (e) {
+      const k = classify(e)
+      if (k === 'skip') continue
+      if (k === 'halt') return e
+      throw e
+    }
+  }
+  return null
+}
+
+// Map a caught loop error to the vocabulary `runGroup` consumes by reading the
+// `loopAction` discriminant the `Halt`/`SkipItem` sentinels set on themselves.
+// Self-contained (no free variables) so it is reachable through the test seam.
+function classifyLoopError(e) {
+  const a = e && e.loopAction
+  return a === 'halt' || a === 'skip' ? a : 'rethrow'
+}
+
 while (processed.length < GUARD_MAX) {
   phase('Pick')
   // Exclude everything already attempted this run so a dropped side-task (which
@@ -1128,9 +1168,17 @@ while (processed.length < GUARD_MAX) {
   const raw = await agent(pickPrompt(packPath, Array.from(seen)), { label: 'pick', schema: PICK_SCHEMA })
   const pick = normalizePick(raw)
   // `normalizePick` guarantees done ⇔ items empty, so `pick.done` alone covers
-  // the terminal "nothing to do" case.
+  // the terminal "nothing to do" case. A `stalled` marker distinguishes a
+  // non-done pick that collapsed to zero usable items from a genuine done: the
+  // pick agent moves items to `in-progress` before returning, so a stall may
+  // have stranded a task — warn distinctly instead of the reassuring generic
+  // message. Both still terminate the loop.
   if (pick.done) {
-    log('No pending work items remain.')
+    log(
+      pick.stalled
+        ? 'pick returned no usable items despite done=false — terminating; a task may have been left in-progress by the pick agent (check the tracker).'
+        : 'No pending work items remain.'
+    )
     break
   }
   // Self-heal an over-serve: the pick agent moved more members to `in-progress`
@@ -1150,24 +1198,24 @@ while (processed.length < GUARD_MAX) {
   // Backstop: the pick agent ignored the exclusion list and re-served an
   // already-attempted id. Stop rather than risk a loop. Every returned item is
   // checked so a group cannot smuggle a repeat past the guard.
+  //
+  // Known gap: the pick agent moves every returned member to in-progress
+  // BEFORE returning, so on a repeat-guard break those re-served id(s) — and
+  // any group siblings — may be left stranded in in-progress. The loop does
+  // NOT reset them here; the operator must check the tracker.
   const repeat = firstRepeat(pick.items, seen)
   if (repeat) {
-    log(`Re-picked ${repeat.taskId} — stopping to avoid a loop (already attempted this run).`)
+    log(`Re-picked ${repeat.taskId} — stopping to avoid a loop (already attempted this run); it (and any group siblings) may have been left in-progress by the pick agent — check the tracker.`)
     break
   }
   recordSeen(pick.items, seen)
 
-  try {
-    // A feature pick carries one item; a refactor pick batches 1–5. The loop
-    // body iterates uniformly so a one-element group is just the degenerate case.
-    for (const item of pick.items) await processItem(item)
-  } catch (e) {
-    // The kind-split surfaces here exactly once: SkipItem abandons this work item
-    // and continues; Halt ends the run with the report.
-    if (e instanceof SkipItem) continue
-    if (e instanceof Halt) return report(setup, packPath, processed, refactorOutcomes(), e.failure)
-    throw e
-  }
+  // A feature pick carries one item; a refactor pick batches 1–5. Iterate the
+  // group member-by-member so a SkipItem abandons only the failing member (its
+  // siblings — already moved to in-progress and recorded in `seen` — still run),
+  // while a Halt stops the whole run and is surfaced for the report.
+  const halted = await runGroup(pick.items, processItem, classifyLoopError)
+  if (halted) return report(setup, packPath, processed, refactorOutcomes(), halted.failure)
 }
 
 return report(setup, packPath, processed, refactorOutcomes(), null)

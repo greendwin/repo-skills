@@ -1,7 +1,7 @@
 ---
 id: s15t0310
 slug: refactor-verify-cap-review-cap
-status: pending
+status: done
 ---
 
 # Refactor: VERIFY_CAP / REVIEW_CAP split lands with no test asserting the new caps

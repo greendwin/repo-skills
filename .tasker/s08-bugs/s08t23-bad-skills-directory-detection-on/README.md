@@ -44,7 +44,7 @@ status: in-progress
 - [~] [s08t2301](s08t2301-versioned-skillsdirs-config-legacy-migration.md): **review** Versioned skills_dirs config + legacy migration
 - [~] [s08t2302](s08t2302-depthfree-detection-with-threecase-contract.md): **review** Depth-free detection with three-case contract
 - [~] [s08t2303](s08t2303-source-init-branching-skillsdir-flag.md): **review** Source init branching + --skills-dir flag
-- [~] [s08t2304](s08t2304-multidir-scan-collision-exclusion.md): Multi-dir scan + collision exclusion
+- [~] [s08t2304](s08t2304-multidir-scan-collision-exclusion.md): **review** Multi-dir scan + collision exclusion
 - [~] [s08t2305](s08t2305-orphan-merge-target-active-dir.md): **review** Orphan merge target = active dir
 - [ ] [s08t2306](s08t2306-status-shows-zeroskill-sources.md): Status shows zero-skill sources
 - [ ] [s08t2307](s08t2307-remove-dead-detection-helpers.md): Remove dead detection helpers
@@ -65,3 +65,5 @@ status: in-progress
 - [~] [s08t2322](s08t2322-refactor-path-containment-check-duplicated.md): **review** Refactor: Path-containment check duplicated between new _within helper and _merge.py
 - [~] [s08t2323](s08t2323-refactor-dir-has-skills-uses.md): **review** Refactor: _dir_has_skills uses the heavy classification walk just to ask a yes/no question
 - [ ] [s08t2324](s08t2324-dedup-two-source-test-fixture.md): Dedup two-source test fixture into a helper
+- [ ] [s08t2325](s08t2325-unify-skilldir-walkers-decide-dotdir.md): Unify skill-dir walkers + decide dot-dir pruning policy
+- [ ] [s08t2326](s08t2326-collapse-nestedoverlapping-skillsdirs-at-normalization.md): Collapse nested/overlapping skills_dirs at normalization

@@ -352,6 +352,25 @@ class TestStatusAvailableExcludesInstalled:
         assert "available" not in result.output.lower()
 
 
+class TestStatusMultiDir:
+    def test_distinct_skills_from_every_pinned_dir_render(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        cfg = SourceConfig(name=git_repo.name, skills_dirs=["claude/skills", "copilot"])
+        save_source_config(cfg, git_repo)
+
+        fs.create_file(git_repo / "claude/skills/tdd/SKILL.md", contents="# tdd")
+        fs.create_file(git_repo / "copilot/review/SKILL.md", contents="# review")
+
+        result = assert_invoke("status")
+
+        # the multi-dir merge surfaces a distinct skill from each pinned dir
+        assert_words_in_message(result.output, "tdd", "available")
+        assert_words_in_message(result.output, "review", "available")
+        assert "Warning:" not in result.output
+
+
 class TestStatusCollision:
     def test_collided_skill_dropped_others_render(
         self, fs: FakeFilesystem, git_repo: Path
@@ -374,6 +393,14 @@ class TestStatusCollision:
             line for line in result.output.splitlines() if "available" in line.lower()
         ]
         assert all("tdd" not in row for row in skill_rows)
+        # the warning survives the full CLI render: it names the colliding skill
+        # and lists both colliding rel-paths
+        warning_line = next(
+            line for line in result.output.splitlines() if "Warning" in line
+        )
+        assert "tdd" in warning_line
+        assert "claude/skills/tdd" in warning_line
+        assert "copilot/tdd" in warning_line
 
 
 class TestStatusEmpty:

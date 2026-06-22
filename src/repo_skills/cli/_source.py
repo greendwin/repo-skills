@@ -256,11 +256,9 @@ def _dirs_change_line(old: Sequence[str], new: Sequence[str]) -> str:
     # render the dirs in their stored order: the first dir is the active (merge
     # write-back) target, so a pure reorder is a real change and must not collapse
     # to an identical-looking line the way a sorted view would
-    return f"  dirs: {_join_ordered(old)} → {_join_ordered(new)}"
-
-
-def _join_ordered(dirs: Sequence[str]) -> str:
-    return ", ".join(fmt_data(d) for d in dirs)
+    old_rendered = ", ".join(fmt_data(d) for d in old)
+    new_rendered = ", ".join(fmt_data(d) for d in new)
+    return f"  dirs: {old_rendered} → {new_rendered}"
 
 
 def _rename_installed_skills(old_name: str, new_name: str) -> None:

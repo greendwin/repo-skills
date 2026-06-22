@@ -354,6 +354,30 @@ class TestStatusAvailableExcludesInstalled:
         assert "available" not in result.output.lower()
 
 
+class TestStatusCollision:
+    def test_collided_skill_dropped_others_render(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        cfg = SourceConfig(name=git_repo.name, skills_dirs=["claude/skills", "copilot"])
+        save_source_config(cfg, git_repo)
+
+        fs.create_file(git_repo / "claude/skills/tdd/SKILL.md", contents="# tdd")
+        fs.create_file(git_repo / "copilot/tdd/SKILL.md", contents="# tdd")
+        fs.create_file(git_repo / "copilot/review/SKILL.md", contents="# review")
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "my-project", "review", "available")
+        assert "Warning:" in result.output
+        assert "Error:" not in result.output
+        # tdd is excluded from the source: it must not appear as an available row
+        skill_rows = [
+            line for line in result.output.splitlines() if "available" in line.lower()
+        ]
+        assert all("tdd" not in row for row in skill_rows)
+
+
 class TestStatusEmpty:
     @pytest.mark.usefixtures("fs", "git_repo")
     def test_shows_no_skills_message(self) -> None:

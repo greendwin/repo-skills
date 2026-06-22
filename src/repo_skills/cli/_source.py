@@ -189,7 +189,7 @@ def _detect_fresh_skills_dir(git: GitRepo) -> str:
             "skills directory. Re-run with explicit "
             f"{fmt_data('--skills-dir')} values.",
         )
-    
+
     write_text(git.root / DEFAULT_SKILLS_DIR / GIT_KEEP_FILE, "")
     return DEFAULT_SKILLS_DIR
 
@@ -215,7 +215,7 @@ def _handle_reinit(
         requested.skills_dirs is not None
         and requested.skills_dirs != config.skills_dirs
     ):
-        changes.append(_change_line("dirs", config.skills_dirs, requested.skills_dirs))
+        changes.append(_dirs_change_line(config.skills_dirs, requested.skills_dirs))
         config.skills_dirs = requested.skills_dirs
 
     if changes:
@@ -244,6 +244,17 @@ def _handle_reinit(
 
 def _change_line(label: str, old: _ChangeValue, new: _ChangeValue) -> str:
     return f"  {label}: {fmt_data(old)} → {fmt_data(new)}"
+
+
+def _dirs_change_line(old: Sequence[str], new: Sequence[str]) -> str:
+    # TODO: multiple dirs in a single line looks ugly, need to split them to multple lines
+
+    # pure reorder is a real change and must not collapse to an identical-looking line
+    return f"  dirs: {_join_ordered(old)} → {_join_ordered(new)}"
+
+
+def _join_ordered(dirs: Sequence[str]) -> str:
+    return ", ".join(fmt_data(d) for d in dirs)
 
 
 def _rename_installed_skills(old_name: str, new_name: str) -> None:

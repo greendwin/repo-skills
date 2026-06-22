@@ -557,6 +557,32 @@ class TestSourceInitSkillsDir:
         source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["a", "b"]
 
+    def test_reinit_reordering_dirs_flips_active_dir_and_shows_real_order(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        fs.create_dir(git_repo / "a")
+        fs.create_dir(git_repo / "b")
+        assert_invoke("source", "init", "--skills-dir", "a", "--skills-dir", "b")
+
+        # a pure reorder flips the active (first) dir, the merge write-back target
+        result = assert_invoke(
+            "source", "init", "--skills-dir", "b", "--skills-dir", "a"
+        )
+
+        source_cfg = load_source_config(git_repo)
+        assert source_cfg is not None
+        assert source_cfg.skills_dirs == ["b", "a"]
+        assert source_cfg.active_dir == "b"
+
+        # the change line must reflect the true before/after ordering, not render
+        # both sides identically (a sorted view would print "a, b -> a, b")
+        assert_words_in_message(result.output, "updated", "dirs")
+        dirs_line = next(line for line in result.output.splitlines() if "dirs:" in line)
+        before, sep, after = dirs_line.partition("→")
+        assert sep, f"expected a change arrow in dirs line: {dirs_line!r}"
+        assert before.index("a") < before.index("b")
+        assert after.index("b") < after.index("a")
+
     def test_reinit_with_empty_skills_dir_emits_no_skills_note(
         self, git_repo: Path
     ) -> None:

@@ -4,7 +4,7 @@ slug: refactor-extractfunction-brace-walker-is
 status: in-review
 ---
 
-# Refactor: extractFunction brace-walker is a fragile test seam (no string/comment awareness)
+# [SUPERSEDED→s15t05] Refactor: extractFunction brace-walker fragile seam (seam deleted in s15t05; doc-comment stopgap shipped)
 
 ## Refactor side-task
 - depth: 1

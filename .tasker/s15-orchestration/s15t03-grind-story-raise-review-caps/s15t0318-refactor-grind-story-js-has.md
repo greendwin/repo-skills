@@ -4,7 +4,7 @@ slug: refactor-grind-story-js-has
 status: pending
 ---
 
-# Refactor: grind-story.js has crossed the 1k-line threshold the lens flags
+# [SUPERSEDED→s15t05] Refactor: split grind-story.js >1k lines (now done as the s15t05 module extraction)
 
 ## Refactor side-task
 - depth: 1

@@ -4,7 +4,7 @@ slug: grindstory-typecheck-the-workflow-with
 status: pending
 ---
 
-# Grind-story: type-check the workflow with JSDoc + tsc (no Python bridge)
+# [SUPERSEDED→s15t05] Grind-story: type-check via JSDoc+tsc (obsolete: real TS build supersedes; toolchain/typing survivors absorbed into s15t05)
 
 ## Context
 
@@ -46,6 +46,6 @@ status: pending
 ## Subtasks
 
 - [ ] [s15t0401](s15t0401-node-toolchain-tox-js-env.md): Node toolchain + tox js env, replacing the Python bridge
-- [ ] [s15t0402](s15t0402-wrapperbased-tsc-check-wired-in.md): Wrapper-based tsc check wired in, raw file passing at baseline
+- [ ] [s15t0402](s15t0402-wrapperbased-tsc-check-wired-in.md): [SUPERSEDED→s15t05] Wrapper-based tsc check (obsolete: replaced by real TS build)
 - [ ] [s15t0403](s15t0403-type-the-pure-helpers-domain.md): Type the pure helpers + domain typedefs under @ts-check
 - [ ] [s15t0404](s15t0404-type-the-orchestration-accumulators-pickresult.md): Type the orchestration accumulators + pick-result cast

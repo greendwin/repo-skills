@@ -4,7 +4,7 @@ slug: refactor-make-grindstoryjs-importable-to
 status: pending
 ---
 
-# Refactor: make grind-story.js import()-able to retire the text-slice test seam
+# [SUPERSEDED→s15t05] Refactor: make grind-story.js import()-able / retire text-slice seam (now done via s15t05 real modules)
 
 ## Refactor side-task
 - depth: 1

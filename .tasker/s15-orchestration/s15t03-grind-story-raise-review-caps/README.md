@@ -63,7 +63,7 @@ status: in-progress
 - [x] [s15t0306](s15t0306-refactor-round-loop-with-cap.md): Refactor: round-loop-with-cap-break skeleton duplicated across three phases
 - [ ] [s15t0307](s15t0307-refactor-reviewphasea-and-refactorphaseb-duplicate.md): Refactor: reviewPhaseA and refactorPhaseB duplicate the entire lens-round/triage/cap-break loop skeleton
 - [x] [s15t0308](s15t0308-refactor-extractfunction-helper-and-source.md): Refactor: extractFunction helper and source-loading preamble duplicated verbatim across the two .test.mjs suites
-- [~] [s15t0309](s15t0309-refactor-extractfunction-brace-walker-is.md): **review** Refactor: extractFunction brace-walker is a fragile test seam (no string/comment awareness)
+- [~] [s15t0309](s15t0309-refactor-extractfunction-brace-walker-is.md): **review** [SUPERSEDED→s15t05] Refactor: extractFunction brace-walker fragile seam (seam deleted in s15t05; doc-comment stopgap shipped)
 - [x] [s15t0310](s15t0310-refactor-verify-cap-review-cap.md): Refactor: VERIFY_CAP / REVIEW_CAP split lands with no test asserting the new caps
 - [x] [s15t0311](s15t0311-refactor-normalizepick-test-asserts-shape.md): Refactor: normalizePick test asserts shape but not the documented 'one-element in this slice' invariant for multi-item i
 - [~] [s15t0312](s15t0312-refactor-normalizepick-can-silently-strip.md): **review** Refactor: normalizePick can silently strip an item the pick agent already moved to in-progress, leaving a task stranded
@@ -72,7 +72,7 @@ status: in-progress
 - [ ] [s15t0315](s15t0315-refactor-missing-description-items-silently.md): Refactor: Missing-`description` items silently degrade a refactor pick to depth-0 feature processing
 - [ ] [s15t0316](s15t0316-refactor-top-level-js-suite.md): Refactor: Top-level JS suite test cannot detect a missing per-behavior suite (weak coverage guard)
 - [ ] [s15t0317](s15t0317-refactor-pick-schema-carries-a.md): Refactor: PICK_SCHEMA carries a `kind` field with no consumer (scaffolding ahead of its slice)
-- [ ] [s15t0318](s15t0318-refactor-grind-story-js-has.md): Refactor: grind-story.js has crossed the 1k-line threshold the lens flags
+- [ ] [s15t0318](s15t0318-refactor-grind-story-js-has.md): [SUPERSEDED→s15t05] Refactor: split grind-story.js >1k lines (now done as the s15t05 module extraction)
 - [ ] [s15t0319](s15t0319-refactor-firstrepeat-recordseen-are-thin.md): Refactor: firstRepeat / recordSeen are thin identity wrappers over one-line Set operations
 - [ ] [s15t0320](s15t0320-refactor-kind-is-a-dead.md): Refactor: `kind` is a dead/speculative field threaded through the whole pick contract but never consumed
 - [ ] [s15t0321](s15t0321-refactor-grind-story-js-has.md): Refactor: grind-story.js has grown past 1k lines and the new per-item pipeline makes a module split natural
@@ -80,5 +80,5 @@ status: in-progress
 - [ ] [s15t0323](s15t0323-refactor-kind-is-a-dead.md): Refactor: `kind` is a dead contract field — classification duplicated between the pick agent and `resolveMarker`
 - [ ] [s15t0324](s15t0324-refactor-grind-story-js-continues.md): Refactor: grind-story.js continues to grow past the 1k-line threshold (1100 -> 1185)
 - [ ] [s15t0325](s15t0325-refactor-firstrepeat-recordseen-are-two.md): Refactor: firstRepeat / recordSeen are two identity-thin helpers that always travel as a pair
-- [ ] [s15t0326](s15t0326-refactor-make-grindstoryjs-importable-to.md): Refactor: make grind-story.js import()-able to retire the text-slice test seam
+- [ ] [s15t0326](s15t0326-refactor-make-grindstoryjs-importable-to.md): [SUPERSEDED→s15t05] Refactor: make grind-story.js import()-able / retire text-slice seam (now done via s15t05 real modules)
 - [ ] [s15t0327](s15t0327-refactor-extract-terminalloglinepick-so-the.md): Refactor: extract terminalLogLine(pick) so the stalled-vs-generic terminal log is seam-testable

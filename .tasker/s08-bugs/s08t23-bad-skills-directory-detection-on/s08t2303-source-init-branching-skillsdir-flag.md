@@ -1,7 +1,7 @@
 ---
 id: s08t2303
 slug: source-init-branching-skillsdir-flag
-status: pending
+status: done
 ---
 
 # Source init branching + --skills-dir flag

@@ -43,7 +43,7 @@ status: pending
 
 - [x] [s08t2301](s08t2301-versioned-skillsdirs-config-legacy-migration.md): Versioned skills_dirs config + legacy migration
 - [x] [s08t2302](s08t2302-depthfree-detection-with-threecase-contract.md): Depth-free detection with three-case contract
-- [ ] [s08t2303](s08t2303-source-init-branching-skillsdir-flag.md): Source init branching + --skills-dir flag
+- [x] [s08t2303](s08t2303-source-init-branching-skillsdir-flag.md): Source init branching + --skills-dir flag
 - [ ] [s08t2304](s08t2304-multidir-scan-collision-exclusion.md): Multi-dir scan + collision exclusion
 - [ ] [s08t2305](s08t2305-orphan-merge-target-active-dir.md): Orphan merge target = active dir
 - [ ] [s08t2306](s08t2306-status-shows-zeroskill-sources.md): Status shows zero-skill sources
@@ -52,3 +52,15 @@ status: pending
 - [x] [s08t2309](s08t2309-move-v0-migration-off-sourceconfig.md): Move v0 migration off SourceConfig into a dedicated _SourceConfigV0 model
 - [x] [s08t2310](s08t2310-unify-versioned-config-migration-via.md): Unify versioned-config migration via a raw-dict / migrate hook on load_versioned_config
 - [x] [s08t2311](s08t2311-reconsider-collapsing-broken-gt-none.md): Reconsider collapsing BROKEN-&gt;None in load_source_config; expose ConfigState instead of re-stat via source_config_exists
+- [ ] [s08t2312](s08t2312-refactor-presence-check-abuses-full.md): Refactor: Presence check abuses full detection walk (detect_skills_dir) for a yes/no answer
+- [ ] [s08t2313](s08t2313-refactor-repeated-kind-is-single.md): Refactor: Repeated `kind is SINGLE and path is not None` guard with type-narrowing comment is a leaky DetectResult contr
+- [ ] [s08t2314](s08t2314-refactor-reinit-change-message-displays.md): Refactor: Reinit change message displays skills_dirs sorted, hiding the active-dir order
+- [ ] [s08t2315](s08t2315-refactor-no-skills-note-fires.md): Refactor: "no skills" note fires on a no-op reinit with an unchanged, populated-but-empty dir
+- [ ] [s08t2316](s08t2316-refactor-repeated-skills-dir-values.md): Refactor: Repeated --skills-dir values are stored verbatim without de-duplication
+- [ ] [s08t2317](s08t2317-refactor-parts-prefix-path-containment.md): Refactor: parts-prefix path containment logic conceptually overlaps the AMBIGUOUS equality check
+- [ ] [s08t2318](s08t2318-refactor-normalize-skills-dirs-mixes.md): Refactor: `_normalize_skills_dirs` mixes path validation/normalization with user-facing console output
+- [ ] [s08t2319](s08t2319-refactor-dirs-change-line-renders.md): Refactor: `dirs` change line renders a sorted list, hiding active-dir (first-element) ordering
+- [ ] [s08t2320](s08t2320-refactor-manual-parts-prefix-containment.md): Refactor: Manual `.parts`-prefix containment in `_within` overlaps with the zip-prefix loop in `_deepest_common_ancestor
+- [ ] [s08t2321](s08t2321-refactor-within-prefix-check-could.md): Refactor: _within prefix check could lean on stdlib is_relative_to with the symlink concern documented at the call site
+- [ ] [s08t2322](s08t2322-refactor-path-containment-check-duplicated.md): Refactor: Path-containment check duplicated between new _within helper and _merge.py
+- [ ] [s08t2323](s08t2323-refactor-dir-has-skills-uses.md): Refactor: _dir_has_skills uses the heavy classification walk just to ask a yes/no question

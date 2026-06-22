@@ -53,19 +53,36 @@ def detect_skills_dir(git_root: Path) -> DetectResult:
     parents = [sd.parent for sd in skill_dirs]
     common = _deepest_common_ancestor(parents, fallback=git_root)
 
-    if common == git_root:
+    # compared by `parts` (not `==`) so detection stays correct when the two
+    # paths come from different `Path` flavours (e.g. a real `pathlib` path
+    # built here versus a faked filesystem root)
+    if common.parts == git_root.parts:
         return DetectResult(DetectKind.AMBIGUOUS, None)
 
     return DetectResult(DetectKind.SINGLE, common)
 
 
-def resolve_skills_dir(git_root: Path, skills_dir: str) -> Path | None:
-    candidate = Path(skills_dir)
-    if candidate.is_absolute():
-        return None
+def _within(path: Path, root: Path) -> bool:
+    """Return whether ``path`` is ``root`` itself or nested inside it.
 
-    target = (git_root / candidate).resolve()
-    if git_root.resolve() not in target.parents or not target.is_dir():
+    Both inputs must already be absolute and resolved. Compared by ``parts``
+    (not ``is_relative_to``) to avoid differing or raising across drive-relative
+    or symlinked roots; the prefix check stays robust now both inputs are
+    ``.resolve()``d.
+    """
+    return path.parts[: len(root.parts)] == root.parts
+
+
+def normalize_repo_dir(git_root: Path, skills_dir: str) -> Path | None:
+    """Resolve ``skills_dir`` to an absolute path inside ``git_root``.
+
+    Accepts any path (existing or not, including the repo root itself) as long
+    as it does not escape the repo; an absolute path outside the repo or a
+    ``../`` traversal beyond the root returns ``None``.
+    """
+    root = git_root.resolve()
+    target = (root / skills_dir).resolve()
+    if not _within(target, root):
         return None
 
     return target

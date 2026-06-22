@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Annotated, Optional
@@ -20,13 +21,15 @@ from repo_skills.config import (
     save_source_registry,
 )
 from repo_skills.console import console, fmt_data, fmt_ident, fmt_path
-from repo_skills.discovery import DetectKind, detect_skills_dir, resolve_skills_dir
+from repo_skills.discovery import DetectKind, detect_skills_dir, normalize_repo_dir
 from repo_skills.errors import AppError, NoopError
 from repo_skills.git import GitRepo
 from repo_skills.utils import rel_posix, write_text
 
 from ._app import app
 from ._deps import resolve_git_repo
+
+_ChangeValue = str | list[str]
 
 DEFAULT_SKILLS_DIR = "skills"
 GIT_KEEP_FILE = ".gitkeep"
@@ -54,7 +57,7 @@ _CONFIG_HELP = (
 class _RequestedChanges:
     name: str | None = None
     branch: str | None = None
-    skills_dir: str | None = None
+    skills_dirs: list[str] | None = None
 
 
 def _resolve_requested_changes(
@@ -67,13 +70,15 @@ def _resolve_requested_changes(
         typer.Option("--branch", help="Pin to this branch."),
     ] = None,
     skills_dir: Annotated[
-        Optional[str],
+        Optional[list[str]],
         typer.Option(
-            "--skills-dir", help="Skills root directory (must already exist)."
+            "--skills-dir",
+            help="Skills directory (repeatable); bypasses auto-detection.",
         ),
     ] = None,
 ) -> _RequestedChanges:
-    return _RequestedChanges(name=name, branch=branch, skills_dir=skills_dir)
+    skills_dirs = list(skills_dir) if skills_dir else None
+    return _RequestedChanges(name=name, branch=branch, skills_dirs=skills_dirs)
 
 
 @app.command(name="init", help=_INIT_HELP)
@@ -99,19 +104,12 @@ def source_init(
 
 def _init_or_config_source(git: GitRepo, requested: _RequestedChanges) -> None:
     if requested.branch is not None and not git.list_branches(requested.branch):
-        raise AppError(
-            f"Branch {fmt_ident(requested.branch)} not found.",
-            props={"repo": fmt_path(git.root)},
-        )
+        raise _repo_error(git, f"Branch {fmt_ident(requested.branch)} not found.")
 
-    if requested.skills_dir is not None:
-        resolved = resolve_skills_dir(git.root, requested.skills_dir)
-        if resolved is None:
-            raise AppError(
-                f"Skills dir {fmt_data(requested.skills_dir)} not found in repo.",
-                props={"repo": fmt_path(git.root)},
-            )
-        requested = replace(requested, skills_dir=rel_posix(resolved, git.root))
+    if requested.skills_dirs is not None:
+        normalized = _normalize_skills_dirs(git, requested.skills_dirs)
+        _note_empty_skills_dirs(git, normalized)
+        requested = replace(requested, skills_dirs=normalized)
 
     result = load_source_config(git.root)
     if result.state is ConfigState.OK:
@@ -126,24 +124,44 @@ def _init_or_config_source(git: GitRepo, requested: _RequestedChanges) -> None:
     _handle_fresh_init(git, requested)
 
 
+def _normalize_skills_dirs(git: GitRepo, skills_dirs: Sequence[str]) -> list[str]:
+    normalized: list[str] = []
+    for skills_dir in skills_dirs:
+        resolved = normalize_repo_dir(git.root, skills_dir)
+        if resolved is None:
+            raise _repo_error(
+                git, f"Skills dir {fmt_data(skills_dir)} escapes the repo."
+            )
+        normalized.append(rel_posix(resolved, git.root))
+    return normalized
+
+
+def _repo_error(git: GitRepo, msg: str) -> AppError:
+    return AppError(msg, props={"repo": fmt_path(git.root)})
+
+
+def _note_empty_skills_dirs(git: GitRepo, skills_dirs: Sequence[str]) -> None:
+    for rel in skills_dirs:
+        if not _dir_has_skills(git.root / rel):
+            console.print(
+                f"[dim]Note:[/dim] {fmt_path(rel)} "
+                f"[dim]currently has no skills.[/dim]"
+            )
+
+
+def _dir_has_skills(path: Path) -> bool:
+    return path.is_dir() and detect_skills_dir(path).kind is not DetectKind.NONE
+
+
 def _handle_fresh_init(git: GitRepo, requested: _RequestedChanges) -> None:
     source_name = requested.name or git.root.name
     effective_branch = requested.branch or git.current_branch()
 
-    if requested.skills_dir is not None:
-        rel_skills = requested.skills_dir
-    elif (detected := detect_skills_dir(git.root)).kind is DetectKind.SINGLE:
-        assert detected.path is not None
-        # SINGLE always carries a path; the None-check is type narrowing
-        rel_skills = rel_posix(detected.path, git.root)
-    else:
-        # TODO: when ambigous, we should not just use 'skills' dir, we must raise
-        rel_skills = DEFAULT_SKILLS_DIR
-        write_text(git.root / rel_skills / GIT_KEEP_FILE, "")
+    skills_dirs = requested.skills_dirs or [_detect_fresh_skills_dir(git)]
 
     config = SourceConfig(
         name=source_name,
-        skills_dirs=[rel_skills],
+        skills_dirs=skills_dirs,
         branch=effective_branch,
     )
     save_source_config(config, git.root)
@@ -158,39 +176,49 @@ def _handle_fresh_init(git: GitRepo, requested: _RequestedChanges) -> None:
     console.print(f"Initialized source {fmt_ident(source_name)}.")
 
 
+def _detect_fresh_skills_dir(git: GitRepo) -> str:
+    detected = detect_skills_dir(git.root)
+    if detected.kind is DetectKind.SINGLE:
+        assert detected.path is not None
+        return rel_posix(detected.path, git.root)
+
+    if detected.kind is DetectKind.AMBIGUOUS:
+        raise _repo_error(
+            git,
+            "Skills are spread across the repo root; cannot auto-detect a "
+            "skills directory. Re-run with explicit "
+            f"{fmt_data('--skills-dir')} values.",
+        )
+    
+    write_text(git.root / DEFAULT_SKILLS_DIR / GIT_KEEP_FILE, "")
+    return DEFAULT_SKILLS_DIR
+
+
 def _handle_reinit(
     git_root: Path, config: SourceConfig, requested: _RequestedChanges
 ) -> None:
     old_name = config.name
     effective_name = requested.name if requested.name is not None else old_name
     is_rename = effective_name != old_name
-    cfg_changed = False
     changes: list[str] = []
 
     if is_rename:
         _rename_installed_skills(old_name, effective_name)
         config.name = effective_name
-        cfg_changed = True
-        changes.append(f"  name: {fmt_data(old_name)} → {fmt_data(effective_name)}")
+        changes.append(_change_line("name", old_name, effective_name))
 
     if requested.branch is not None and requested.branch != config.branch:
-        changes.append(
-            f"  branch: {fmt_data(config.branch)} → {fmt_data(requested.branch)}"
-        )
+        changes.append(_change_line("branch", config.branch, requested.branch))
         config.branch = requested.branch
-        cfg_changed = True
 
-    # TODO: if many dirs were provided here, we must show all of them
-    # TODO: also it's invalid to to compare only active_dir,
-    #       since we can want to strip other dirs
-    active_dir = config.active_dir or ""
-    if requested.skills_dir is not None and requested.skills_dir != active_dir:
-        old_dir, new_dir = fmt_data(active_dir), fmt_data(requested.skills_dir)
-        changes.append(f"  skills_dir: {old_dir} → {new_dir}")
-        config.skills_dirs = [requested.skills_dir]
-        cfg_changed = True
+    if (
+        requested.skills_dirs is not None
+        and requested.skills_dirs != config.skills_dirs
+    ):
+        changes.append(_change_line("dirs", config.skills_dirs, requested.skills_dirs))
+        config.skills_dirs = requested.skills_dirs
 
-    if cfg_changed:
+    if changes:
         save_source_config(config, git_root)
 
     registry = load_source_registry()
@@ -212,6 +240,10 @@ def _handle_reinit(
 
     for change in changes:
         console.print(change)
+
+
+def _change_line(label: str, old: _ChangeValue, new: _ChangeValue) -> str:
+    return f"  {label}: {fmt_data(old)} → {fmt_data(new)}"
 
 
 def _rename_installed_skills(old_name: str, new_name: str) -> None:

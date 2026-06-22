@@ -28,6 +28,16 @@ from tests.cli.helper import (
 )
 
 
+def _make_ambiguous_repo(fs: FakeFilesystem, git_repo: Path) -> None:
+    """Populate ``git_repo`` so skills straddle the repo root (ambiguous detection).
+
+    Two skills under distinct top-level dirs share no common dir below the root,
+    which is exactly what makes auto-detection refuse to guess.
+    """
+    create_repo_skill(fs, "tdd", root=git_repo / "claude")
+    create_repo_skill(fs, "review", root=git_repo / "copilot")
+
+
 def _help_command_names(output: str) -> set[str]:
     """Extract the command-name column from a Typer ``--help`` Commands panel.
 
@@ -420,6 +430,77 @@ class TestSourceInitSkillsDir:
 
         assert_words_in_message(result.output, "initialized", "my-project")
 
+    def test_multiple_skills_dirs_stored_verbatim(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        fs.create_dir(git_repo / "a")
+        fs.create_dir(git_repo / "b")
+
+        assert_invoke("source", "init", "--skills-dir", "a", "--skills-dir", "b")
+
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["a", "b"]
+
+    def test_skills_dir_bypasses_detection_for_nonexistent_dir(
+        self, git_repo: Path
+    ) -> None:
+        # the dir need not exist; the first dir doubles as the merge target
+        result = assert_invoke("source", "init", "--skills-dir", "not-yet-here")
+
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["not-yet-here"]
+        assert not (git_repo / "skills").exists()
+
+        assert_words_in_message(result.output, "not-yet-here", "no skills")
+
+    def test_skills_dir_bypasses_detection_when_repo_is_ambiguous(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        _make_ambiguous_repo(fs, git_repo)
+
+        result = assert_invoke("source", "init", "--skills-dir", "claude")
+
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["claude"]
+
+        # a populated explicit dir stays silent: no "no skills" note
+        assert "no skills" not in result.output
+
+    def test_skills_dir_repo_root_is_allowed(self, git_repo: Path) -> None:
+        result = assert_invoke("source", "init", "--skills-dir", ".")
+
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["."]
+
+        assert ". currently has no skills" in result.output
+
+    def test_skills_dir_note_targets_only_the_empty_dir(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        create_repo_skill(fs, "tdd", root=git_repo / "a")
+        fs.create_dir(git_repo / "b")
+
+        result = assert_invoke(
+            "source", "init", "--skills-dir", "a", "--skills-dir", "b"
+        )
+
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["a", "b"]
+
+        # only the empty sibling warns; the populated dir stays silent
+        assert_words_in_message(result.output, "b", "no skills")
+        assert "a currently has no skills" not in result.output
+
     def test_skills_dir_overrides_auto_detection(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
@@ -445,18 +526,6 @@ class TestSourceInitSkillsDir:
         source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["my-skills"]
 
-    def test_explicit_default_name_still_requires_existing_dir(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
-        result = assert_invoke(
-            "source", "init", "--skills-dir", "skills", expect_error=True
-        )
-
-        assert_words_in_message(
-            result.exception.message, "Skills dir", "skills", "not found"
-        )
-        assert not (git_repo / "skills").exists()
-
     def test_reinit_with_skills_dir_updates_value_and_emits_change(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
@@ -471,8 +540,52 @@ class TestSourceInitSkillsDir:
         assert source_cfg.skills_dirs == ["new-skills"]
 
         assert_words_in_message(
-            result.output, "updated", "skills_dir", "skills", "new-skills"
+            result.output, "updated", "dirs", "skills", "new-skills"
         )
+
+    def test_reinit_with_multiple_skills_dirs(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        assert_invoke("source", "init")
+        fs.create_dir(git_repo / "a")
+        fs.create_dir(git_repo / "b")
+
+        assert_invoke("source", "init", "--skills-dir", "a", "--skills-dir", "b")
+
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["a", "b"]
+
+    def test_reinit_with_empty_skills_dir_emits_no_skills_note(
+        self, git_repo: Path
+    ) -> None:
+        assert_invoke("source", "init")
+
+        # the note check runs before the fresh-vs-reinit branch, so it fires on
+        # reinit too when the new dir lacks skills
+        result = assert_invoke("source", "init", "--skills-dir", "still-empty")
+
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["still-empty"]
+
+        assert_words_in_message(result.output, "still-empty", "no skills")
+
+    def test_reinit_without_skills_dir_leaves_list_untouched(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        fs.create_dir(git_repo / "custom")
+        assert_invoke("source", "init", "--skills-dir", "custom")
+
+        result = assert_invoke("source", "init")
+
+        loaded = load_source_config(git_repo)
+        assert loaded.state is ConfigState.OK
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["custom"]
+        assert "dirs:" not in result.output
 
     def test_reinit_with_name_branch_and_skills_dir_together(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -507,7 +620,7 @@ class TestSourceInitSkillsDir:
         assert_words_in_message(result.output, "updated", "new-name")
         assert "name:" in result.output.lower()
         assert "branch:" in result.output.lower()
-        assert "skills_dir:" in result.output.lower()
+        assert "dirs:" in result.output.lower()
 
     def test_reinit_with_same_skills_dir_emits_no_change(
         self, fs: FakeFilesystem, git_repo: Path
@@ -517,7 +630,7 @@ class TestSourceInitSkillsDir:
         result = assert_invoke("source", "init", "--skills-dir", "skills")
 
         assert_words_in_message(result.output, "already initialized", "my-project")
-        assert "skills_dir:" not in result.output
+        assert "dirs:" not in result.output
 
         loaded = load_source_config(git_repo)
         assert loaded.state is ConfigState.OK
@@ -525,39 +638,26 @@ class TestSourceInitSkillsDir:
         assert source_cfg.skills_dirs == ["skills"]
 
     @pytest.mark.parametrize(
-        ("skills_dir", "setup", "extra_words"),
+        ("skills_dir", "setup"),
         [
-            pytest.param("missing", lambda fs: None, ("missing",), id="non-existent"),
             pytest.param(
                 "/elsewhere",
                 lambda fs: fs.create_dir("/elsewhere"),
-                ("/elsewhere",),
                 id="absolute",
             ),
             pytest.param(
                 "../sibling",
                 lambda fs: fs.create_dir("/repos/sibling"),
-                ("../sibling",),
                 id="escaping",
             ),
-            pytest.param(
-                "not-a-dir.txt",
-                lambda fs: fs.create_file(
-                    SOURCE_REPO_ROOT / "not-a-dir.txt", contents=""
-                ),
-                ("not-a-dir.txt",),
-                id="path-is-file",
-            ),
-            pytest.param(".", lambda fs: None, (), id="repo-root"),
         ],
     )
     @pytest.mark.usefixtures("git_repo")
-    def test_error_invalid_skills_dir(
+    def test_error_escaping_skills_dir(
         self,
         fs: FakeFilesystem,
         skills_dir: str,
         setup: Callable[[FakeFilesystem], object],
-        extra_words: tuple[str, ...],
     ) -> None:
         setup(fs)
 
@@ -566,8 +666,47 @@ class TestSourceInitSkillsDir:
         )
 
         assert_words_in_message(
-            result.exception.message, "Skills dir", "not found", *extra_words
+            result.exception.message, "Skills dir", "escapes", skills_dir
         )
+
+    def test_error_escaping_skills_dir_in_multi_dir_list(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        # each element is validated: a valid leading dir does not excuse a later
+        # escaping one
+        fs.create_dir(git_repo / "a")
+        fs.create_dir("/repos/sibling")
+
+        result = assert_invoke(
+            "source",
+            "init",
+            "--skills-dir",
+            "a",
+            "--skills-dir",
+            "../sibling",
+            expect_error=True,
+        )
+
+        assert_words_in_message(
+            result.exception.message, "Skills dir", "escapes", "../sibling"
+        )
+
+
+class TestSourceInitAmbiguous:
+    def test_fresh_init_ambiguous_errors_and_writes_no_config(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        _make_ambiguous_repo(fs, git_repo)
+
+        result = assert_invoke("source", "init", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "--skills-dir")
+        assert load_source_config(git_repo).state is ConfigState.MISSING
+        assert not (git_repo / REPO_SKILLS_DIR / "source.json").exists()
+
+        # the error fires before any save, so no source leaks into the registry
+        registry = load_source_registry()
+        assert "my-project" not in registry.sources
 
 
 VISIBLE_COMMAND_PREFIXES = [

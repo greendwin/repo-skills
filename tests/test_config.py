@@ -733,6 +733,15 @@ class TestCollectSourceSkillsMultiDir:
 
         assert set(skills) == {"tdd"}
 
+    def test_skill_under_hidden_dir_is_not_collected(self, fs: FakeFilesystem) -> None:
+        repo_root = Path("/repo")
+        fs.create_file(repo_root / "skills/.archive/foo/SKILL.md", contents="# foo")
+        fs.create_file(repo_root / "skills/tdd/SKILL.md", contents="# tdd")
+
+        skills = _collect_source_skills(repo_root, ["skills"])
+
+        assert set(skills) == {"tdd"}
+
     def test_missing_dir_is_skipped(self, fs: FakeFilesystem) -> None:
         repo_root = Path("/repo")
         fs.create_file(repo_root / "copilot/review/SKILL.md", contents="# review")

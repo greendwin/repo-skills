@@ -381,6 +381,27 @@ def register_source(
     return cfg
 
 
+def register_two_sources(
+    fs: FakeFilesystem,
+    git_repo: Path,
+    other_repo: Path,
+    *,
+    name: str = "my-project",
+    other_name: str = "other-project",
+) -> None:
+    fs.create_dir(other_repo / ".git")
+
+    registry = SourceRegistry()
+    registry.register_source(name, git_repo)
+    registry.register_source(other_name, other_repo)
+    save_source_registry(registry)
+
+    save_source_config(SourceConfig(name=name, skills_dirs=["skills"]), git_repo)
+    save_source_config(
+        SourceConfig(name=other_name, skills_dirs=["skills"]), other_repo
+    )
+
+
 def save_manifest(skills: dict[str, InstalledSkill]) -> None:
     manifest = SkillManifest()
     for name, entry in skills.items():

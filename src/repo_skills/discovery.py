@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 
-from .config import SKILL_FILE
+from .config import iter_skill_dirs
 from .manifest import Manifest, default_install_dir, default_manifest_path
 
 _GIT_DIR = ".git"
@@ -42,17 +41,8 @@ def find_git_root(start: Path) -> Path | None:
         current = parent
 
 
-def _iter_skill_dirs(root: Path) -> Iterator[Path]:
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-        if SKILL_FILE in filenames:
-            # outermost SKILL.md wins; don't descend into a skill's internals
-            dirnames.clear()
-            yield Path(dirpath)
-
-
 def detect_skills_dir(git_root: Path) -> DetectResult:
-    skill_dirs = list(_iter_skill_dirs(git_root))
+    skill_dirs = list(iter_skill_dirs(git_root))
 
     if not skill_dirs:
         return DetectResult(DetectKind.NONE, None)
@@ -70,7 +60,7 @@ def detect_skills_dir(git_root: Path) -> DetectResult:
 
 
 def has_any_skill(root: Path) -> bool:
-    return next(_iter_skill_dirs(root), None) is not None
+    return next(iter_skill_dirs(root), None) is not None
 
 
 def path_within(path: Path, root: Path) -> bool:

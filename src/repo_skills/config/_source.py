@@ -1,4 +1,3 @@
-import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,7 +8,7 @@ from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
 from repo_skills.utils import rel_posix, save_config
 
-from ._skill_md import SKILL_FILE
+from ._skill_md import iter_skill_dirs
 from ._utils import (
     ConfigState,
     LoadedConfig,
@@ -134,13 +133,9 @@ def _collect_source_skills(
         if not skills_root.is_dir():
             continue
 
-        for dirpath, dirnames, filenames in os.walk(skills_root):
-            if SKILL_FILE not in filenames:
-                continue
-
-            dirnames.clear()
-            name = os.path.basename(dirpath)
-            rel_path = rel_posix(Path(dirpath), repo_root)
+        for skill_dir in iter_skill_dirs(skills_root):
+            name = skill_dir.name
+            rel_path = rel_posix(skill_dir, repo_root)
             # overlapping/nested skills dirs surface the same physical skill at an
             # identical rel_path; that re-sighting is one skill, not a collision,
             # so dedup paths (first-seen order) before partitioning below

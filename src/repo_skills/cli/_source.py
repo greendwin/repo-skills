@@ -26,6 +26,7 @@ from repo_skills.discovery import (
     detect_skills_dir,
     has_any_skill,
     normalize_repo_dir,
+    path_within,
 )
 from repo_skills.errors import AppError, NoopError
 from repo_skills.git import GitRepo
@@ -133,15 +134,42 @@ def _init_or_config_source(git: GitRepo, requested: _RequestedChanges) -> None:
 
 
 def _normalize_skills_dirs(git: GitRepo, skills_dirs: Sequence[str]) -> list[str]:
-    normalized: list[str] = []
+    # collapse nested/overlapping entries so each subtree is walked at most once;
+    # input order is preserved so the active (first) surviving dir keeps priority
+    accepted: list[Path] = []
     for skills_dir in skills_dirs:
         resolved = normalize_repo_dir(git.root, skills_dir)
         if resolved is None:
             raise _repo_error(
                 git, f"Skills dir {fmt_data(skills_dir)} escapes the repo."
             )
-        normalized.append(rel_posix(resolved, git.root))
-    return list(dict.fromkeys(normalized))
+        # an exact repeat is a silent dedup, not a nesting; compare component-wise
+        # (matching the house convention) so cross-flavour paths still collapse
+        if any(a.parts == resolved.parts for a in accepted):
+            continue
+        # strictly inside an already-accepted dir: drop and note. both operands are
+        # already normalize_repo_dir-resolved, so containment is over canonical paths
+        container = next((a for a in accepted if path_within(resolved, a)), None)
+        if container is not None:
+            _note_nested_skills_dir(git.root, resolved, container)
+            continue
+        # absorb any already-accepted dirs strictly inside this broader one
+        kept: list[Path] = []
+        for a in accepted:
+            if path_within(a, resolved):
+                _note_nested_skills_dir(git.root, a, resolved)
+            else:
+                kept.append(a)
+        accepted = [*kept, resolved]
+    return [rel_posix(a, git.root) for a in accepted]
+
+
+def _note_nested_skills_dir(repo_root: Path, dropped: Path, container: Path) -> None:
+    console.print(
+        f"[dim]Note:[/dim] {fmt_path(rel_posix(dropped, repo_root))} "
+        f"[dim]is inside {fmt_path(rel_posix(container, repo_root))}; "
+        f"ignoring the duplicate.[/dim]"
+    )
 
 
 def _note_empty_skills_dirs(repo_root: Path, skills_dirs: Sequence[str]) -> None:

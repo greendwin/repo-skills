@@ -1,7 +1,7 @@
 ---
 id: s08t2306
 slug: status-shows-zeroskill-sources
-status: pending
+status: in-review
 ---
 
 # Status shows zero-skill sources

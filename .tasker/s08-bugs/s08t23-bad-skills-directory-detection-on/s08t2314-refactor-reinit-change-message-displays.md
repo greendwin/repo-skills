@@ -1,7 +1,7 @@
 ---
 id: s08t2314
 slug: refactor-reinit-change-message-displays
-status: pending
+status: done
 ---
 
 # Refactor: Reinit change message displays skills_dirs sorted, hiding the active-dir order

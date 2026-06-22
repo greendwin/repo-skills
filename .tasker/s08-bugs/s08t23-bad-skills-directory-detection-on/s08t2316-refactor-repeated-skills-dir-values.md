@@ -1,7 +1,7 @@
 ---
 id: s08t2316
 slug: refactor-repeated-skills-dir-values
-status: pending
+status: done
 ---
 
 # Refactor: Repeated --skills-dir values are stored verbatim without de-duplication

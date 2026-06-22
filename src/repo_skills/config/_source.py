@@ -147,7 +147,8 @@ def _collect_source_skills(
 
 
 def _warn_collision(name: str, rel_paths: Sequence[str]) -> None:
-    # TODO: multple colliding paths look ugly in a single line, need to split them to multiple lines
+    # TODO: multiple colliding paths look ugly in a single line, need to split
+    #       them to multiple lines
     ordered = list(dict.fromkeys(rel_paths))
     rendered = ", ".join(fmt_data(p) for p in ordered)
     console.print(

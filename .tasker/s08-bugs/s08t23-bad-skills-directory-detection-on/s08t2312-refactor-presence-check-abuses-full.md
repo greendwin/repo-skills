@@ -1,7 +1,7 @@
 ---
 id: s08t2312
 slug: refactor-presence-check-abuses-full
-status: pending
+status: done
 ---
 
 # Refactor: Presence check abuses full detection walk (detect_skills_dir) for a yes/no answer

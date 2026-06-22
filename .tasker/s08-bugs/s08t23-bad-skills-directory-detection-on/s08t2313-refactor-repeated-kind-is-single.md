@@ -1,7 +1,7 @@
 ---
 id: s08t2313
 slug: refactor-repeated-kind-is-single
-status: pending
+status: done
 ---
 
 # Refactor: Repeated `kind is SINGLE and path is not None` guard with type-narrowing comment is a leaky DetectResult contr

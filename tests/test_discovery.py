@@ -1,12 +1,26 @@
 from pathlib import Path
 
+import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.discovery import (
     DetectKind,
+    DetectResult,
     detect_skills_dir,
     find_repo_skills_dir,
+    has_any_skill,
 )
+
+
+def test_require_path_returns_path_for_single() -> None:
+    result = DetectResult(DetectKind.SINGLE, Path("/repo/claude/skills"))
+    assert result.require_path() == Path("/repo/claude/skills")
+
+
+def test_require_path_raises_when_path_absent() -> None:
+    result = DetectResult(DetectKind.NONE, None)
+    with pytest.raises(AssertionError):
+        result.require_path()
 
 
 def test_detect_skills_dir_single_common_parent(fs: FakeFilesystem) -> None:
@@ -74,6 +88,35 @@ def test_detect_skills_dir_ignores_nested_skill_file(fs: FakeFilesystem) -> None
     result = detect_skills_dir(root)
     assert result.kind is DetectKind.SINGLE
     assert result.path == root / "pkg"
+
+
+def test_has_any_skill_finds_nested_skill(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_file(root / "a/b/c/skill/SKILL.md")
+
+    assert has_any_skill(root) is True
+
+
+def test_has_any_skill_returns_false_without_skill(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_file(root / "src/module.py")
+
+    assert has_any_skill(root) is False
+
+
+def test_has_any_skill_ignores_dot_dirs(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_file(root / ".hidden/skill/SKILL.md")
+
+    assert has_any_skill(root) is False
+
+
+def test_has_any_skill_with_nested_skill_file(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_file(root / "pkg/skill/SKILL.md")
+    fs.create_file(root / "pkg/skill/inner/SKILL.md")
+
+    assert has_any_skill(root) is True
 
 
 def test_find_repo_skills_dir_from_git_root(

@@ -443,6 +443,50 @@ class TestSourceInitSkillsDir:
         source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["a", "b"]
 
+    def test_duplicate_skills_dir_collapsed(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        fs.create_dir(git_repo / "a")
+
+        assert_invoke("source", "init", "--skills-dir", "a", "--skills-dir", "a")
+
+        loaded = load_source_config(git_repo)
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["a"]
+
+    def test_skills_dir_dup_after_normalization_collapsed(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        fs.create_dir(git_repo / "a")
+
+        assert_invoke("source", "init", "--skills-dir", "a", "--skills-dir", "./a")
+
+        loaded = load_source_config(git_repo)
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["a"]
+
+    def test_dedup_preserves_first_occurrence_order(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        fs.create_dir(git_repo / "a")
+        fs.create_dir(git_repo / "b")
+
+        assert_invoke(
+            "source",
+            "init",
+            "--skills-dir",
+            "b",
+            "--skills-dir",
+            "a",
+            "--skills-dir",
+            "b",
+        )
+
+        loaded = load_source_config(git_repo)
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["b", "a"]
+        assert source_cfg.active_dir == "b"
+
     def test_skills_dir_bypasses_detection_for_nonexistent_dir(
         self, git_repo: Path
     ) -> None:
@@ -569,8 +613,8 @@ class TestSourceInitSkillsDir:
             "source", "init", "--skills-dir", "b", "--skills-dir", "a"
         )
 
-        source_cfg = load_source_config(git_repo)
-        assert source_cfg is not None
+        loaded = load_source_config(git_repo)
+        source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["b", "a"]
         assert source_cfg.active_dir == "b"
 
@@ -588,8 +632,8 @@ class TestSourceInitSkillsDir:
     ) -> None:
         assert_invoke("source", "init")
 
-        # the note check runs before the fresh-vs-reinit branch, so it fires on
-        # reinit too when the new dir lacks skills
+        # the dir changes from "skills" to "still-empty", so the note fires on
+        # reinit when the newly-set dir lacks skills
         result = assert_invoke("source", "init", "--skills-dir", "still-empty")
 
         loaded = load_source_config(git_repo)
@@ -648,15 +692,21 @@ class TestSourceInitSkillsDir:
         assert "branch:" in result.output.lower()
         assert "dirs:" in result.output.lower()
 
-    def test_reinit_with_same_skills_dir_emits_no_change(
-        self, fs: FakeFilesystem, git_repo: Path
-    ) -> None:
+    def test_reinit_with_same_skills_dir_emits_no_change(self, git_repo: Path) -> None:
         assert_invoke("source", "init")
+
+        # precondition: bootstrap created a populated-but-skill-less skills dir,
+        # so the no-op reinit below can only stay silent for the right reason
+        assert (git_repo / "skills" / ".gitkeep").exists()
+        assert not list((git_repo / "skills").rglob("SKILL.md"))
 
         result = assert_invoke("source", "init", "--skills-dir", "skills")
 
         assert_words_in_message(result.output, "already initialized", "my-project")
         assert "dirs:" not in result.output
+        # a no-op reinit with the unchanged dir must stay silent: no stale
+        # "no skills" note contradicting "already initialized"
+        assert "no skills" not in result.output
 
         loaded = load_source_config(git_repo)
         assert loaded.state is ConfigState.OK

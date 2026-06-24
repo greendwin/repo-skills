@@ -51,6 +51,10 @@ def assert_single_blank_before(lines: list[str], index: int) -> None:
     assert lines[index - 2] != ""
 
 
+def assert_no_double_blank(lines: list[str]) -> None:
+    assert not any(lines[i] == "" and lines[i + 1] == "" for i in range(len(lines) - 1))
+
+
 def source_header_indices(lines: list[str]) -> list[int]:
     return [i for i, line in enumerate(lines) if line.startswith("Source")]
 
@@ -175,7 +179,6 @@ class TestStatusBlankLineSeparation:
     def test_no_leading_blank_when_only_untracked(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        register_source(git_repo)
         fs.create_file(INSTALL_DIR / "mystery" / "SKILL.md", contents="# mystery")
 
         result = assert_invoke("status")
@@ -202,9 +205,7 @@ class TestStatusBlankLineSeparation:
         untracked_index = untracked_header_index(lines)
         assert_single_blank_before(lines, untracked_index)
         # no two consecutive blank lines appear anywhere
-        assert not any(
-            lines[i] == "" and lines[i + 1] == "" for i in range(len(lines) - 1)
-        )
+        assert_no_double_blank(lines)
 
 
 class TestStatusMultiProvider:
@@ -411,6 +412,185 @@ class TestStatusEmpty:
         result = assert_invoke("status")
 
         assert_words_in_message(result.output, "no skills found")
+
+
+class TestStatusZeroSkillSource:
+    @pytest.mark.usefixtures("fs")
+    def test_registered_source_without_skills_shows_placeholder(
+        self, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "my-project")
+        lines = result.output.split("\n")
+        assert any(line.strip() == "(no skills)" for line in lines)
+        assert "no skills found" not in result.output.lower()
+
+    @pytest.mark.usefixtures("fs")
+    def test_zero_skill_source_renders_header_and_placeholder_line(
+        self, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+
+        result = assert_invoke("status")
+
+        lines = result.output.strip().split("\n")
+        assert lines[0].startswith("Source")
+        # the placeholder is a separate dim line under the header
+        assert any(line.strip() == "(no skills)" for line in lines[1:])
+
+    def test_source_with_installed_skill_has_no_placeholder(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project",
+                    baseline=Baseline(commit="abc", files=hashes),
+                )
+            }
+        )
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "tdd", "synced")
+        assert "(no skills)" not in result.output
+
+    def test_source_with_available_skill_has_no_placeholder(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        _init_source_config(fs, git_repo)
+        _create_source_skill(fs, "review", git_repo)
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "review", "available")
+        assert "(no skills)" not in result.output
+
+    @pytest.mark.usefixtures("git_repo")
+    def test_broken_zero_skill_source_has_no_placeholder(
+        self, fs: FakeFilesystem
+    ) -> None:
+        broken_path = Path("/repos/broken-project")
+        fs.create_dir(broken_path / ".git")
+        registry = SourceRegistry()
+        registry.register_source("broken-project", broken_path)
+        save_source_registry(registry)
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "broken-project", "broken")
+        assert "(no skills)" not in result.output
+
+    @pytest.mark.usefixtures("git_repo")
+    def test_unregistered_installed_source_still_shows_skills(
+        self, fs: FakeFilesystem
+    ) -> None:
+        hashes = install_skill(fs, "tdd")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="gone-project",
+                    baseline=Baseline(commit="abc", files=hashes),
+                )
+            }
+        )
+
+        result = assert_invoke("status")
+
+        assert_words_in_message(result.output, "gone-project", "tdd", "synced")
+        assert "(no skills)" not in result.output
+
+    def test_zero_skill_source_plus_untracked_layout(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        register_source(git_repo)
+        fs.create_file(INSTALL_DIR / "mystery" / "SKILL.md", contents="# mystery")
+
+        result = assert_invoke("status")
+
+        lines = result.output.split("\n")
+        assert lines[0].startswith("Source")
+        # the zero-skill source renders its placeholder
+        assert any(line.strip() == "(no skills)" for line in lines)
+        # exactly one blank line precedes the untracked header
+        untracked_index = untracked_header_index(lines)
+        assert_single_blank_before(lines, untracked_index)
+        # no two consecutive blank lines anywhere
+        assert_no_double_blank(lines)
+
+    def test_zero_skill_source_mixed_with_populated_source(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        # populated source sorts before the empty one, so the placeholder must
+        # land under the second (empty) header, not the first
+        populated_repo = git_repo
+        empty_repo = OTHER_REPO_ROOT
+        fs.create_dir(empty_repo / ".git")
+        registry = SourceRegistry()
+        registry.register_source("aaa-project", populated_repo)
+        registry.register_source("zzz-project", empty_repo)
+        save_source_registry(registry)
+        save_source_config(
+            SourceConfig(name="aaa-project", skills_dirs=["skills"]), populated_repo
+        )
+        save_source_config(
+            SourceConfig(name="zzz-project", skills_dirs=["skills"]), empty_repo
+        )
+        fs.create_file(
+            populated_repo / "skills" / "review" / "SKILL.md", contents="# review"
+        )
+
+        result = assert_invoke("status")
+
+        lines = result.output.split("\n")
+        # the populated section shows its available skill row
+        assert_words_in_message(result.output, "review", "available")
+        # the placeholder appears exactly once
+        assert result.output.count("(no skills)") == 1
+        # it sits under the empty (second) source header, not the populated one
+        header_indices = source_header_indices(lines)
+        assert len(header_indices) == 2
+        placeholder_index = next(
+            i for i, line in enumerate(lines) if line.strip() == "(no skills)"
+        )
+        assert placeholder_index > header_indices[1]
+        # one blank line before the second header, no double blanks
+        assert_single_blank_before(lines, header_indices[1])
+        assert_no_double_blank(lines)
+
+    def test_zero_skill_source_preserves_section_spacing(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        other_repo = OTHER_REPO_ROOT
+        fs.create_dir(other_repo / ".git")
+        registry = SourceRegistry()
+        registry.register_source("my-project", git_repo)
+        registry.register_source("other-project", other_repo)
+        save_source_registry(registry)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dirs=["skills"]), git_repo
+        )
+        save_source_config(
+            SourceConfig(name="other-project", skills_dirs=["skills"]), other_repo
+        )
+
+        result = assert_invoke("status")
+
+        lines = result.output.split("\n")
+        header_indices = source_header_indices(lines)
+        assert len(header_indices) == 2
+        # exactly one blank line precedes the second source header
+        assert_single_blank_before(lines, header_indices[1])
+        # both zero-skill sources still render their placeholder
+        assert result.output.count("(no skills)") == 2
+        # no two consecutive blank lines anywhere
+        assert_no_double_blank(lines)
 
 
 class TestStatusSourceNotFound:

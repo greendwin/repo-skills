@@ -46,7 +46,7 @@ status: pending
 - [x] [s08t2303](s08t2303-source-init-branching-skillsdir-flag.md): Source init branching + --skills-dir flag
 - [x] [s08t2304](s08t2304-multidir-scan-collision-exclusion.md): Multi-dir scan + collision exclusion
 - [x] [s08t2305](s08t2305-orphan-merge-target-active-dir.md): Orphan merge target = active dir
-- [ ] [s08t2306](s08t2306-status-shows-zeroskill-sources.md): Status shows zero-skill sources
+- [x] [s08t2306](s08t2306-status-shows-zeroskill-sources.md): Status shows zero-skill sources
 - [ ] [s08t2307](s08t2307-remove-dead-detection-helpers.md): Remove dead detection helpers
 - [x] [s08t2308](s08t2308-resolve-broken-source-json-handling.md): Resolve broken source.json handling (duplicate message / fatal-vs-graceful)
 - [x] [s08t2309](s08t2309-move-v0-migration-off-sourceconfig.md): Move v0 migration off SourceConfig into a dedicated _SourceConfigV0 model

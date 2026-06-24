@@ -260,7 +260,8 @@ def _dirs_change_line(old: Sequence[str], new: Sequence[str]) -> str:
     # TODO: multiple dirs in a single line looks ugly, need to split them to
     #       multiple lines
 
-    # pure reorder is a real change and must not collapse to an identical-looking line
+    # stored order matters: first dir is the active write-back target, so a pure
+    # reorder is a real change — don't sort
     return f"  dirs: {_join_ordered(old)} → {_join_ordered(new)}"
 
 

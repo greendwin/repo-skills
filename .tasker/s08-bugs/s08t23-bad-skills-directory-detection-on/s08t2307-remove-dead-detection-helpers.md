@@ -1,7 +1,7 @@
 ---
 id: s08t2307
 slug: remove-dead-detection-helpers
-status: pending
+status: done
 ---
 
 # Remove dead detection helpers

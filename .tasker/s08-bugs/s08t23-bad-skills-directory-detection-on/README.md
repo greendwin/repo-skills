@@ -45,7 +45,7 @@ status: pending
 - [x] [s08t2302](s08t2302-depthfree-detection-with-threecase-contract.md): Depth-free detection with three-case contract
 - [x] [s08t2303](s08t2303-source-init-branching-skillsdir-flag.md): Source init branching + --skills-dir flag
 - [x] [s08t2304](s08t2304-multidir-scan-collision-exclusion.md): Multi-dir scan + collision exclusion
-- [ ] [s08t2305](s08t2305-orphan-merge-target-active-dir.md): Orphan merge target = active dir
+- [x] [s08t2305](s08t2305-orphan-merge-target-active-dir.md): Orphan merge target = active dir
 - [ ] [s08t2306](s08t2306-status-shows-zeroskill-sources.md): Status shows zero-skill sources
 - [ ] [s08t2307](s08t2307-remove-dead-detection-helpers.md): Remove dead detection helpers
 - [x] [s08t2308](s08t2308-resolve-broken-source-json-handling.md): Resolve broken source.json handling (duplicate message / fatal-vs-graceful)
@@ -64,3 +64,4 @@ status: pending
 - [x] [s08t2321](s08t2321-refactor-within-prefix-check-could.md): Refactor: _within prefix check could lean on stdlib is_relative_to with the symlink concern documented at the call site
 - [x] [s08t2322](s08t2322-refactor-path-containment-check-duplicated.md): Refactor: Path-containment check duplicated between new _within helper and _merge.py
 - [x] [s08t2323](s08t2323-refactor-dir-has-skills-uses.md): Refactor: _dir_has_skills uses the heavy classification walk just to ask a yes/no question
+- [ ] [s08t2324](s08t2324-dedup-two-source-test-fixture.md): Dedup two-source test fixture into a helper

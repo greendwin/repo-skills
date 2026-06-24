@@ -946,6 +946,25 @@ class TestMergeOrphan:
         assert entry.baseline.commit == "orphan-commit-123"
         assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "my-new-skill")
 
+    def test_orphan_lands_in_active_dir_with_multiple_skills_dirs(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        register_source(git_repo, skills_dirs=["claude/skills", "copilot"])
+        install_skill(fs, "my-new-skill", content="# brand new")
+        _fake_git.commits["claude/skills/my-new-skill"] = "orphan-commit-123"
+
+        assert_invoke("merge", "my-new-skill", "--offline")
+
+        active_skill = git_repo / "claude" / "skills" / "my-new-skill" / "SKILL.md"
+        assert active_skill.read_text() == "# brand new"
+        assert not (git_repo / "copilot" / "my-new-skill").exists()
+
+        manifest = load_manifest()
+        entry = manifest.skills["my-new-skill"]
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "orphan-commit-123"
+        assert entry.source == "my-project"
+
     @pytest.mark.usefixtures("fs")
     def test_errors_when_not_in_any_provider(self, git_repo: Path) -> None:
         register_source(git_repo)

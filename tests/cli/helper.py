@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, overload
@@ -366,13 +367,15 @@ def register_source(
     *,
     name: str = "my-project",
     skills_dir: str = "skills",
+    skills_dirs: Sequence[str] | None = None,
     branch: str = "",
 ) -> SourceConfig:
     registry = SourceRegistry()
     registry.register_source(name, git_repo)
     save_source_registry(registry)
 
-    cfg = SourceConfig(name=name, skills_dirs=[skills_dir], branch=branch)
+    dirs = list(skills_dirs) if skills_dirs is not None else [skills_dir]
+    cfg = SourceConfig(name=name, skills_dirs=dirs, branch=branch)
     save_source_config(cfg, git_repo)
 
     return cfg

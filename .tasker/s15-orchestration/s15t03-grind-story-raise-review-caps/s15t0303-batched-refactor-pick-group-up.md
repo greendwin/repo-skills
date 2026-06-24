@@ -1,7 +1,7 @@
 ---
 id: s15t0303
 slug: batched-refactor-pick-group-up
-status: pending
+status: cancelled
 ---
 
 # Batched refactor pick (group up to 5)

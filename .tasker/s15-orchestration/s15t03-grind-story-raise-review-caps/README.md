@@ -1,7 +1,7 @@
 ---
 id: s15t03
 slug: grind-story-raise-review-caps
-status: pending
+status: cancelled
 ---
 
 # Grind-story: raise review caps and add refactor-first grouped pick
@@ -55,8 +55,8 @@ status: pending
 
 ## Subtasks
 
-- [ ] [s15t0301](s15t0301-split-the-review-loop-cap.md): Split the review-loop cap from the verify cap
-- [ ] [s15t0302](s15t0302-refactor-first-uniform-pick-contract.md): Refactor-first, uniform pick contract (single-item groups)
-- [ ] [s15t0303](s15t0303-batched-refactor-pick-group-up.md): Batched refactor pick (group up to 5)
-- [ ] [s15t0304](s15t0304-one-pass-group-execution-apply.md): One-pass group execution: apply + single commit
-- [ ] [s15t0305](s15t0305-drop-cancel-semantics-for-refactor.md): Drop/cancel semantics for refactor tasks
+- [x] ~~[s15t0301](s15t0301-split-the-review-loop-cap.md): Split the review-loop cap from the verify cap~~
+- [x] ~~[s15t0302](s15t0302-refactor-first-uniform-pick-contract.md): Refactor-first, uniform pick contract (single-item groups)~~
+- [x] ~~[s15t0303](s15t0303-batched-refactor-pick-group-up.md): Batched refactor pick (group up to 5)~~
+- [x] ~~[s15t0304](s15t0304-one-pass-group-execution-apply.md): One-pass group execution: apply + single commit~~
+- [x] ~~[s15t0305](s15t0305-drop-cancel-semantics-for-refactor.md): Drop/cancel semantics for refactor tasks~~

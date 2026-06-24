@@ -1,7 +1,7 @@
 ---
 id: s15t0305
 slug: drop-cancel-semantics-for-refactor
-status: pending
+status: cancelled
 ---
 
 # Drop/cancel semantics for refactor tasks

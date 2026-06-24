@@ -28,3 +28,4 @@ status: pending
 - [ ] [s06t24](s06t24-source-remove-show-list-of.md): 'source remove': show list of skills in a bullet list
 - [ ] [s06t25](s06t25-support-skills-dependencies.md): Support skills dependencies
 - [ ] [s06t26](s06t26-ignore-uncommitted-changes-when-they.md): Ignore uncommitted changes when they do not relate to skills
+- [ ] [s06t27](s06t27-auto-attach-an-explicitly-named.md): Auto-attach an explicitly-named, on-disk, uninstalled skill in update

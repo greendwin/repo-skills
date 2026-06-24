@@ -292,7 +292,9 @@ def _update_skill(
     source = ctx.source_registry.load_source(entry.source)
     skill = source.skills.get(skill_name)
     if skill is None:
-        # TODO: should we mark this skill as detached instead of reporting an error?
+        # deleted upstream: a hard error, not `detached` — `detached` means a
+        # still-present skill whose commit went unreachable (tracking can resume);
+        # a removed skill has nothing to resume toward
         raise AppError("Skill removed from source")
 
     src = source.repo_root / skill.rel_path

@@ -148,6 +148,8 @@ class TestMergeStart:
         assert_words_in_message(result.output, "conflicts", "--continue")
         assert _fake_git.ff_targets == []
         assert _fake_git.deleted_branches == []
+        # same-source conflict defers but records no keep-source intent
+        assert load_keep_source() == set()
 
 
 class TestMergeProviderResolution:
@@ -834,6 +836,8 @@ class TestMergeOrphan:
         assert _fake_git.committed_messages == []
         manifest = load_manifest()
         assert "my-new-skill" not in manifest.skills
+        # same-source never records keep-source intent
+        assert load_keep_source() == set()
 
     def test_orphan_commit_message(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1667,6 +1671,8 @@ class TestMergeRetarget:
         )
         assert_words_in_message(result.output, "conflicts", "--continue")
         assert load_manifest().skills["tdd"].source == "my-project"
+        # deferred keep-source intent persisted for the merge branch
+        assert load_keep_source() == {"skill-merge/claude/tdd"}
 
         # simulate git leaving the repo mid-merge on the merge branch
         x_git.branch = "skill-merge/claude/tdd"
@@ -1674,6 +1680,48 @@ class TestMergeRetarget:
 
         assert_invoke("merge", "--continue")
 
+        assert (OTHER_REPO_ROOT / "skills" / "tdd" / "SKILL.md").read_text() == (
+            "# edited by user"
+        )
+        entry = load_manifest().skills["tdd"]
+        assert entry.source == "my-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == COMMIT
+        assert entry.baseline.files == before.baseline.files
+        assert entry.detached == before.detached
+
+    def test_rebase_conflict_keep_source_then_continue_keeps_y(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+        x_git.rebase_clean = False
+        before = load_manifest().skills["tdd"]
+        assert before.baseline is not None
+
+        result = assert_invoke(
+            "merge",
+            "tdd",
+            "--offline",
+            "--source",
+            "other-project",
+            "--keep-source",
+            "--rebase",
+        )
+        assert_words_in_message(result.output, "rebase", "conflicts", "--continue")
+        assert load_manifest().skills["tdd"].source == "my-project"
+        # deferred keep-source intent persisted across the rebase conflict
+        assert load_keep_source() == {"skill-merge/claude/tdd"}
+
+        # simulate git leaving the repo mid-rebase on the merge branch
+        x_git.branch = "skill-merge/claude/tdd"
+        x_git.rebasing = True
+
+        assert_invoke("merge", "--continue")
+
+        # content landed in X via the rebased branch; manifest still tracks Y
         assert (OTHER_REPO_ROOT / "skills" / "tdd" / "SKILL.md").read_text() == (
             "# edited by user"
         )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, NoReturn, Optional
@@ -92,6 +93,27 @@ def _orphan_add_commit(
     return _OrphanAdd(skill_rel_path, skill_dst, committed=True)
 
 
+def _finalize_merge_branch(
+    git: GitRepo,
+    *,
+    target_branch: str,
+    branch_name: str,
+    use_merge: bool,
+    src: Path,
+    dst: Path,
+) -> None:
+    # shared git completion: land the merge branch onto target, publish content,
+    # drop the branch. `src`/`dst` carry direction explicitly — same direction
+    # (repo -> installed_path), different repo: same-source copies
+    # source.repo_root/rel_path; retarget copies target.repo_root/rel_path.
+    if not use_merge:
+        git.checkout(target_branch)
+        git.fast_forward(branch_name)
+
+    overwrite_dir(src, dst)
+    git.delete_branch(branch_name)
+
+
 def _write_retarget_manifest(
     ctx: ConfigContext,
     git: GitRepo,
@@ -120,6 +142,103 @@ def _write_retarget_manifest(
         f"Retargeted {fmt_ident(skill_name)}: now tracking {fmt_ident(target_name)}"
         f" (was {fmt_ident(old_source)})."
     )
+
+
+def _run_branch_merge(
+    ctx: ConfigContext,
+    git: GitRepo,
+    *,
+    skill: SourceSkill,
+    installed: InstalledSkill,
+    provider: Provider,
+    skill_name: str,
+    working_root: Path,
+    target_branch: str,
+    force: bool,
+    no_commit: bool,
+    rebase: bool,
+    keep_source: bool,
+    record_keep_source: bool,
+    on_exact_match: Callable[[str], None],
+    on_finalize: Callable[[GitRepo, str, bool], None],
+) -> None:
+    # Shared branch-merge engine for same-source and cross-source paths. Diffs
+    # are parameterized: working_root (where content lands), force (base search),
+    # keep-source recording (retarget-only), and the exact-match / finalize tails.
+    branch_name = f"{MERGE_BRANCH_PREFIX}{provider.name}/{skill_name}"
+    if git.list_branches(branch_name):
+        raise AppError(
+            f"Merge already in progress for {fmt_ident(skill_name)}.",
+            hint=f"Run {fmt_command('skills merge --continue')} to finish active merge "
+            f"or {fmt_command('skills merge --abort')} to start over.",
+        )
+
+    installed_path = provider.install_path / skill_name
+
+    base_result = _resolve_base_commit(
+        git,
+        skill,
+        installed,
+        installed_path,
+        target_branch=target_branch,
+        force=force,
+    )
+
+    if base_result is not None and base_result.exact_match:
+        on_exact_match(base_result.commit)
+        return
+
+    if record_keep_source:
+        # fresh merge => no live branch (guarded above), so any persisted intent
+        # for this branch name is stale from an abandoned run; drop it so a
+        # non-keep-source retarget can't inherit it.
+        clear_keep_source(branch_name)
+
+    if base_result is not None:
+        git.create_branch(branch_name, base_result.commit)
+    else:
+        git.create_orphan_branch(branch_name)
+
+    overwrite_dir(installed_path, working_root / skill.rel_path)
+
+    if no_commit:
+        if record_keep_source and keep_source:
+            # deferred finish goes through _merge_continue/_finalize; persist the
+            # keep-source intent (keyed by branch) so it is honored there (branch
+            # detection alone can't tell a retarget from a keep-source publish).
+            mark_keep_source(branch_name)
+        console.print(
+            "Files copied to source repo. Review, commit, and run"
+            f" {fmt_command('skills merge --continue')}."
+        )
+        return
+
+    git.commit_all(f"chore: merge `{skill_name}` from `{provider.name}`")
+
+    use_merge = False
+    if base_result is not None and not rebase:
+        git.checkout(target_branch)
+        clean = git.merge(branch_name)
+        use_merge = True
+    elif base_result is not None:
+        clean = git.rebase(target_branch)
+    else:
+        clean = git.rebase_root(target_branch)
+
+    if not clean:
+        if record_keep_source and keep_source:
+            mark_keep_source(branch_name)
+        if use_merge:
+            console.print("[yellow]Warning:[/yellow] Merge has conflicts.\n")
+        else:
+            console.print("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
+
+        console.print(
+            f"Resolve them, then run {fmt_command('skills merge --continue')}."
+        )
+        return
+
+    on_finalize(git, branch_name, use_merge)
 
 
 @app.command(help="Merge provider edits back into a source repo.")
@@ -308,81 +427,39 @@ def _merge_start(
                 reattached=installed.detached or not installed.baseline,
             )
 
-    branch_name = f"skill-merge/{provider.name}/{skill_name}"
-    if git.list_branches(branch_name):
-        raise AppError(
-            f"Merge already in progress for {fmt_ident(skill_name)}.",
-            hint=f"Run {fmt_command('skills merge --continue')} to finish active merge "
-            f"or {fmt_command('skills merge --abort')} to start over.",
-        )
-
     installed_path = provider.install_path / skill_name
 
-    base_result = _resolve_base_commit(
-        git,
-        skill,
-        installed,
-        installed_path,
-        target_branch=target_branch,
-        force=search_base,
-    )
-
-    if base_result is not None and base_result.exact_match:
+    def _on_exact_match(base_commit: str) -> None:
         # Provider files are byte-identical to a historical commit;
         # register baseline and skip branch/merge entirely.
         _finalize_in_sync_skill(
             ctx,
             source=source,
             skill=skill,
-            base_commit=base_result.commit,
+            base_commit=base_commit,
             installed_path=installed_path,
             git=git,
         )
-        return
 
-    if base_result is not None:
-        git.create_branch(branch_name, base_result.commit)
-    else:
-        git.create_orphan_branch(branch_name)
+    def _on_finalize(git: GitRepo, _branch: str, use_merge: bool) -> None:
+        _finalize(ctx, git, provider, skill_name, already_merged=use_merge)
 
-    overwrite_dir(installed_path, source.repo_root / skill.rel_path)
-
-    if no_commit:
-        console.print(
-            "Files copied to source repo. Review, commit, and run"
-            f" {fmt_command('skills merge --continue')}."
-        )
-        return
-
-    git.commit_all(f"chore: merge `{skill_name}` from `{provider.name}`")
-
-    use_merge = False
-    if base_result is not None and not rebase:
-        git.checkout(target_branch)
-        clean = git.merge(branch_name)
-        use_merge = True
-    elif base_result is not None:
-        clean = git.rebase(target_branch)
-    else:
-        clean = git.rebase_root(target_branch)
-
-    if not clean:
-        if use_merge:
-            console.print("[yellow]Warning:[/yellow] Merge has conflicts.\n")
-        else:
-            console.print("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
-
-        console.print(
-            f"Resolve them, then run " f"{fmt_command('skills merge --continue')}."
-        )
-        return
-
-    _finalize(
+    _run_branch_merge(
         ctx,
         git,
-        provider,
-        skill_name,
-        already_merged=use_merge,
+        skill=skill,
+        installed=installed,
+        provider=provider,
+        skill_name=skill_name,
+        working_root=source.repo_root,
+        target_branch=target_branch,
+        force=search_base,
+        no_commit=no_commit,
+        rebase=rebase,
+        keep_source=False,
+        record_keep_source=False,
+        on_exact_match=_on_exact_match,
+        on_finalize=_on_finalize,
     )
 
 
@@ -422,104 +499,59 @@ def _merge_retarget(
         )
         return
 
-    branch_name = f"skill-merge/{provider.name}/{skill_name}"
-    if git.list_branches(branch_name):
-        raise AppError(
-            f"Merge already in progress for {fmt_ident(skill_name)}.",
-            hint=f"Run {fmt_command('skills merge --continue')} to finish active merge "
-            f"or {fmt_command('skills merge --abort')} to start over.",
-        )
-
     installed_path = provider.install_path / skill_name
 
-    # force base search over X's history — installed.baseline is a Y commit
-    base_result = _resolve_base_commit(
-        git,
-        skill,
-        installed,
-        installed_path,
-        target_branch=target_branch,
-        force=True,
-    )
-
-    if base_result is not None and base_result.exact_match:
+    def _on_exact_match(base_commit: str) -> None:
         _retarget_in_sync(
             ctx,
             git,
             target=target,
             skill=skill,
-            base_commit=base_result.commit,
+            base_commit=base_commit,
             installed_path=installed_path,
             old_source=old_source,
             keep_source=keep_source,
         )
-        return
 
-    # fresh merge => no live branch (guarded above), so any persisted intent
-    # for this branch name is stale from an abandoned run; drop it so a
-    # non-keep-source retarget can't inherit it.
-    clear_keep_source(branch_name)
-
-    if base_result is not None:
-        git.create_branch(branch_name, base_result.commit)
-    else:
-        git.create_orphan_branch(branch_name)
-
-    overwrite_dir(installed_path, target.repo_root / skill.rel_path)
-
-    if no_commit:
-        # deferred finish goes through _merge_continue/_finalize; persist the
-        # keep-source intent (keyed by branch) so it is honored there (branch
-        # detection alone can't tell a retarget from a keep-source publish).
-        if keep_source:
-            mark_keep_source(branch_name)
-        console.print(
-            "Files copied to source repo. Review, commit, and run"
-            f" {fmt_command('skills merge --continue')}."
+    def _on_finalize(git: GitRepo, branch_name: str, use_merge: bool) -> None:
+        # shared git plumbing; retarget keeps its own manifest write + messaging.
+        _finalize_merge_branch(
+            git,
+            target_branch=target_branch,
+            branch_name=branch_name,
+            use_merge=use_merge,
+            src=target.repo_root / skill.rel_path,
+            dst=installed_path,
         )
-        return
 
-    git.commit_all(f"chore: merge `{skill_name}` from `{provider.name}`")
-
-    use_merge = False
-    if base_result is not None and not rebase:
-        git.checkout(target_branch)
-        clean = git.merge(branch_name)
-        use_merge = True
-    elif base_result is not None:
-        clean = git.rebase(target_branch)
-    else:
-        clean = git.rebase_root(target_branch)
-
-    if not clean:
-        if keep_source:
-            mark_keep_source(branch_name)
-        if use_merge:
-            console.print("[yellow]Warning:[/yellow] Merge has conflicts.\n")
-        else:
-            console.print("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
-
-        console.print(
-            f"Resolve them, then run {fmt_command('skills merge --continue')}."
+        _write_retarget_manifest(
+            ctx,
+            git,
+            skill_name=skill.name,
+            rel_path=skill.rel_path,
+            content_dir=installed_path,
+            target_name=target.name,
+            old_source=old_source,
+            keep_source=keep_source,
         )
-        return
 
-    if not use_merge:
-        git.checkout(target_branch)
-        git.fast_forward(branch_name)
-
-    overwrite_dir(target.repo_root / skill.rel_path, installed_path)
-    git.delete_branch(branch_name)
-
-    _write_retarget_manifest(
+    # force base search over X's history — installed.baseline is a Y commit
+    _run_branch_merge(
         ctx,
         git,
-        skill_name=skill.name,
-        rel_path=skill.rel_path,
-        content_dir=installed_path,
-        target_name=target.name,
-        old_source=old_source,
+        skill=skill,
+        installed=installed,
+        provider=provider,
+        skill_name=skill_name,
+        working_root=target.repo_root,
+        target_branch=target_branch,
+        force=True,
+        no_commit=no_commit,
+        rebase=rebase,
         keep_source=keep_source,
+        record_keep_source=True,
+        on_exact_match=_on_exact_match,
+        on_finalize=_on_finalize,
     )
 
 
@@ -1013,15 +1045,15 @@ def _finalize(
     skill = source.get_skill(skill_name)
 
     target_branch = source.get_branch(git)
-    if not already_merged:
-        git.checkout(target_branch)
-        git.fast_forward(merge_branch)
-
     installed_path = provider.install_path / skill_name
 
-    overwrite_dir(
-        source.repo_root / skill.rel_path,
-        installed_path,
+    _finalize_merge_branch(
+        git,
+        target_branch=target_branch,
+        branch_name=merge_branch,
+        use_merge=already_merged,
+        src=source.repo_root / skill.rel_path,
+        dst=installed_path,
     )
 
     prev = ctx.manifest.skills.get(skill_name)
@@ -1038,7 +1070,6 @@ def _finalize(
     # Finalize content into X but leave the manifest entry untouched (and never
     # resurrect a removed entry).
     if not is_same_source and merge_branch in load_keep_source():
-        git.delete_branch(merge_branch)
         clear_keep_source(merge_branch)
         # prev gone (entry removed mid-merge): nothing to keep tracking
         old_source = prev.source if prev is not None else None
@@ -1067,8 +1098,6 @@ def _finalize(
         ),
     )
     save_skill_manifest(ctx.manifest)
-
-    git.delete_branch(merge_branch)
 
     if is_equal:
         console.print(

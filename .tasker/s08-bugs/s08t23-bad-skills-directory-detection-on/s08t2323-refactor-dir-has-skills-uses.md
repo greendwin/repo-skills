@@ -1,7 +1,7 @@
 ---
 id: s08t2323
 slug: refactor-dir-has-skills-uses
-status: pending
+status: done
 ---
 
 # Refactor: _dir_has_skills uses the heavy classification walk just to ask a yes/no question

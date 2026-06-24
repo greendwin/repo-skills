@@ -1,7 +1,7 @@
 ---
 id: s08t2318
 slug: refactor-normalize-skills-dirs-mixes
-status: pending
+status: done
 ---
 
 # Refactor: `_normalize_skills_dirs` mixes path validation/normalization with user-facing console output

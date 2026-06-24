@@ -1,7 +1,7 @@
 ---
 id: s08t2317
 slug: refactor-parts-prefix-path-containment
-status: pending
+status: done
 ---
 
 # Refactor: parts-prefix path containment logic conceptually overlaps the AMBIGUOUS equality check

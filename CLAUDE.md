@@ -6,7 +6,9 @@ See `CONTEXT.md` for project terminology (source, skill, provider, etc.).
 
 * On any development iteration, the final step is to run `uv run tox` (all environments).
 * Always fix **all** reported `tox` issues including **pre-existing**.
+* Write comments maximally compact and concise — why use many token when few token do trick. Drop filler, prefer fragments over full sentences, cut anything the code already says; keep only the non-obvious *why*. Code, commands, error strings, paths stay exact.
 * Never include tasks IDs into code comments (e.g. `s12t03`, `s01` in section headers or inline comments).
+* Never drop a `TODO` unless you can guarantee it is already resolved. This applies to any change — resolving merge conflicts (preserve `TODO`s from either side), implementing features, or fixing bugs: a `TODO` still actual and not addressed by your change must be preserved. Exception: a `TODO` may be deleted when its removal is explicitly approved during a triage review (e.g. `/todo-triage`) after the question it raised has been resolved.
 * When finishing a task change its status to `in-review` by MCP tool `review_task`.
 
 ## Python Guide

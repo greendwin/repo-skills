@@ -38,6 +38,7 @@ class SourceConfig(VersionedConfig):
 
     @property
     def active_dir(self) -> str | None:
+        # write target for new and merged skills
         return self.skills_dirs[0] if self.skills_dirs else None
 
 

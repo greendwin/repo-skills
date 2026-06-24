@@ -18,10 +18,13 @@ from repo_skills.config import (
     Source,
     SourceRegistry,
     SourceSkill,
+    clear_keep_source,
     compute_file_hashes,
     load_config_context,
+    load_keep_source,
     load_skill_manifest,
     make_baseline,
+    mark_keep_source,
     read_skill_description,
     save_skill_manifest,
 )
@@ -35,6 +38,88 @@ from ._app import app
 from ._deps import prepare_source_repo, resolve_git_repo
 
 MERGE_BRANCH_PREFIX = "skill-merge/"
+
+
+def _merged_still_tracking(
+    skill_name: str, target_name: str, old_source: str | None
+) -> str:
+    # keep-source publish: content lands in target, manifest still tracks old.
+    # old_source None (entry vanished mid-merge) => no tracking suffix.
+    tracking = (
+        f" (still tracking {fmt_ident(old_source)})" if old_source is not None else ""
+    )
+    return f"Merged {fmt_ident(skill_name)} into {fmt_ident(target_name)}{tracking}."
+
+
+@dataclass
+class _OrphanAdd:
+    skill_rel_path: str
+    skill_dst: Path
+    committed: bool  # False when stopped early for --no-commit
+
+
+def _orphan_add_commit(
+    git: GitRepo,
+    *,
+    source: Source,
+    installed_path: Path,
+    skill_name: str,
+    no_commit: bool,
+) -> _OrphanAdd:
+    # active_dir guard + copy into source + `feat: add` commit, shared by the
+    # orphan-merge and orphan-retarget paths; callers diff in manifest/messaging.
+    active_dir = source.config.active_dir
+    if active_dir is None:
+        raise AppError(
+            f"Source {fmt_ident(source.name)} has no skills directory configured.",
+            hint=f"Run {fmt_command('skills source config --skills-dir <dir>')} "
+            "to set one.",
+        )
+
+    skill_rel_path = f"{active_dir}/{skill_name}"
+    skill_dst = source.repo_root / skill_rel_path
+    overwrite_dir(installed_path, skill_dst)
+
+    if no_commit:
+        console.print("Files copied to source repo. Review and commit manually.")
+        return _OrphanAdd(skill_rel_path, skill_dst, committed=False)
+
+    subject = f"feat: add `{skill_name}` skill"
+    description = read_skill_description(installed_path)
+    message = f"{subject}\n\n{description}" if description else subject
+    git.commit_all(message)
+
+    return _OrphanAdd(skill_rel_path, skill_dst, committed=True)
+
+
+def _write_retarget_manifest(
+    ctx: ConfigContext,
+    git: GitRepo,
+    *,
+    skill_name: str,
+    rel_path: str,
+    content_dir: Path,
+    target_name: str,
+    old_source: str,  # callers guarantee non-None
+    keep_source: bool,
+) -> None:
+    # publish-or-keep sink: keep-source leaves the manifest tracking old_source.
+    if keep_source:
+        console.print(_merged_still_tracking(skill_name, target_name, old_source))
+        return
+
+    commit = git.get_skill_commit(rel_path)
+    ctx.manifest.register_skill(
+        skill_name,
+        source_name=target_name,
+        baseline=make_baseline(commit, content_dir),
+    )
+    save_skill_manifest(ctx.manifest)
+
+    console.print(
+        f"Retargeted {fmt_ident(skill_name)}: now tracking {fmt_ident(target_name)}"
+        f" (was {fmt_ident(old_source)})."
+    )
 
 
 @app.command(help="Merge provider edits back into a source repo.")
@@ -61,6 +146,14 @@ def merge(
     offline: Annotated[
         bool,
         typer.Option("--offline", help="Skip git pull."),
+    ] = False,
+    keep_source: Annotated[
+        bool,
+        typer.Option(
+            "--keep-source",
+            help="Merge content into the target source but keep tracking the"
+            " current source.",
+        ),
     ] = False,
     no_commit: Annotated[
         bool,
@@ -110,6 +203,7 @@ def merge(
         skill_name,
         from_provider=from_provider,
         to_source=to_source,
+        keep_source=keep_source,
         offline=offline,
         no_commit=no_commit,
         rebase=rebase,
@@ -123,6 +217,7 @@ def _merge_start(
     *,
     from_provider: str | None,
     to_source: str | None = None,
+    keep_source: bool = False,
     offline: bool,
     no_commit: bool = False,
     rebase: bool = False,
@@ -164,6 +259,22 @@ def _merge_start(
             baseline=None,
         )
         save_skill_manifest(ctx.manifest)
+
+    # cross-source: --source X given and X differs from tracking source Y.
+    # Work against X, ignoring the Y baseline entirely.
+    if to_source is not None and to_source != installed.source:
+        _merge_retarget(
+            ctx,
+            skill_name,
+            installed=installed,
+            target=ctx.source_registry.load_source(to_source),
+            provider=provider,
+            keep_source=keep_source,
+            offline=offline,
+            no_commit=no_commit,
+            rebase=rebase,
+        )
+        return
 
     source = ctx.source_registry.load_source(installed.source)
     skill = source.get_skill(skill_name)
@@ -219,7 +330,7 @@ def _merge_start(
     if base_result is not None and base_result.exact_match:
         # Provider files are byte-identical to a historical commit;
         # register baseline and skip branch/merge entirely.
-        _finalyze_in_sync_skill(
+        _finalize_in_sync_skill(
             ctx,
             source=source,
             skill=skill,
@@ -275,7 +386,219 @@ def _merge_start(
     )
 
 
-def _finalyze_in_sync_skill(
+def _merge_retarget(
+    ctx: ConfigContext,
+    skill_name: str,
+    *,
+    installed: InstalledSkill,
+    target: Source,
+    provider: Provider | None,
+    keep_source: bool,
+    offline: bool,
+    no_commit: bool,
+    rebase: bool,
+) -> None:
+    old_source = installed.source
+
+    git = resolve_git_repo(target.repo_root)
+    target_branch = target.get_branch(git)
+    ensure_on_branch(git, target_branch, pull=not offline)
+
+    # has-skill provider resolution; Y-baseline divergence is irrelevant for X
+    provider = _find_skill_in_provider(ctx.provider_registry, provider, skill_name)
+
+    skill = target.skills.get(skill_name)
+    if skill is None:
+        # X lacks the skill: orphan-add into X, then retarget the manifest to X.
+        _retarget_orphan_add(
+            ctx,
+            git,
+            skill_name,
+            target=target,
+            provider=provider,
+            old_source=old_source,
+            keep_source=keep_source,
+            no_commit=no_commit,
+        )
+        return
+
+    branch_name = f"skill-merge/{provider.name}/{skill_name}"
+    if git.list_branches(branch_name):
+        raise AppError(
+            f"Merge already in progress for {fmt_ident(skill_name)}.",
+            hint=f"Run {fmt_command('skills merge --continue')} to finish active merge "
+            f"or {fmt_command('skills merge --abort')} to start over.",
+        )
+
+    installed_path = provider.install_path / skill_name
+
+    # force base search over X's history — installed.baseline is a Y commit
+    base_result = _resolve_base_commit(
+        git,
+        skill,
+        installed,
+        installed_path,
+        target_branch=target_branch,
+        force=True,
+    )
+
+    if base_result is not None and base_result.exact_match:
+        _retarget_in_sync(
+            ctx,
+            git,
+            target=target,
+            skill=skill,
+            base_commit=base_result.commit,
+            installed_path=installed_path,
+            old_source=old_source,
+            keep_source=keep_source,
+        )
+        return
+
+    # fresh merge => no live branch (guarded above), so any persisted intent
+    # for this branch name is stale from an abandoned run; drop it so a
+    # non-keep-source retarget can't inherit it.
+    clear_keep_source(branch_name)
+
+    if base_result is not None:
+        git.create_branch(branch_name, base_result.commit)
+    else:
+        git.create_orphan_branch(branch_name)
+
+    overwrite_dir(installed_path, target.repo_root / skill.rel_path)
+
+    if no_commit:
+        # deferred finish goes through _merge_continue/_finalize; persist the
+        # keep-source intent (keyed by branch) so it is honored there (branch
+        # detection alone can't tell a retarget from a keep-source publish).
+        if keep_source:
+            mark_keep_source(branch_name)
+        console.print(
+            "Files copied to source repo. Review, commit, and run"
+            f" {fmt_command('skills merge --continue')}."
+        )
+        return
+
+    git.commit_all(f"chore: merge `{skill_name}` from `{provider.name}`")
+
+    use_merge = False
+    if base_result is not None and not rebase:
+        git.checkout(target_branch)
+        clean = git.merge(branch_name)
+        use_merge = True
+    elif base_result is not None:
+        clean = git.rebase(target_branch)
+    else:
+        clean = git.rebase_root(target_branch)
+
+    if not clean:
+        if keep_source:
+            mark_keep_source(branch_name)
+        if use_merge:
+            console.print("[yellow]Warning:[/yellow] Merge has conflicts.\n")
+        else:
+            console.print("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
+
+        console.print(
+            f"Resolve them, then run {fmt_command('skills merge --continue')}."
+        )
+        return
+
+    if not use_merge:
+        git.checkout(target_branch)
+        git.fast_forward(branch_name)
+
+    overwrite_dir(target.repo_root / skill.rel_path, installed_path)
+    git.delete_branch(branch_name)
+
+    _write_retarget_manifest(
+        ctx,
+        git,
+        skill_name=skill.name,
+        rel_path=skill.rel_path,
+        content_dir=installed_path,
+        target_name=target.name,
+        old_source=old_source,
+        keep_source=keep_source,
+    )
+
+
+def _retarget_in_sync(
+    ctx: ConfigContext,
+    git: GitRepo,
+    *,
+    target: Source,
+    skill: SourceSkill,
+    base_commit: str,
+    installed_path: Path,
+    old_source: str,
+    keep_source: bool,
+) -> None:
+    if keep_source:
+        # content already lives in X at base_commit; leave the manifest untouched
+        console.print(_merged_still_tracking(skill.name, target.name, old_source))
+        return
+
+    baseline = make_baseline(base_commit, installed_path)
+    ctx.manifest.register_skill(
+        skill.name,
+        source_name=target.name,
+        baseline=baseline,
+    )
+    save_skill_manifest(ctx.manifest)
+
+    # if the matched commit is not X's tip, warn it is a previous version (cf.
+    # _finalize_in_sync_skill) instead of claiming a clean "already matches".
+    latest = git.get_skill_commit(skill.rel_path)
+    if base_commit != latest:
+        console.print(
+            f"{fmt_ident(skill.name)} matches a previous version of"
+            f" {fmt_ident(target.name)} — now tracking {fmt_ident(target.name)}"
+            f" (was {fmt_ident(old_source)}).\n"
+            f"Run {fmt_command('skills update')} to pull the latest changes."
+        )
+        return
+
+    console.print(
+        f"{fmt_ident(skill.name)} already matches {fmt_ident(target.name)}"
+        f" — now tracking {fmt_ident(target.name)} (was {fmt_ident(old_source)})."
+    )
+
+
+def _retarget_orphan_add(
+    ctx: ConfigContext,
+    git: GitRepo,
+    skill_name: str,
+    *,
+    target: Source,
+    provider: Provider,
+    old_source: str,
+    keep_source: bool,
+    no_commit: bool,
+) -> None:
+    added = _orphan_add_commit(
+        git,
+        source=target,
+        installed_path=provider.install_path / skill_name,
+        skill_name=skill_name,
+        no_commit=no_commit,
+    )
+    if not added.committed:
+        return
+
+    _write_retarget_manifest(
+        ctx,
+        git,
+        skill_name=skill_name,
+        rel_path=added.skill_rel_path,
+        content_dir=added.skill_dst,
+        target_name=target.name,
+        old_source=old_source,
+        keep_source=keep_source,
+    )
+
+
+def _finalize_in_sync_skill(
     ctx: ConfigContext,
     git: GitRepo,
     source: Source,
@@ -397,35 +720,24 @@ def _merge_orphan(
     repo = prepare_source_repo(source, pull=not offline)
 
     provider = _find_skill_in_provider(ctx.provider_registry, provider, skill_name)
-    installed_path = provider.install_path / skill_name
-    active_dir = source.config.active_dir
-    if active_dir is None:
-        raise AppError(
-            f"Source {fmt_ident(source.name)} has no skills directory configured.",
-            hint=f"Run {fmt_command('skills source config --skills-dir <dir>')} "
-            "to set one.",
-        )
 
-    skill_rel_path = f"{active_dir}/{skill_name}"
-    skill_dst = source.repo_root / skill_rel_path
-    overwrite_dir(installed_path, skill_dst)
-
-    if no_commit:
-        console.print("Files copied to source repo. Review and commit manually.")
+    added = _orphan_add_commit(
+        repo.git,
+        source=source,
+        installed_path=provider.install_path / skill_name,
+        skill_name=skill_name,
+        no_commit=no_commit,
+    )
+    if not added.committed:
         return
 
-    subject = f"feat: add `{skill_name}` skill"
-    description = read_skill_description(installed_path)
-    message = f"{subject}\n\n{description}" if description else subject
-    repo.git.commit_all(message)
-
-    commit = repo.git.get_skill_commit(skill_rel_path)
+    commit = repo.git.get_skill_commit(added.skill_rel_path)
 
     manifest = load_skill_manifest()
     manifest.register_skill(
         skill_name,
         source_name=source.name,
-        baseline=make_baseline(commit, skill_dst),
+        baseline=make_baseline(commit, added.skill_dst),
     )
     save_skill_manifest(manifest)
 
@@ -694,8 +1006,10 @@ def _finalize(
 ) -> None:
     merge_branch = f"{MERGE_BRANCH_PREFIX}{provider.name}/{skill_name}"
 
-    installed = ctx.manifest.skills[skill_name]
-    source = ctx.source_registry.load_source(installed.source)
+    # derive source from the repo holding the merge branch, not installed.source:
+    # a cross-source retarget runs the merge in X's repo while the manifest still
+    # tracks Y, so resuming via installed.source (Y) would corrupt the entry.
+    source = _source_for_repo(ctx.source_registry, git)
     skill = source.get_skill(skill_name)
 
     target_branch = source.get_branch(git)
@@ -710,12 +1024,41 @@ def _finalize(
         installed_path,
     )
 
+    prev = ctx.manifest.skills.get(skill_name)
+
+    # the persisted intent (keyed by this exact branch) is authoritative for a
+    # keep-source resume, even if the manifest entry vanished mid-merge (e.g.
+    # `skills remove` between deferral and --continue → prev is None).
+    # The one case it must NOT cover is a same-source resume that inherited a
+    # stale branch entry from an abandoned run: same-source never records intent,
+    # so honoring it there would wrongly suppress the baseline write. Exclude it.
+    is_same_source = prev is not None and prev.source == source.name
+
+    # keep-source: a deferred --keep-source retarget persisted this intent.
+    # Finalize content into X but leave the manifest entry untouched (and never
+    # resurrect a removed entry).
+    if not is_same_source and merge_branch in load_keep_source():
+        git.delete_branch(merge_branch)
+        clear_keep_source(merge_branch)
+        # prev gone (entry removed mid-merge): nothing to keep tracking
+        old_source = prev.source if prev is not None else None
+        console.print(_merged_still_tracking(skill_name, source.name, old_source))
+        return
+
+    # a same-source resume never honors keep-source; drop any stale branch entry
+    # so it cannot poison a later merge that reuses this branch name.
+    clear_keep_source(merge_branch)
+
     new_hashes = compute_file_hashes(installed_path)
-    is_equal = installed.match_files(new_hashes)
+
+    # "already up to date" only applies to a same-source resume; a cross-source
+    # retarget always changes the tracking source, so it never reads as a no-op.
+    # is_same_source implies prev is not None (see above).
+    is_equal = is_same_source and prev is not None and prev.match_files(new_hashes)
 
     ctx.manifest.register_skill(
         skill_name,
-        source_name=installed.source,
+        source_name=source.name,
         baseline=Baseline(
             # note: take latest commit for code, since we just finished
             #       merging and must be in sync
@@ -746,16 +1089,29 @@ def _merge_abort(ctx: ConfigContext) -> None:
     elif git.is_merging():
         git.merge_abort()
 
-    intalled = ctx.manifest.skills[skill_name]
-    source = ctx.source_registry.get_source_no_skills(intalled.source)
+    # resolve source from the merge repo, not installed.source: a cross-source
+    # retarget runs the merge in X's repo while the manifest still tracks Y, so
+    # Y's pinned branch is wrong (or absent) in X. Mirror `_finalize`.
+    source = _source_for_repo(ctx.source_registry, git)
 
     target_branch = source.get_branch(git)
     if git.current_branch() != target_branch:
         git.checkout(target_branch)
 
     git.delete_branch(branch)
+    clear_keep_source(branch)
 
     console.print(f"Merge aborted for {fmt_ident(skill_name)}.")
+
+
+def _source_for_repo(source_registry: SourceRegistry, git: GitRepo) -> Source:
+    # compare by string: repo roots may be different Path implementations
+    root = str(git.root)
+    for name, entry in source_registry.sources.items():
+        if str(entry.repo_root) == root:
+            return source_registry.load_source(name)
+
+    raise AppError(f"No registered source at {fmt_path(git.root)}.")
 
 
 def _detect_merge_repo(ctx: ConfigContext) -> GitRepo:

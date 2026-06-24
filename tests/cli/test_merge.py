@@ -23,6 +23,7 @@ from repo_skills.config import (
     SourceRegistry,
     SourceSkill,
     compute_file_hashes,
+    load_keep_source,
     save_skill_manifest,
     save_source_config,
     save_source_registry,
@@ -1096,6 +1097,773 @@ def _setup_merge_branch(
     fake_git.branch = branch
 
 
+class TestMergeRetarget:
+    def _setup(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+        *,
+        installed_content: str = "# edited by user",
+    ) -> FakeGitRepo:
+        # skill tracked by Y (my-project); X (other-project) also has it.
+        register_two_sources(fs, git_repo, OTHER_REPO_ROOT)
+        create_source_skill(fs, "tdd", content="# original")
+        create_source_skill(
+            fs, "tdd", content="# original", root=OTHER_REPO_ROOT / "skills"
+        )
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+                )
+            }
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text(installed_content)
+
+        x_git = FakeGitRepo(
+            root=OTHER_REPO_ROOT,
+            commits={"skills/tdd": "x-commit"},
+            ancestors={("x-commit", "main"): True},
+            commit_logs={"skills/tdd": ["x-base"]},
+            files_at_commit={("x-base", "skills/tdd/SKILL.md"): b"# original"},
+            commit_messages={"x-base": "feat: add tdd"},
+        )
+        fake_git_manager.install(x_git)
+        return x_git
+
+    def test_merges_into_x_and_retargets(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+
+        result = assert_invoke("merge", "tdd", "--offline", "--source", "other-project")
+
+        # branch+merge happens in X's repo, not Y's
+        assert x_git.created_branches["skill-merge/claude/tdd"] == "x-base"
+        assert x_git.merged_branch == "skill-merge/claude/tdd"
+        source_skill = OTHER_REPO_ROOT / "skills" / "tdd" / "SKILL.md"
+        assert source_skill.read_text() == "# edited by user"
+
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert entry.source == "other-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "x-commit"
+        assert not entry.detached
+        assert "now tracking other-project (was my-project)." in result.output
+
+    def test_synced_with_y_still_proceeds_against_x(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        # installed is byte-identical to Y baseline -> same-source would
+        # short-circuit "already synced"; cross-source must bypass that guard
+        # and still retarget into X (whose content differs).
+        register_two_sources(fs, git_repo, OTHER_REPO_ROOT)
+        create_source_skill(fs, "tdd", content="# y-source")
+        create_source_skill(
+            fs, "tdd", content="# x-source", root=OTHER_REPO_ROOT / "skills"
+        )
+        # installed == Y baseline (same hashes), so the Y match_files guard fires
+        hashes = install_skill(fs, "tdd", content="# in-sync-with-y")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+                )
+            }
+        )
+
+        x_git = FakeGitRepo(
+            root=OTHER_REPO_ROOT,
+            commits={"skills/tdd": "x-commit"},
+            ancestors={("x-commit", "main"): True},
+            commit_logs={"skills/tdd": ["x-base"]},
+            files_at_commit={("x-base", "skills/tdd/SKILL.md"): b"# x-source"},
+            commit_messages={"x-base": "feat: add tdd"},
+        )
+        fake_git_manager.install(x_git)
+
+        result = assert_invoke("merge", "tdd", "--offline", "--source", "other-project")
+
+        assert "skill-merge/claude/tdd" in x_git.created_branches
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].source == "other-project"
+        assert_words_in_message(result.output, "retargeted")
+
+    def test_in_sync_with_x_retargets_without_merge(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        # installed byte-matches X's current skill commit -> no branch/merge,
+        # no commit in X; manifest retargets to X at X's current commit.
+        x_git = self._setup(fs, git_repo, fake_git_manager, installed_content="# match")
+        x_git.files_at_commit[("x-commit", "skills/tdd/SKILL.md")] = b"# match"
+        x_git.commit_logs = {"skills/tdd": ["x-commit"]}
+        x_git.commit_messages = {"x-commit": "feat: tdd"}
+
+        result = assert_invoke("merge", "tdd", "--offline", "--source", "other-project")
+
+        # no write/commit/branch/merge happened in X
+        assert x_git.created_branches == {}
+        assert x_git.orphan_branches == []
+        assert x_git.committed_messages == []
+        assert x_git.merged_branch is None
+
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert entry.source == "other-project"
+        assert entry.baseline is not None
+        # baseline tracks X's current skill commit + the in-sync content
+        assert entry.baseline.commit == "x-commit"
+        assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "tdd")
+        assert not entry.detached
+
+        # exact in-sync retarget message
+        assert (
+            "tdd already matches other-project"
+            " — now tracking other-project (was my-project)." in result.output
+        )
+
+    def test_source_equals_tracking_is_legacy_behavior(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+    ) -> None:
+        _setup_diverged_skill(fs, git_repo)
+
+        result = assert_invoke("merge", "tdd", "--offline", "--source", "my-project")
+
+        # unchanged same-source merge against Y
+        assert _fake_git.created_branches["skill-merge/claude/tdd"] == COMMIT
+        assert _fake_git.merged_branch == "skill-merge/claude/tdd"
+        assert_words_in_message(result.output, "merge", "complete")
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].source == "my-project"
+
+    def _setup_x_lacks_skill(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+        *,
+        x_skills_dirs: list[str] | None = None,
+    ) -> FakeGitRepo:
+        # skill tracked by Y (my-project); X (other-project) does NOT have it.
+        register_two_sources(fs, git_repo, OTHER_REPO_ROOT)
+        if x_skills_dirs is not None:
+            save_source_config(
+                SourceConfig(name="other-project", skills_dirs=x_skills_dirs),
+                OTHER_REPO_ROOT,
+            )
+        create_source_skill(fs, "tdd", content="# original")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+                )
+            }
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        x_git = FakeGitRepo(
+            root=OTHER_REPO_ROOT,
+            commits={"skills/tdd": "x-added-commit"},
+            ancestors={("x-added-commit", "main"): True},
+        )
+        fake_git_manager.install(x_git)
+        return x_git
+
+    def test_x_lacks_skill_orphan_adds_and_retargets(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        x_git = self._setup_x_lacks_skill(fs, git_repo, fake_git_manager)
+
+        result = assert_invoke("merge", "tdd", "--offline", "--source", "other-project")
+
+        # orphan-add into X's active_dir with a feat: add commit
+        added = OTHER_REPO_ROOT / "skills" / "tdd" / "SKILL.md"
+        assert added.read_text() == "# edited by user"
+        assert x_git.committed_messages == ["feat: add `tdd` skill"]
+
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert entry.source == "other-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "x-added-commit"
+        assert not entry.detached
+        assert "now tracking other-project (was my-project)." in result.output
+
+    def test_x_lacks_skill_baseline_matches_x_added_files(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        self._setup_x_lacks_skill(fs, git_repo, fake_git_manager)
+
+        assert_invoke("merge", "tdd", "--offline", "--source", "other-project")
+
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert entry.baseline is not None
+        assert entry.baseline.files == compute_file_hashes(
+            OTHER_REPO_ROOT / "skills" / "tdd"
+        )
+
+    def test_x_lacks_skill_and_no_skills_dir_errors(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        self._setup_x_lacks_skill(fs, git_repo, fake_git_manager, x_skills_dirs=[])
+
+        result = assert_invoke(
+            "merge", "tdd", "--offline", "--source", "other-project", expect_error=True
+        )
+
+        assert_words_in_message(result.exception.message, "no skills directory")
+
+    def test_keep_source_x_has_skill_merges_but_keeps_tracking(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+        before = load_manifest().skills["tdd"]
+        assert before.baseline is not None
+
+        result = assert_invoke(
+            "merge",
+            "tdd",
+            "--offline",
+            "--source",
+            "other-project",
+            "--keep-source",
+        )
+
+        # content still lands in X (branch+merge happens)
+        assert x_git.merged_branch == "skill-merge/claude/tdd"
+        source_skill = OTHER_REPO_ROOT / "skills" / "tdd" / "SKILL.md"
+        assert source_skill.read_text() == "# edited by user"
+
+        # manifest entry is byte-for-byte unchanged: still tracks Y, Y baseline
+        entry = load_manifest().skills["tdd"]
+        assert entry.source == "my-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == COMMIT
+        assert entry.baseline.files == before.baseline.files
+        assert entry.detached == before.detached
+        assert_words_in_message(
+            result.output, "merged", "other-project", "still tracking", "my-project"
+        )
+
+    def test_keep_source_x_lacks_skill_orphan_adds_but_keeps_tracking(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        x_git = self._setup_x_lacks_skill(fs, git_repo, fake_git_manager)
+        before = load_manifest().skills["tdd"]
+        assert before.baseline is not None
+
+        result = assert_invoke(
+            "merge",
+            "tdd",
+            "--offline",
+            "--source",
+            "other-project",
+            "--keep-source",
+        )
+
+        # content orphan-added into X
+        added = OTHER_REPO_ROOT / "skills" / "tdd" / "SKILL.md"
+        assert added.read_text() == "# edited by user"
+        assert x_git.committed_messages == ["feat: add `tdd` skill"]
+
+        # manifest unchanged: still tracks Y with original baseline
+        entry = load_manifest().skills["tdd"]
+        assert entry.source == "my-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == COMMIT
+        assert entry.baseline.files == before.baseline.files
+        assert entry.detached == before.detached
+        assert_words_in_message(
+            result.output, "merged", "other-project", "still tracking", "my-project"
+        )
+
+    def test_keep_source_in_sync_with_x_keeps_tracking(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        # installed byte-matches X's current skill commit -> no branch/merge
+        x_git = self._setup(fs, git_repo, fake_git_manager, installed_content="# match")
+        x_git.files_at_commit[("x-commit", "skills/tdd/SKILL.md")] = b"# match"
+        x_git.commit_logs = {"skills/tdd": ["x-commit"]}
+        x_git.commit_messages = {"x-commit": "feat: tdd"}
+        before = load_manifest().skills["tdd"]
+        assert before.baseline is not None
+
+        result = assert_invoke(
+            "merge",
+            "tdd",
+            "--offline",
+            "--source",
+            "other-project",
+            "--keep-source",
+        )
+
+        # no write/commit/branch/merge in X
+        assert x_git.created_branches == {}
+        assert x_git.committed_messages == []
+        assert x_git.merged_branch is None
+        # manifest unchanged: still tracks Y with original baseline
+        entry = load_manifest().skills["tdd"]
+        assert entry.source == "my-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == COMMIT
+        assert entry.baseline.files == before.baseline.files
+        assert (
+            "Merged tdd into other-project (still tracking my-project)."
+            in result.output
+        )
+
+    def test_keep_source_ignored_when_source_equals_tracking(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+    ) -> None:
+        _setup_diverged_skill(fs, git_repo)
+
+        result = assert_invoke(
+            "merge",
+            "tdd",
+            "--offline",
+            "--source",
+            "my-project",
+            "--keep-source",
+        )
+
+        # X==Y: keep-source ignored, legacy same-source merge runs + retracks Y
+        assert _fake_git.merged_branch == "skill-merge/claude/tdd"
+        assert_words_in_message(result.output, "merge", "complete")
+        manifest = load_manifest()
+        assert manifest.skills["tdd"].source == "my-project"
+
+    def test_rebase_retargets_with_x_baseline(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+
+        result = assert_invoke(
+            "merge", "tdd", "--offline", "--source", "other-project", "--rebase"
+        )
+
+        # rebase onto X's branch, then post-rebase checkout + fast-forward
+        assert x_git.created_branches["skill-merge/claude/tdd"] == "x-base"
+        assert x_git.rebased_onto == "main"
+        assert x_git.merged_branch is None
+        assert x_git.ff_targets == ["skill-merge/claude/tdd"]
+
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert entry.source == "other-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "x-commit"
+        assert not entry.detached
+        assert_words_in_message(
+            result.output, "retargeted", "other-project", "my-project"
+        )
+
+    def test_errors_when_merge_already_in_progress_in_x(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+        x_git.branches = ["skill-merge/claude/tdd"]
+
+        result = assert_invoke(
+            "merge", "tdd", "--offline", "--source", "other-project", expect_error=True
+        )
+
+        assert_words_in_message(
+            result.exception.message, "merge already in progress", "--continue"
+        )
+        # manifest untouched: still tracks Y
+        assert load_manifest().skills["tdd"].source == "my-project"
+
+    def test_in_sync_with_non_tip_x_commit_warns_run_update(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        # installed matches an OLD X commit (not X's tip) -> retarget but warn
+        # that it is a previous version and to run `skills update`.
+        x_git = self._setup(fs, git_repo, fake_git_manager, installed_content="# match")
+        # X's tip differs from the matched base commit
+        x_git.commits["skills/tdd"] = "x-tip"
+        x_git.commit_logs = {"skills/tdd": ["x-old"]}
+        x_git.files_at_commit = {("x-old", "skills/tdd/SKILL.md"): b"# match"}
+        x_git.commit_messages = {"x-old": "feat: tdd"}
+
+        result = assert_invoke("merge", "tdd", "--offline", "--source", "other-project")
+
+        assert x_git.created_branches == {}
+        assert x_git.committed_messages == []
+        manifest = load_manifest()
+        entry = manifest.skills["tdd"]
+        assert entry.source == "other-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "x-old"
+        # previous-version / run-update message, not the plain "already matches"
+        assert_words_in_message(result.output, "previous version", "skills update")
+
+    def test_conflict_keeps_y_then_continue_retargets_to_x(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+        x_git.merge_clean = False
+
+        result = assert_invoke("merge", "tdd", "--offline", "--source", "other-project")
+
+        # merge defers on conflict; manifest must still track Y uncorrupted
+        assert_words_in_message(result.output, "conflicts", "--continue")
+        before = load_manifest().skills["tdd"]
+        assert before.source == "my-project"
+        assert before.baseline is not None
+        assert before.baseline.commit == COMMIT
+
+        # simulate git leaving the repo mid-merge on the merge branch
+        x_git.branch = "skill-merge/claude/tdd"
+        x_git.merging = True
+
+        assert_invoke("merge", "--continue")
+
+        # resumed --continue finalizes against X, not Y
+        entry = load_manifest().skills["tdd"]
+        assert entry.source == "other-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "x-commit"
+        assert not entry.detached
+
+    def test_no_commit_keeps_y_then_continue_retargets_to_x(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+
+        result = assert_invoke(
+            "merge", "tdd", "--offline", "--source", "other-project", "--no-commit"
+        )
+
+        # files copied into X, no commit, manifest untouched (still Y)
+        assert_words_in_message(result.output, "--continue")
+        added = OTHER_REPO_ROOT / "skills" / "tdd" / "SKILL.md"
+        assert added.read_text() == "# edited by user"
+        assert x_git.committed_messages == []
+        before = load_manifest().skills["tdd"]
+        assert before.source == "my-project"
+        assert before.baseline is not None
+        assert before.baseline.commit == COMMIT
+
+        # branch was created; resume from there
+        x_git.branch = "skill-merge/claude/tdd"
+
+        assert_invoke("merge", "--continue")
+
+        entry = load_manifest().skills["tdd"]
+        assert entry.source == "other-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "x-commit"
+        assert not entry.detached
+
+    def test_no_commit_keep_source_then_continue_keeps_y(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+        before = load_manifest().skills["tdd"]
+        assert before.baseline is not None
+
+        result = assert_invoke(
+            "merge",
+            "tdd",
+            "--offline",
+            "--source",
+            "other-project",
+            "--keep-source",
+            "--no-commit",
+        )
+        assert_words_in_message(result.output, "--continue")
+        assert load_manifest().skills["tdd"].source == "my-project"
+
+        # resume from the merge branch created in X
+        x_git.branch = "skill-merge/claude/tdd"
+
+        assert_invoke("merge", "--continue")
+
+        # content landed in X, but the manifest is byte-for-byte the Y entry
+        assert (OTHER_REPO_ROOT / "skills" / "tdd" / "SKILL.md").read_text() == (
+            "# edited by user"
+        )
+        entry = load_manifest().skills["tdd"]
+        assert entry.source == "my-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == COMMIT
+        assert entry.baseline.files == before.baseline.files
+        assert entry.detached == before.detached
+
+    def test_conflict_keep_source_then_continue_keeps_y(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+        x_git.merge_clean = False
+        before = load_manifest().skills["tdd"]
+        assert before.baseline is not None
+
+        result = assert_invoke(
+            "merge",
+            "tdd",
+            "--offline",
+            "--source",
+            "other-project",
+            "--keep-source",
+        )
+        assert_words_in_message(result.output, "conflicts", "--continue")
+        assert load_manifest().skills["tdd"].source == "my-project"
+
+        # simulate git leaving the repo mid-merge on the merge branch
+        x_git.branch = "skill-merge/claude/tdd"
+        x_git.merging = True
+
+        assert_invoke("merge", "--continue")
+
+        assert (OTHER_REPO_ROOT / "skills" / "tdd" / "SKILL.md").read_text() == (
+            "# edited by user"
+        )
+        entry = load_manifest().skills["tdd"]
+        assert entry.source == "my-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == COMMIT
+        assert entry.baseline.files == before.baseline.files
+        assert entry.detached == before.detached
+
+
+class TestMergeKeepSourceState:
+    """Lifecycle of the persisted --keep-source intent (B2)."""
+
+    def _setup(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> FakeGitRepo:
+        return TestMergeRetarget()._setup(fs, git_repo, fake_git_manager)
+
+    def test_intent_cleared_after_keep_source_continue(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+
+        assert_invoke(
+            "merge",
+            "tdd",
+            "--offline",
+            "--source",
+            "other-project",
+            "--keep-source",
+            "--no-commit",
+        )
+        assert load_keep_source() == {"skill-merge/claude/tdd"}
+
+        x_git.branch = "skill-merge/claude/tdd"
+        assert_invoke("merge", "--continue")
+
+        # finalize clears the intent
+        assert load_keep_source() == set()
+
+    def test_intent_cleared_after_abort_of_keep_source_merge(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+
+        assert_invoke(
+            "merge",
+            "tdd",
+            "--offline",
+            "--source",
+            "other-project",
+            "--keep-source",
+            "--no-commit",
+        )
+        assert load_keep_source() == {"skill-merge/claude/tdd"}
+
+        x_git.branch = "skill-merge/claude/tdd"
+        assert_invoke("merge", "--abort")
+
+        assert load_keep_source() == set()
+
+    def test_fresh_retarget_ignores_stale_intent(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        # a prior keep-source run left intent that was never cleared (branch
+        # abandoned manually). A fresh retarget WITHOUT --keep-source on the
+        # same skill must still retarget to X — no stale intent survives.
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+
+        assert_invoke(
+            "merge",
+            "tdd",
+            "--offline",
+            "--source",
+            "other-project",
+            "--keep-source",
+            "--no-commit",
+        )
+        assert load_keep_source() == {"skill-merge/claude/tdd"}
+
+        # simulate the merge branch being abandoned (deleted) so a new merge
+        # can start; the stale intent file is left behind.
+        x_git.branch = "main"
+
+        assert_invoke("merge", "tdd", "--offline", "--source", "other-project")
+
+        entry = load_manifest().skills["tdd"]
+        assert entry.source == "other-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == "x-commit"
+        assert not entry.detached
+        # stale intent dropped on the fresh (non-keep-source) retarget
+        assert load_keep_source() == set()
+
+    def test_abandoned_keep_source_then_same_source_merge_writes_baseline(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        # the leak: an abandoned keep-source retarget of `tdd` leaves intent set.
+        # A later NORMAL same-source merge of `tdd` must still write its baseline
+        # (cross-source gating prevents the stale flag from suppressing it).
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+        before = load_manifest().skills["tdd"]
+        assert before.baseline is not None
+
+        assert_invoke(
+            "merge",
+            "tdd",
+            "--offline",
+            "--source",
+            "other-project",
+            "--keep-source",
+            "--no-commit",
+        )
+        assert load_keep_source() == {"skill-merge/claude/tdd"}
+
+        # abandon: drop the branch, edit the skill so a same-source merge runs.
+        # content differs from the original Y baseline so a skip would leave the
+        # OLD hashes — the assertions below distinguish "written" from "skipped".
+        x_git.branch = "main"
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited again")
+
+        assert_invoke("merge", "tdd", "--offline", "--source", "my-project")
+
+        # same-source merge wrote a fresh Y baseline — not silently skipped.
+        # baseline.files reflects the freshly-merged content, not the stale ones.
+        entry = load_manifest().skills["tdd"]
+        assert entry.source == "my-project"
+        assert entry.baseline is not None
+        assert entry.baseline.commit == COMMIT
+        assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "tdd")
+        assert entry.baseline.files != before.baseline.files
+        # stale intent dropped
+        assert load_keep_source() == set()
+
+    def test_keep_source_continue_honored_when_manifest_entry_gone(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        # case (c): deferred --keep-source retarget into X, then the user runs
+        # `skills remove tdd` before resuming. At --continue the manifest entry
+        # is gone (prev is None) but the persisted intent is authoritative:
+        # content lands in X and NO manifest entry is created/retargeted.
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+
+        assert_invoke(
+            "merge",
+            "tdd",
+            "--offline",
+            "--source",
+            "other-project",
+            "--keep-source",
+            "--no-commit",
+        )
+        assert load_keep_source() == {"skill-merge/claude/tdd"}
+
+        # `skills remove tdd` between deferral and resume: entry vanishes
+        save_manifest({})
+
+        x_git.branch = "skill-merge/claude/tdd"
+        result = assert_invoke("merge", "--continue")
+
+        # keep-source honored: no manifest entry resurrected/retargeted to X
+        assert "tdd" not in load_manifest().skills
+        # content still finalized into X
+        source_skill = OTHER_REPO_ROOT / "skills" / "tdd" / "SKILL.md"
+        assert source_skill.read_text() == "# edited by user"
+        # intent cleared, branch deleted
+        assert load_keep_source() == set()
+        assert "skill-merge/claude/tdd" in x_git.deleted_branches
+        assert_words_in_message(result.output, "merged", "other-project")
+
+
 class TestMergeContinue:
     def test_happy_path(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1374,6 +2142,57 @@ class TestMergeAbort:
 
         assert _fake_git.branch == "main"
         assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
+        assert_words_in_message(result.output, "aborted")
+
+    def test_cross_source_abort_uses_x_branch_not_y_pinned(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        # Y tracks the skill with a pinned branch that does not exist in X.
+        # Aborting a cross-source retarget must check out X's branch in X's
+        # repo, never Y's pinned branch.
+        register_two_sources(fs, git_repo, OTHER_REPO_ROOT)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dirs=["skills"], branch="develop"),
+            git_repo,
+        )
+        create_source_skill(fs, "tdd", content="# original")
+        create_source_skill(
+            fs, "tdd", content="# original", root=OTHER_REPO_ROOT / "skills"
+        )
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+                )
+            }
+        )
+        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+        x_git = FakeGitRepo(
+            root=OTHER_REPO_ROOT,
+            commits={"skills/tdd": "x-commit"},
+            ancestors={("x-commit", "main"): True},
+            commit_logs={"skills/tdd": ["x-base"]},
+            files_at_commit={("x-base", "skills/tdd/SKILL.md"): b"# original"},
+            commit_messages={"x-base": "feat: add tdd"},
+        )
+        fake_git_manager.install(x_git)
+
+        # defer the cross-source merge so a merge branch is left in X
+        assert_invoke(
+            "merge", "tdd", "--offline", "--source", "other-project", "--no-commit"
+        )
+        x_git.branch = "skill-merge/claude/tdd"
+
+        result = assert_invoke("merge", "--abort")
+
+        # abort lands on X's branch (main), not Y's pinned `develop`
+        assert x_git.branch == "main"
+        assert "skill-merge/claude/tdd" in x_git.deleted_branches
         assert_words_in_message(result.output, "aborted")
 
 

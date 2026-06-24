@@ -1,7 +1,7 @@
 ---
-id: s08t36
+id: s16t01
 slug: allow-to-merge-a-skill
-status: pending
+status: in-review
 ---
 
 # Allow to merge a skill to *another* skill source

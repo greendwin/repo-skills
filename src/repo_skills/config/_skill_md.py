@@ -1,8 +1,19 @@
+import os
+from collections.abc import Iterator
 from pathlib import Path
 
 from repo_skills.utils import read_text
 
 SKILL_FILE = "SKILL.md"
+
+
+def iter_skill_dirs(root: Path) -> Iterator[Path]:
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        if SKILL_FILE in filenames:
+            # outermost SKILL.md wins; don't descend into a skill's internals
+            dirnames.clear()
+            yield Path(dirpath)
 
 
 def read_skill_description(skill_dir: Path) -> str | None:

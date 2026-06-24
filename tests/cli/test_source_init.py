@@ -465,6 +465,48 @@ class TestSourceInitSkillsDir:
         source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["a"]
 
+    def test_nested_skills_dir_collapsed_child_after_parent(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        fs.create_dir(git_repo / "top" / "group")
+
+        result = assert_invoke(
+            "source",
+            "init",
+            "--skills-dir",
+            "top",
+            "--skills-dir",
+            "top/group",
+        )
+
+        loaded = load_source_config(git_repo)
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["top"]
+        assert_words_in_message(result.output, "top/group", "inside", "ignoring")
+        # the container name is load-bearing: anchor on the trailing delimiter so a
+        # substring of the dropped dir cannot stand in for the container token
+        assert "is inside top;" in result.output
+
+    def test_nested_skills_dir_collapsed_parent_after_child(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        fs.create_dir(git_repo / "top" / "group")
+
+        result = assert_invoke(
+            "source",
+            "init",
+            "--skills-dir",
+            "top/group",
+            "--skills-dir",
+            "top",
+        )
+
+        loaded = load_source_config(git_repo)
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["top"]
+        assert_words_in_message(result.output, "top/group", "inside", "ignoring")
+        assert "is inside top;" in result.output
+
     def test_dedup_preserves_first_occurrence_order(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
@@ -486,6 +528,22 @@ class TestSourceInitSkillsDir:
         source_cfg = loaded.cfg
         assert source_cfg.skills_dirs == ["b", "a"]
         assert source_cfg.active_dir == "b"
+
+    def test_exact_dup_skills_dir_dedups_silently(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        fs.create_dir(git_repo / "b")
+
+        result = assert_invoke(
+            "source", "init", "--skills-dir", "b", "--skills-dir", "b"
+        )
+
+        loaded = load_source_config(git_repo)
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["b"]
+        # an exact repeat is not "inside itself": no nesting note must appear
+        assert "inside" not in result.output
+        assert "ignoring" not in result.output
 
     def test_skills_dir_bypasses_detection_for_nonexistent_dir(
         self, git_repo: Path
@@ -586,6 +644,47 @@ class TestSourceInitSkillsDir:
         assert_words_in_message(
             result.output, "updated", "dirs", "skills", "new-skills"
         )
+
+    def test_reinit_collapses_nested_skills_dirs_and_emits_change(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        assert_invoke("source", "init")
+        fs.create_dir(git_repo / "parent" / "child")
+
+        result = assert_invoke(
+            "source",
+            "init",
+            "--skills-dir",
+            "parent",
+            "--skills-dir",
+            "parent/child",
+        )
+
+        loaded = load_source_config(git_repo)
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["parent"]
+
+        assert_words_in_message(result.output, "updated", "dirs", "parent")
+        assert "is inside parent;" in result.output
+        assert "ignoring" in result.output
+
+    def test_reinit_without_nested_dirs_stays_silent_about_nesting(
+        self, fs: FakeFilesystem, git_repo: Path
+    ) -> None:
+        assert_invoke("source", "init")
+        fs.create_dir(git_repo / "parent")
+
+        first = assert_invoke("source", "init", "--skills-dir", "parent")
+        # a no-op re-init with the same single dir collapses nothing
+        second = assert_invoke("source", "init", "--skills-dir", "parent")
+
+        loaded = load_source_config(git_repo)
+        source_cfg = loaded.cfg
+        assert source_cfg.skills_dirs == ["parent"]
+
+        for output in (first.output, second.output):
+            assert "is inside" not in output
+            assert "ignoring" not in output
 
     def test_reinit_with_multiple_skills_dirs(
         self, fs: FakeFilesystem, git_repo: Path

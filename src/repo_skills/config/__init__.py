@@ -9,6 +9,7 @@ __all__ = [
     "Provider",
     "ProviderRegistry",
     "SKILL_FILE",
+    "iter_skill_dirs",
     "SkillManifest",
     "SourceBrokenError",
     "Source",
@@ -49,6 +50,7 @@ from ._skill_manifest import (
 )
 from ._skill_md import (
     SKILL_FILE,
+    iter_skill_dirs,
     read_skill_description,
 )
 from ._source import (

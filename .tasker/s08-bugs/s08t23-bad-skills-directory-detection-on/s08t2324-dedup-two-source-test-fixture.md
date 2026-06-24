@@ -1,7 +1,7 @@
 ---
 id: s08t2324
 slug: dedup-two-source-test-fixture
-status: pending
+status: done
 ---
 
 # Dedup two-source test fixture into a helper

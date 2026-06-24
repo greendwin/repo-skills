@@ -1,7 +1,7 @@
 ---
 id: s08t2326
 slug: collapse-nestedoverlapping-skillsdirs-at-normalization
-status: pending
+status: done
 ---
 
 # Collapse nested/overlapping skills_dirs at normalization

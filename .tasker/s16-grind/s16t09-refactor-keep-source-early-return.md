@@ -1,7 +1,7 @@
 ---
 id: s16t09
 slug: refactor-keep-source-early-return
-status: pending
+status: in-progress
 ---
 
 # Refactor: keep-source early-return pattern repeated across three finalize sinks

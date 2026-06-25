@@ -23,6 +23,7 @@ from repo_skills.config import (
     SourceRegistry,
     SourceSkill,
     compute_file_hashes,
+    default_config_path,
     save_skill_manifest,
     save_source_config,
     save_source_registry,
@@ -1122,6 +1123,22 @@ def _setup_merge_branch(
     fake_git.branch = branch
 
 
+def _assert_unlinks_orphaned_merge_state(
+    fs: FakeFilesystem,
+    git_repo: Path,
+    fake_git: FakeGitRepo,
+    *cli_args: str,
+) -> None:
+    # pre-upgrade artifact left by the removed keep-source persistence
+    stale = default_config_path("merge-state.json")
+    fs.create_file(stale, contents="{}")
+    _setup_merge_branch(fs, git_repo, fake_git)
+
+    assert_invoke(*cli_args)
+
+    assert not stale.exists()
+
+
 class TestMergeRetarget:
     def _setup(
         self,
@@ -2011,6 +2028,13 @@ class TestMergeContinue:
 
         assert _fake_git.rebasing is False
 
+    def test_unlinks_orphaned_merge_state(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _assert_unlinks_orphaned_merge_state(
+            fs, git_repo, _fake_git, "merge", "--continue"
+        )
+
     def test_dirty_allowed_during_merge(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
@@ -2226,6 +2250,13 @@ class TestMergeAbort:
         assert _fake_git.branch == "main"
         assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
         assert_words_in_message(result.output, "aborted")
+
+    def test_unlinks_orphaned_merge_state(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        _assert_unlinks_orphaned_merge_state(
+            fs, git_repo, _fake_git, "merge", "--abort"
+        )
 
     def test_errors_when_abort_and_continue(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

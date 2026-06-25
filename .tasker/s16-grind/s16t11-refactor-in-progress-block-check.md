@@ -1,7 +1,7 @@
 ---
 id: s16t11
 slug: refactor-in-progress-block-check
-status: pending
+status: in-progress
 ---
 
 # Refactor: In-progress block check re-parses branches that _list_merge_branches already validated

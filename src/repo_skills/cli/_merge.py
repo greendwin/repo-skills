@@ -20,6 +20,7 @@ from repo_skills.config import (
     SourceRegistry,
     SourceSkill,
     compute_file_hashes,
+    default_config_path,
     load_config_context,
     load_skill_manifest,
     make_baseline,
@@ -41,6 +42,14 @@ MERGE_BRANCH_STEM = "skill-merge"
 MERGE_BRANCH_PREFIX = f"{MERGE_BRANCH_STEM}/"
 MERGE_KEEP_BRANCH_PREFIX = f"{MERGE_BRANCH_STEM}-keep/"
 _MERGE_PREFIXES = (MERGE_KEEP_BRANCH_PREFIX, MERGE_BRANCH_PREFIX)
+
+
+def _cleanup_legacy_merge_state() -> None:
+    # Pre-upgrade keep-source persistence wrote merge-state.json; that mechanism
+    # is gone (intent now rides the branch name), so best-effort unlink the stale
+    # artifact on any resume. Note: deferred keep-source merges from before the
+    # upgrade must be re-run.
+    default_config_path("merge-state.json").unlink(missing_ok=True)
 
 
 def _merge_branch_name(
@@ -1021,10 +1030,18 @@ def _score_commit(
     return max(1, distance)
 
 
-def _merge_continue(ctx: ConfigContext) -> None:
+def _resolve_active_merge(ctx: ConfigContext) -> tuple[GitRepo, str, str, str]:
+    # single home for the deferred-resume entry: fold legacy cleanup into the
+    # one boundary that locates the in-progress merge's repo/branch/skill.
+    _cleanup_legacy_merge_state()
     git = _detect_merge_repo(ctx)
     branch = _detect_merge_branch(git)
     provider_name, skill_name = _parse_merge_branch(branch)
+    return git, branch, provider_name, skill_name
+
+
+def _merge_continue(ctx: ConfigContext) -> None:
+    git, branch, provider_name, skill_name = _resolve_active_merge(ctx)
 
     rebasing = git.is_rebasing()
     merging = git.is_merging()
@@ -1115,9 +1132,7 @@ def _finalize(
 
 
 def _merge_abort(ctx: ConfigContext) -> None:
-    git = _detect_merge_repo(ctx)
-    branch = _detect_merge_branch(git)
-    _, skill_name = _parse_merge_branch(branch)
+    git, branch, _, skill_name = _resolve_active_merge(ctx)
 
     if git.is_rebasing():
         git.rebase_abort()

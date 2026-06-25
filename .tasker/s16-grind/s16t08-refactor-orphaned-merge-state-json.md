@@ -1,7 +1,7 @@
 ---
 id: s16t08
 slug: refactor-orphaned-merge-state-json
-status: pending
+status: in-review
 ---
 
 # Refactor: Orphaned merge-state.json left on disk for upgrading users; no cleanup

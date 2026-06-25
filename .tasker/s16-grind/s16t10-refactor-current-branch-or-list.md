@@ -1,7 +1,7 @@
 ---
 id: s16t10
 slug: refactor-current-branch-or-list
-status: pending
+status: in-progress
 ---
 
 # Refactor: current-branch-or-list prefix check duplicated in _has_merge_branch and _detect_merge_branch

@@ -19,13 +19,10 @@ from repo_skills.config import (
     Source,
     SourceRegistry,
     SourceSkill,
-    clear_keep_source,
     compute_file_hashes,
     load_config_context,
-    load_keep_source,
     load_skill_manifest,
     make_baseline,
-    mark_keep_source,
     read_skill_description,
     save_skill_manifest,
 )
@@ -38,7 +35,26 @@ from repo_skills.utils import hash_content, normalize_line_endings, overwrite_di
 from ._app import app
 from ._deps import prepare_source_repo, resolve_git_repo
 
-MERGE_BRANCH_PREFIX = "skill-merge/"
+# Deferred --keep-source intent rides in the keep-prefixed branch *name*, so a
+# resumed `--continue`/`--abort` derives it from the branch — no persisted state.
+MERGE_BRANCH_STEM = "skill-merge"
+MERGE_BRANCH_PREFIX = f"{MERGE_BRANCH_STEM}/"
+MERGE_KEEP_BRANCH_PREFIX = f"{MERGE_BRANCH_STEM}-keep/"
+_MERGE_PREFIXES = (MERGE_KEEP_BRANCH_PREFIX, MERGE_BRANCH_PREFIX)
+
+
+def _merge_branch_name(
+    provider_name: str, skill_name: str, *, keep_source: bool
+) -> str:
+    prefix = MERGE_KEEP_BRANCH_PREFIX if keep_source else MERGE_BRANCH_PREFIX
+    return f"{prefix}{provider_name}/{skill_name}"
+
+
+def _merge_branch_prefix(branch: str) -> str | None:
+    for prefix in _MERGE_PREFIXES:
+        if branch.startswith(prefix):
+            return prefix
+    return None
 
 
 def _merged_still_tracking(
@@ -158,15 +174,19 @@ def _run_branch_merge(
     no_commit: bool,
     rebase: bool,
     keep_source: bool,
-    record_keep_source: bool,
     on_exact_match: Callable[[str], None],
     on_finalize: Callable[[GitRepo, str, bool], None],
 ) -> None:
     # Shared branch-merge engine for same-source and cross-source paths. Diffs
     # are parameterized: working_root (where content lands), force (base search),
-    # keep-source recording (retarget-only), and the exact-match / finalize tails.
-    branch_name = f"{MERGE_BRANCH_PREFIX}{provider.name}/{skill_name}"
-    if git.list_branches(branch_name):
+    # keep-source (encoded in the branch name, see module note), and the
+    # exact-match / finalize tails.
+    branch_name = _merge_branch_name(provider.name, skill_name, keep_source=keep_source)
+    # any in-progress merge for this skill (either prefix) blocks a fresh one
+    if any(
+        _parse_merge_branch(b) == (provider.name, skill_name)
+        for b in _list_merge_branches(git)
+    ):
         raise AppError(
             f"Merge already in progress for {fmt_ident(skill_name)}.",
             hint=f"Run {fmt_command('skills merge --continue')} to finish active merge "
@@ -188,12 +208,6 @@ def _run_branch_merge(
         on_exact_match(base_result.commit)
         return
 
-    if record_keep_source:
-        # fresh merge => no live branch (guarded above), so any persisted intent
-        # for this branch name is stale from an abandoned run; drop it so a
-        # non-keep-source retarget can't inherit it.
-        clear_keep_source(branch_name)
-
     if base_result is not None:
         git.create_branch(branch_name, base_result.commit)
     else:
@@ -202,11 +216,8 @@ def _run_branch_merge(
     overwrite_dir(installed_path, working_root / skill.rel_path)
 
     if no_commit:
-        if record_keep_source and keep_source:
-            # deferred finish goes through _merge_continue/_finalize; persist the
-            # keep-source intent (keyed by branch) so it is honored there (branch
-            # detection alone can't tell a retarget from a keep-source publish).
-            mark_keep_source(branch_name)
+        # deferred finish resumes via _merge_continue/_finalize; the keep-source
+        # intent already rides in branch_name, nothing extra to persist.
         console.print(
             "Files copied to source repo. Review, commit, and run"
             f" {fmt_command('skills merge --continue')}."
@@ -226,8 +237,6 @@ def _run_branch_merge(
         clean = git.rebase_root(target_branch)
 
     if not clean:
-        if record_keep_source and keep_source:
-            mark_keep_source(branch_name)
         if use_merge:
             console.print("[yellow]Warning:[/yellow] Merge has conflicts.\n")
         else:
@@ -441,8 +450,15 @@ def _merge_start(
             git=git,
         )
 
-    def _on_finalize(git: GitRepo, _branch: str, use_merge: bool) -> None:
-        _finalize(ctx, git, provider, skill_name, already_merged=use_merge)
+    def _on_finalize(git: GitRepo, branch_name: str, use_merge: bool) -> None:
+        _finalize(
+            ctx,
+            git,
+            provider,
+            skill_name,
+            merge_branch=branch_name,
+            already_merged=use_merge,
+        )
 
     _run_branch_merge(
         ctx,
@@ -457,7 +473,6 @@ def _merge_start(
         no_commit=no_commit,
         rebase=rebase,
         keep_source=False,
-        record_keep_source=False,
         on_exact_match=_on_exact_match,
         on_finalize=_on_finalize,
     )
@@ -549,7 +564,6 @@ def _merge_retarget(
         no_commit=no_commit,
         rebase=rebase,
         keep_source=keep_source,
-        record_keep_source=True,
         on_exact_match=_on_exact_match,
         on_finalize=_on_finalize,
     )
@@ -1025,7 +1039,7 @@ def _merge_continue(ctx: ConfigContext) -> None:
         )
 
     provider = ctx.provider_registry.require(provider_name)
-    _finalize(ctx, git, provider, skill_name)
+    _finalize(ctx, git, provider, skill_name, merge_branch=branch)
 
 
 def _finalize(
@@ -1034,9 +1048,13 @@ def _finalize(
     provider: Provider,
     skill_name: str,
     *,
+    merge_branch: str,
     already_merged: bool = False,
 ) -> None:
-    merge_branch = f"{MERGE_BRANCH_PREFIX}{provider.name}/{skill_name}"
+    # keep-source intent rides in the branch *name* (keep-prefixed); a resumed
+    # --continue reads it straight off `merge_branch`, so it self-invalidates with
+    # the branch and never leaks to a later same-source merge.
+    keep_source = _merge_branch_prefix(merge_branch) == MERGE_KEEP_BRANCH_PREFIX
 
     # derive source from the repo holding the merge branch, not installed.source:
     # a cross-source retarget runs the merge in X's repo while the manifest still
@@ -1058,27 +1076,15 @@ def _finalize(
 
     prev = ctx.manifest.skills.get(skill_name)
 
-    # the persisted intent (keyed by this exact branch) is authoritative for a
-    # keep-source resume, even if the manifest entry vanished mid-merge (e.g.
-    # `skills remove` between deferral and --continue → prev is None).
-    # The one case it must NOT cover is a same-source resume that inherited a
-    # stale branch entry from an abandoned run: same-source never records intent,
-    # so honoring it there would wrongly suppress the baseline write. Exclude it.
-    is_same_source = prev is not None and prev.source == source.name
-
-    # keep-source: a deferred --keep-source retarget persisted this intent.
-    # Finalize content into X but leave the manifest entry untouched (and never
-    # resurrect a removed entry).
-    if not is_same_source and merge_branch in load_keep_source():
-        clear_keep_source(merge_branch)
+    # keep-source: finalize content into X but leave the manifest entry untouched
+    # (and never resurrect an entry removed mid-merge → prev is None).
+    if keep_source:
         # prev gone (entry removed mid-merge): nothing to keep tracking
         old_source = prev.source if prev is not None else None
         console.print(_merged_still_tracking(skill_name, source.name, old_source))
         return
 
-    # a same-source resume never honors keep-source; drop any stale branch entry
-    # so it cannot poison a later merge that reuses this branch name.
-    clear_keep_source(merge_branch)
+    is_same_source = prev is not None and prev.source == source.name
 
     new_hashes = compute_file_hashes(installed_path)
 
@@ -1128,7 +1134,6 @@ def _merge_abort(ctx: ConfigContext) -> None:
         git.checkout(target_branch)
 
     git.delete_branch(branch)
-    clear_keep_source(branch)
 
     console.print(f"Merge aborted for {fmt_ident(skill_name)}.")
 
@@ -1176,18 +1181,28 @@ def _detect_merge_repo(ctx: ConfigContext) -> GitRepo:
     return candidates[0]
 
 
+def _list_merge_branches(git: GitRepo) -> list[str]:
+    # broad glob captures both prefixes (`skill-merge/`, `skill-merge-keep/`); filter
+    # to genuine merge branches so an unrelated `skill-merge*` branch isn't counted
+    return [
+        b
+        for b in git.list_branches(f"{MERGE_BRANCH_STEM}*")
+        if _merge_branch_prefix(b) is not None
+    ]
+
+
 def _has_merge_branch(git: GitRepo) -> bool:
-    if git.current_branch().startswith(MERGE_BRANCH_PREFIX):
+    if _merge_branch_prefix(git.current_branch()) is not None:
         return True
-    return len(git.list_branches(f"{MERGE_BRANCH_PREFIX}*")) > 0
+    return len(_list_merge_branches(git)) > 0
 
 
 def _detect_merge_branch(git: GitRepo) -> str:
     current = git.current_branch()
-    if current.startswith(MERGE_BRANCH_PREFIX):
+    if _merge_branch_prefix(current) is not None:
         return current
 
-    branches = git.list_branches(f"{MERGE_BRANCH_PREFIX}*")
+    branches = _list_merge_branches(git)
     if len(branches) == 1:
         return branches[0]
 
@@ -1205,11 +1220,13 @@ def _detect_merge_branch(git: GitRepo) -> str:
 
 
 def _parse_merge_branch(branch: str) -> tuple[str, str]:
-    parts = branch.removeprefix(MERGE_BRANCH_PREFIX).split("/", 1)
-    if len(parts) != 2:
-        raise AppError(f"Invalid merge branch: {fmt_ident(branch)}")
+    prefix = _merge_branch_prefix(branch)
+    if prefix is not None:
+        parts = branch.removeprefix(prefix).split("/", 1)
+        if len(parts) == 2:
+            return parts[0], parts[1]
 
-    return parts[0], parts[1]
+    raise AppError(f"Invalid merge branch: {fmt_ident(branch)}")
 
 
 def _compute_distance(

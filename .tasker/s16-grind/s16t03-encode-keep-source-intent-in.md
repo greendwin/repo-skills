@@ -1,7 +1,7 @@
 ---
 id: s16t03
 slug: encode-keep-source-intent-in
-status: pending
+status: in-review
 ---
 
 # Encode keep-source intent in the merge branch name

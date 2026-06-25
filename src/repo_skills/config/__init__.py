@@ -31,17 +31,9 @@ __all__ = [
     "save_source_registry",
     "compute_file_hashes",
     "default_config_path",
-    "clear_keep_source",
-    "load_keep_source",
-    "mark_keep_source",
 ]
 
 from ._config_context import ConfigContext, load_config_context
-from ._merge_state import (
-    clear_keep_source,
-    load_keep_source,
-    mark_keep_source,
-)
 from ._provider_registry import (
     Provider,
     ProviderRegistry,

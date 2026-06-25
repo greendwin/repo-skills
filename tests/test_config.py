@@ -30,12 +30,6 @@ from repo_skills.config import (
     save_source_config,
     save_source_registry,
 )
-from repo_skills.config._merge_state import (
-    MERGE_STATE_FILE,
-    clear_keep_source,
-    load_keep_source,
-    mark_keep_source,
-)
 from repo_skills.config._provider_registry import (
     CURRENT_VERSION as PROVIDER_CURRENT_VERSION,
 )
@@ -958,42 +952,3 @@ class TestReadSkillDescription:
     @pytest.mark.usefixtures("fs")
     def test_returns_none_when_file_missing(self) -> None:
         assert read_skill_description(Path("/skills/missing")) is None
-
-
-class TestMergeStateKeepSource:
-    """load/save of the persisted keep-source intent (B3)."""
-
-    @pytest.fixture(autouse=True)
-    def _xdg(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("XDG_CONFIG_HOME", "/home/user/.config")
-
-    def test_missing_file_is_empty(self, fs: FakeFilesystem) -> None:
-        assert load_keep_source() == set()
-
-    def test_corrupt_json_is_empty_no_exception(self, fs: FakeFilesystem) -> None:
-        path = default_config_path(MERGE_STATE_FILE)
-        fs.create_file(path, contents="{ not json")
-        assert load_keep_source() == set()
-
-    def test_mark_then_load_round_trip(self, fs: FakeFilesystem) -> None:
-        mark_keep_source("skill-merge/claude/tdd")
-        assert load_keep_source() == {"skill-merge/claude/tdd"}
-
-    def test_mark_second_entry_keeps_both(self, fs: FakeFilesystem) -> None:
-        mark_keep_source("skill-merge/claude/tdd")
-        mark_keep_source("skill-merge/cursor/pytest")
-        assert load_keep_source() == {
-            "skill-merge/claude/tdd",
-            "skill-merge/cursor/pytest",
-        }
-
-    def test_clear_removes_entry(self, fs: FakeFilesystem) -> None:
-        mark_keep_source("skill-merge/claude/tdd")
-        mark_keep_source("skill-merge/cursor/pytest")
-        clear_keep_source("skill-merge/claude/tdd")
-        assert load_keep_source() == {"skill-merge/cursor/pytest"}
-
-    def test_clear_absent_is_noop(self, fs: FakeFilesystem) -> None:
-        mark_keep_source("skill-merge/claude/tdd")
-        clear_keep_source("skill-merge/claude/absent")
-        assert load_keep_source() == {"skill-merge/claude/tdd"}

@@ -29,9 +29,19 @@ from repo_skills.config import (
 )
 from repo_skills.console import console, fmt_command, fmt_data, fmt_ident, fmt_path
 from repo_skills.discovery import path_within
-from repo_skills.errors import AppError, FileNotInCommitError, NoopError
+from repo_skills.errors import (
+    AppError,
+    ConfigBrokenError,
+    FileNotInCommitError,
+    NoopError,
+)
 from repo_skills.git import GitRepo, ensure_on_branch
-from repo_skills.utils import hash_content, normalize_line_endings, overwrite_dir
+from repo_skills.utils import (
+    hash_content,
+    load_raw_config,
+    normalize_line_endings,
+    overwrite_dir,
+)
 
 from ._app import app
 from ._deps import prepare_source_repo, resolve_git_repo
@@ -47,9 +57,23 @@ _MERGE_PREFIXES = (MERGE_KEEP_BRANCH_PREFIX, MERGE_BRANCH_PREFIX)
 LEGACY_MERGE_STATE_FILE = "merge-state.json"
 
 
+def _branch_has_legacy_keep_intent(branch: str) -> bool:
+    # pre-upgrade build persisted deferred --keep-source intent here as a list of
+    # plain-prefixed branch names; intent now rides the keep-prefixed branch name.
+    # Read via the shared loader but swallow its errors: a missing/corrupt/
+    # pre-upgrade artifact yields no keep intent rather than raising.
+    try:
+        data = load_raw_config(default_config_path(LEGACY_MERGE_STATE_FILE))
+    except ConfigBrokenError:
+        return False
+    if data is None:
+        return False
+    branches = data.get("keep_source")
+    return isinstance(branches, list) and branch in branches
+
+
 def _cleanup_legacy_merge_state() -> None:
-    # best-effort unlink stale artifact on resume;
-    # pre-upgrade deferred keep-source merges must be re-run
+    # best-effort unlink stale artifact on resume
     default_config_path(LEGACY_MERGE_STATE_FILE).unlink(missing_ok=True)
 
 
@@ -1035,17 +1059,48 @@ class _ActiveMerge(NamedTuple):
 
 
 def _resolve_active_merge(ctx: ConfigContext) -> _ActiveMerge:
-    # single home for the deferred-resume entry: fold legacy cleanup into the
-    # one boundary that locates the in-progress merge's repo/branch/skill.
-    _cleanup_legacy_merge_state()
+    # side-effect-free locator for the in-progress merge's repo/branch/skill. The
+    # guard+cleanup ordering lives in the _consume_* helpers, not here.
     git = _detect_merge_repo(ctx)
     branch = _detect_merge_branch(git)
-    provider_name, skill_name = _parse_merge_branch(branch)
+    parsed = _split_merge_branch(branch)
+    if parsed is None:
+        raise AppError(f"Invalid merge branch: {fmt_ident(branch)}")
+    provider_name, skill_name = parsed
     return _ActiveMerge(git, branch, provider_name, skill_name)
 
 
+def _guard_legacy_keep_source(branch: str) -> None:
+    # pre-upgrade deferred --keep-source merge: intent lived in merge-state.json
+    # under the OLD plain prefix, not the branch name, so finalize would derive
+    # keep_source=False and retarget — the opposite of the user's request. Refuse
+    # to silently corrupt the manifest; --abort clears the state for a re-run.
+    # Best-effort — only fires while the legacy file still exists; once cleared, a
+    # plain-prefixed legacy keep branch is indistinguishable from a normal retarget.
+    if _branch_has_legacy_keep_intent(branch):
+        raise AppError(
+            f"In-flight merge {fmt_ident(branch)} was deferred with"
+            f" {fmt_command('--keep-source')} before an upgrade and cannot be"
+            " resumed safely.",
+            hint=f"Run {fmt_command('skills merge --abort')}, then re-run with"
+            f" {fmt_command('--keep-source')}.",
+        )
+
+
+def _consume_active_merge(ctx: ConfigContext, *, guard_legacy: bool) -> _ActiveMerge:
+    active = _resolve_active_merge(ctx)
+    if guard_legacy:
+        # continue path: refuse a legacy deferred --keep-source resume BEFORE
+        # unlinking the legacy artifact, so the refused resume leaves the file for
+        # a later --abort to recover.
+        _guard_legacy_keep_source(active.branch)
+    _cleanup_legacy_merge_state()
+    return active
+
+
 def _merge_continue(ctx: ConfigContext) -> None:
-    git, branch, provider_name, skill_name = _resolve_active_merge(ctx)
+    active = _consume_active_merge(ctx, guard_legacy=True)
+    git = active.git
 
     rebasing = git.is_rebasing()
     merging = git.is_merging()
@@ -1059,8 +1114,8 @@ def _merge_continue(ctx: ConfigContext) -> None:
             props={"repo": fmt_path(git.root)},
         )
 
-    provider = ctx.provider_registry.require(provider_name)
-    _finalize(ctx, git, provider, skill_name, merge_branch=branch)
+    provider = ctx.provider_registry.require(active.provider_name)
+    _finalize(ctx, git, provider, active.skill_name, merge_branch=active.branch)
 
 
 def _finalize(
@@ -1075,9 +1130,6 @@ def _finalize(
     # keep-source intent derived from branch prefix (see module note)
     keep_source = _merge_branch_prefix(merge_branch) == MERGE_KEEP_BRANCH_PREFIX
 
-    # derive source from the repo holding the merge branch, not installed.source:
-    # a cross-source retarget runs the merge in X's repo while the manifest still
-    # tracks Y, so resuming via installed.source (Y) would corrupt the entry.
     source = _source_for_repo(ctx.source_registry, git)
     skill = source.get_skill(skill_name)
 
@@ -1134,28 +1186,30 @@ def _finalize(
 
 
 def _merge_abort(ctx: ConfigContext) -> None:
-    git, branch, _provider_name, skill_name = _resolve_active_merge(ctx)
+    active = _consume_active_merge(ctx, guard_legacy=False)
+    git = active.git
 
     if git.is_rebasing():
         git.rebase_abort()
     elif git.is_merging():
         git.merge_abort()
 
-    # resolve source from the merge repo, not installed.source: a cross-source
-    # retarget runs the merge in X's repo while the manifest still tracks Y, so
-    # Y's pinned branch is wrong (or absent) in X. Mirror `_finalize`.
     source = _source_for_repo(ctx.source_registry, git)
 
     target_branch = source.get_branch(git)
     if git.current_branch() != target_branch:
         git.checkout(target_branch)
 
-    git.delete_branch(branch)
+    git.delete_branch(active.branch)
 
-    console.print(f"Merge aborted for {fmt_ident(skill_name)}.")
+    console.print(f"Merge aborted for {fmt_ident(active.skill_name)}.")
 
 
 def _source_for_repo(source_registry: SourceRegistry, git: GitRepo) -> Source:
+    # derive source from the repo holding the merge branch, not installed.source:
+    # a cross-source retarget runs the merge in X's repo while the manifest still
+    # tracks Y, so installed.source (Y) is wrong — Y's pinned branch is absent in
+    # X and resuming via Y would corrupt the entry.
     # compare by string: repo roots may be different Path implementations
     root = str(git.root)
     for name, entry in source_registry.sources.items():
@@ -1243,7 +1297,7 @@ def _detect_merge_branch(git: GitRepo) -> str:
 
 
 def _split_merge_branch(branch: str) -> tuple[str, str] | None:
-    # non-raising: strip prefix + 2-part split, None on a malformed name
+    # strip prefix + 2-part split; None on a malformed name
     prefix = _merge_branch_prefix(branch)
     if prefix is not None:
         parts = branch.removeprefix(prefix).split("/", 1)
@@ -1264,13 +1318,6 @@ def _active_merge_branch_for(
         ),
         None,
     )
-
-
-def _parse_merge_branch(branch: str) -> tuple[str, str]:
-    parsed = _split_merge_branch(branch)
-    if parsed is None:
-        raise AppError(f"Invalid merge branch: {fmt_ident(branch)}")
-    return parsed
 
 
 def _compute_distance(

@@ -17,7 +17,7 @@ status: in-progress
 - [ ] [s16t07](s16t07-add-provider-installed-path-to.md): Add Provider.installed_path() to dedupe install-path math
 - [~] [s16t08](s16t08-refactor-orphaned-merge-state-json.md): **review** Refactor: Orphaned merge-state.json left on disk for upgrading users; no cleanup
 - [~] [s16t09](s16t09-refactor-keep-source-early-return.md): **review** Refactor: keep-source early-return pattern repeated across three finalize sinks
-- [~] [s16t10](s16t10-refactor-current-branch-or-list.md): Refactor: current-branch-or-list prefix check duplicated in _has_merge_branch and _detect_merge_branch
+- [~] [s16t10](s16t10-refactor-current-branch-or-list.md): **review** Refactor: current-branch-or-list prefix check duplicated in _has_merge_branch and _detect_merge_branch
 - [~] [s16t11](s16t11-refactor-in-progress-block-check.md): Refactor: In-progress block check re-parses branches that _list_merge_branches already validated
 - [ ] [s16t12](s16t12-refactor-in-progress-block-check.md): Refactor: In-progress block check routes pre-validated branches through the raising parser
 - [ ] [s16t13](s16t13-refactor-current-branch-or-list.md): Refactor: current-branch-or-list precedence probe duplicated across _has_merge_branch and _detect_merge_branch
@@ -42,3 +42,6 @@ status: in-progress
 - [ ] [s16t32](s16t32-refactor-legacy-merge-state-json.md): Refactor: Legacy merge-state.json cleanup only fires on --continue/--abort, never on a fresh merge
 - [ ] [s16t33](s16t33-refactor-active-merge-branch-for.md): Refactor: _active_merge_branch_for returns str | None but the sole caller only tests `is not None`
 - [ ] [s16t34](s16t34-refactor-branch-naming-parsing-cluster.md): Refactor: Branch-naming/parsing cluster is a cohesive seam ripe for extraction; _merge.py sits at 1330 lines (>1k)
+- [ ] [s16t35](s16t35-refactor-for-continue-boolean-flag.md): Refactor: `for_continue` boolean flag splits `_resolve_active_merge` into two behaviors (flag-argument smell)
+- [ ] [s16t36](s16t36-refactor-legacy-merge-state-json.md): Refactor: Legacy merge-state.json cleanup only fires on --continue/--abort, never on a fresh merge
+- [ ] [s16t37](s16t37-refactor-eager-git-branch-listing.md): Refactor: Eager git branch listing regresses the current-branch fast path

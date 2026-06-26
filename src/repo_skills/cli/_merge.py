@@ -4,7 +4,7 @@ import difflib
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, NoReturn, Optional
+from typing import Annotated, NamedTuple, NoReturn, Optional
 
 import typer
 from rich.markup import escape
@@ -43,13 +43,14 @@ MERGE_BRANCH_PREFIX = f"{MERGE_BRANCH_STEM}/"
 MERGE_KEEP_BRANCH_PREFIX = f"{MERGE_BRANCH_STEM}-keep/"
 _MERGE_PREFIXES = (MERGE_KEEP_BRANCH_PREFIX, MERGE_BRANCH_PREFIX)
 
+# retired keep-source persistence artifact; see module note
+LEGACY_MERGE_STATE_FILE = "merge-state.json"
+
 
 def _cleanup_legacy_merge_state() -> None:
-    # Pre-upgrade keep-source persistence wrote merge-state.json; that mechanism
-    # is gone (intent now rides the branch name), so best-effort unlink the stale
-    # artifact on any resume. Note: deferred keep-source merges from before the
-    # upgrade must be re-run.
-    default_config_path("merge-state.json").unlink(missing_ok=True)
+    # best-effort unlink stale artifact on resume;
+    # pre-upgrade deferred keep-source merges must be re-run
+    default_config_path(LEGACY_MERGE_STATE_FILE).unlink(missing_ok=True)
 
 
 def _merge_branch_name(
@@ -191,11 +192,7 @@ def _run_branch_merge(
     # keep-source (encoded in the branch name, see module note), and the
     # exact-match / finalize tails.
     branch_name = _merge_branch_name(provider.name, skill_name, keep_source=keep_source)
-    # any in-progress merge for this skill (either prefix) blocks a fresh one
-    if any(
-        _parse_merge_branch(b) == (provider.name, skill_name)
-        for b in _list_merge_branches(git)
-    ):
+    if _active_merge_branch_for(git, provider.name, skill_name) is not None:
         raise AppError(
             f"Merge already in progress for {fmt_ident(skill_name)}.",
             hint=f"Run {fmt_command('skills merge --continue')} to finish active merge "
@@ -1030,14 +1027,21 @@ def _score_commit(
     return max(1, distance)
 
 
-def _resolve_active_merge(ctx: ConfigContext) -> tuple[GitRepo, str, str, str]:
+class _ActiveMerge(NamedTuple):
+    git: GitRepo
+    branch: str
+    provider_name: str
+    skill_name: str
+
+
+def _resolve_active_merge(ctx: ConfigContext) -> _ActiveMerge:
     # single home for the deferred-resume entry: fold legacy cleanup into the
     # one boundary that locates the in-progress merge's repo/branch/skill.
     _cleanup_legacy_merge_state()
     git = _detect_merge_repo(ctx)
     branch = _detect_merge_branch(git)
     provider_name, skill_name = _parse_merge_branch(branch)
-    return git, branch, provider_name, skill_name
+    return _ActiveMerge(git, branch, provider_name, skill_name)
 
 
 def _merge_continue(ctx: ConfigContext) -> None:
@@ -1068,9 +1072,7 @@ def _finalize(
     merge_branch: str,
     already_merged: bool = False,
 ) -> None:
-    # keep-source intent rides in the branch *name* (keep-prefixed); a resumed
-    # --continue reads it straight off `merge_branch`, so it self-invalidates with
-    # the branch and never leaks to a later same-source merge.
+    # keep-source intent derived from branch prefix (see module note)
     keep_source = _merge_branch_prefix(merge_branch) == MERGE_KEEP_BRANCH_PREFIX
 
     # derive source from the repo holding the merge branch, not installed.source:
@@ -1132,7 +1134,7 @@ def _finalize(
 
 
 def _merge_abort(ctx: ConfigContext) -> None:
-    git, branch, _, skill_name = _resolve_active_merge(ctx)
+    git, branch, _provider_name, skill_name = _resolve_active_merge(ctx)
 
     if git.is_rebasing():
         git.rebase_abort()
@@ -1197,8 +1199,8 @@ def _detect_merge_repo(ctx: ConfigContext) -> GitRepo:
 
 
 def _list_merge_branches(git: GitRepo) -> list[str]:
-    # broad glob captures both prefixes (`skill-merge/`, `skill-merge-keep/`); filter
-    # to genuine merge branches so an unrelated `skill-merge*` branch isn't counted
+    # glob is a coarse prefilter; _merge_branch_prefix is the real prefix
+    # guard (excludes e.g. skill-mergeable/*)
     return [
         b
         for b in git.list_branches(f"{MERGE_BRANCH_STEM}*")
@@ -1206,18 +1208,24 @@ def _list_merge_branches(git: GitRepo) -> list[str]:
     ]
 
 
+def _current_or_listed_merge_branches(git: GitRepo) -> tuple[str | None, list[str]]:
+    # single home for "current branch takes precedence": prefixed current branch
+    # (or None) plus the listed merge branches.
+    current = git.current_branch()
+    prefixed = current if _merge_branch_prefix(current) is not None else None
+    return prefixed, _list_merge_branches(git)
+
+
 def _has_merge_branch(git: GitRepo) -> bool:
-    if _merge_branch_prefix(git.current_branch()) is not None:
-        return True
-    return len(_list_merge_branches(git)) > 0
+    current, branches = _current_or_listed_merge_branches(git)
+    return current is not None or bool(branches)
 
 
 def _detect_merge_branch(git: GitRepo) -> str:
-    current = git.current_branch()
-    if _merge_branch_prefix(current) is not None:
+    current, branches = _current_or_listed_merge_branches(git)
+    if current is not None:
         return current
 
-    branches = _list_merge_branches(git)
     if len(branches) == 1:
         return branches[0]
 
@@ -1234,14 +1242,35 @@ def _detect_merge_branch(git: GitRepo) -> str:
     )
 
 
-def _parse_merge_branch(branch: str) -> tuple[str, str]:
+def _split_merge_branch(branch: str) -> tuple[str, str] | None:
+    # non-raising: strip prefix + 2-part split, None on a malformed name
     prefix = _merge_branch_prefix(branch)
     if prefix is not None:
         parts = branch.removeprefix(prefix).split("/", 1)
         if len(parts) == 2:
             return parts[0], parts[1]
+    return None
 
-    raise AppError(f"Invalid merge branch: {fmt_ident(branch)}")
+
+def _active_merge_branch_for(
+    git: GitRepo, provider_name: str, skill_name: str
+) -> str | None:
+    # active merge branch for this skill regardless of keep/plain prefix
+    return next(
+        (
+            b
+            for b in _list_merge_branches(git)
+            if _split_merge_branch(b) == (provider_name, skill_name)
+        ),
+        None,
+    )
+
+
+def _parse_merge_branch(branch: str) -> tuple[str, str]:
+    parsed = _split_merge_branch(branch)
+    if parsed is None:
+        raise AppError(f"Invalid merge branch: {fmt_ident(branch)}")
+    return parsed
 
 
 def _compute_distance(

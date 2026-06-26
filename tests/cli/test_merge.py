@@ -9,6 +9,9 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 import repo_skills.cli._deps as deps_mod
 import repo_skills.cli._merge as merge_mod
 from repo_skills.cli._merge import (
+    LEGACY_MERGE_STATE_FILE,
+    MERGE_BRANCH_PREFIX,
+    MERGE_KEEP_BRANCH_PREFIX,
     _compute_distance,
     _find_base_commit,
     _FindBestCommitResult,
@@ -35,6 +38,7 @@ from tests.cli.helper import (
     INSTALL_DIR,
     SKILLS_DIR,
     SOURCE_REPO_ROOT,
+    ErrorResult,
     FakeGitRepo,
     FakeGitRepoManager,
     assert_invoke,
@@ -51,6 +55,7 @@ from tests.cli.helper import (
 COMMIT = "abc1234"
 CURSOR_DIR = Path("/home/user/.cursor/skills")
 OTHER_REPO_ROOT = Path("/repos/other-project")
+_MERGED_SKILL = "claude/tdd"
 
 
 @pytest.fixture(autouse=True)
@@ -82,6 +87,27 @@ def _setup_diverged_skill(
         }
     )
     (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+
+
+def _assert_merge_in_progress(result: ErrorResult) -> None:
+    assert_words_in_message(
+        result.exception.message, "merge already in progress", "--continue"
+    )
+
+
+def _assert_keep_branch_used(x_git: FakeGitRepo) -> None:
+    # keep-source rides the keep-prefixed branch; plain prefix stays unused
+    assert f"{MERGE_KEEP_BRANCH_PREFIX}{_MERGED_SKILL}" in x_git.created_branches
+    assert f"{MERGE_BRANCH_PREFIX}{_MERGED_SKILL}" not in x_git.created_branches
+
+
+def _assert_keep_branch_deleted(x_git: FakeGitRepo) -> None:
+    assert f"{MERGE_KEEP_BRANCH_PREFIX}{_MERGED_SKILL}" in x_git.deleted_branches
+
+
+def _resume_on_keep_branch(x_git: FakeGitRepo) -> None:
+    # mid-merge resume: simulate checkout of the keep-prefixed branch
+    x_git.branch = f"{MERGE_KEEP_BRANCH_PREFIX}{_MERGED_SKILL}"
 
 
 class TestMergeStart:
@@ -983,9 +1009,7 @@ class TestMergeValidation:
             "merge", "tdd", "--offline", "--from", "claude", expect_error=True
         )
 
-        assert_words_in_message(
-            result.exception.message, "merge already in progress", "--continue"
-        )
+        _assert_merge_in_progress(result)
 
     def test_errors_when_same_merge_in_progress_auto_provider(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -995,9 +1019,7 @@ class TestMergeValidation:
 
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(
-            result.exception.message, "merge already in progress", "--continue"
-        )
+        _assert_merge_in_progress(result)
 
     def test_errors_when_keep_source_merge_already_in_progress(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1008,9 +1030,7 @@ class TestMergeValidation:
 
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(
-            result.exception.message, "merge already in progress", "--continue"
-        )
+        _assert_merge_in_progress(result)
 
     def test_allows_merge_when_different_merge_in_progress(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1028,6 +1048,17 @@ class TestMergeValidation:
         _fake_git.branches = ["skill-merge-keep/claude/other-skill"]
 
         assert_invoke("merge", "tdd", "--offline")
+
+    def test_allows_merge_when_substring_non_merge_branch_present(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        # `skill-merge`-substring branch isn't a real merge -> must not block
+        _setup_diverged_skill(fs, git_repo)
+        _fake_git.branches = ["skill-mergeable/claude/tdd"]
+
+        assert_invoke("merge", "tdd", "--offline")
+
+        assert "skill-merge/claude/tdd" in _fake_git.created_branches
 
     def test_errors_when_repo_dirty(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1130,7 +1161,7 @@ def _assert_unlinks_orphaned_merge_state(
     *cli_args: str,
 ) -> None:
     # pre-upgrade artifact left by the removed keep-source persistence
-    stale = default_config_path("merge-state.json")
+    stale = default_config_path(LEGACY_MERGE_STATE_FILE)
     fs.create_file(stale, contents="{}")
     _setup_merge_branch(fs, git_repo, fake_git)
 
@@ -1219,9 +1250,7 @@ class TestMergeRetarget:
             expect_error=True,
         )
 
-        assert_words_in_message(
-            result.exception.message, "merge already in progress", "--continue"
-        )
+        _assert_merge_in_progress(result)
 
     def test_synced_with_y_still_proceeds_against_x(
         self,
@@ -1577,9 +1606,7 @@ class TestMergeRetarget:
             "merge", "tdd", "--offline", "--source", "other-project", expect_error=True
         )
 
-        assert_words_in_message(
-            result.exception.message, "merge already in progress", "--continue"
-        )
+        _assert_merge_in_progress(result)
         # manifest untouched: still tracks Y
         assert load_manifest().skills["tdd"].source == "my-project"
 
@@ -1695,12 +1722,10 @@ class TestMergeRetarget:
         )
         assert_words_in_message(result.output, "--continue")
         assert load_manifest().skills["tdd"].source == "my-project"
-        # keep-source intent rides in the keep-prefixed branch name; plain unused
-        assert "skill-merge-keep/claude/tdd" in x_git.created_branches
-        assert "skill-merge/claude/tdd" not in x_git.created_branches
+        _assert_keep_branch_used(x_git)
 
         # resume from the keep-source merge branch created in X
-        x_git.branch = "skill-merge-keep/claude/tdd"
+        _resume_on_keep_branch(x_git)
 
         assert_invoke("merge", "--continue")
 
@@ -1736,11 +1761,10 @@ class TestMergeRetarget:
         )
         assert_words_in_message(result.output, "conflicts", "--continue")
         assert load_manifest().skills["tdd"].source == "my-project"
-        # deferred keep-source intent rides in the keep-prefixed branch name
-        assert "skill-merge-keep/claude/tdd" in x_git.created_branches
+        _assert_keep_branch_used(x_git)
 
         # simulate git leaving the repo mid-merge on the keep-source branch
-        x_git.branch = "skill-merge-keep/claude/tdd"
+        _resume_on_keep_branch(x_git)
         x_git.merging = True
 
         assert_invoke("merge", "--continue")
@@ -1777,11 +1801,10 @@ class TestMergeRetarget:
         )
         assert_words_in_message(result.output, "rebase", "conflicts", "--continue")
         assert load_manifest().skills["tdd"].source == "my-project"
-        # deferred keep-source intent rides in the keep-prefixed branch name
-        assert "skill-merge-keep/claude/tdd" in x_git.created_branches
+        _assert_keep_branch_used(x_git)
 
         # simulate git leaving the repo mid-rebase on the keep-source branch
-        x_git.branch = "skill-merge-keep/claude/tdd"
+        _resume_on_keep_branch(x_git)
         x_git.rebasing = True
 
         assert_invoke("merge", "--continue")
@@ -1827,9 +1850,7 @@ class TestMergeKeepSourceState:
             "--no-commit",
         )
 
-        # intent encoded in the branch name; the plain prefix is NOT used
-        assert "skill-merge-keep/claude/tdd" in x_git.created_branches
-        assert "skill-merge/claude/tdd" not in x_git.created_branches
+        _assert_keep_branch_used(x_git)
 
     def test_branch_deleted_after_keep_source_continue(
         self,
@@ -1849,11 +1870,13 @@ class TestMergeKeepSourceState:
             "--no-commit",
         )
 
-        x_git.branch = "skill-merge-keep/claude/tdd"
+        _resume_on_keep_branch(x_git)
         assert_invoke("merge", "--continue")
 
         # finalize drops the keep-source branch; intent self-invalidates with it
-        assert "skill-merge-keep/claude/tdd" in x_git.deleted_branches
+        _assert_keep_branch_deleted(x_git)
+        # keep-source: tracking stays on the original source, no retarget
+        assert load_manifest().skills["tdd"].source == "my-project"
 
     def test_branch_deleted_after_abort_of_keep_source_merge(
         self,
@@ -1873,10 +1896,10 @@ class TestMergeKeepSourceState:
             "--no-commit",
         )
 
-        x_git.branch = "skill-merge-keep/claude/tdd"
+        _resume_on_keep_branch(x_git)
         assert_invoke("merge", "--abort")
 
-        assert "skill-merge-keep/claude/tdd" in x_git.deleted_branches
+        _assert_keep_branch_deleted(x_git)
 
     def test_fresh_retarget_uses_plain_branch(
         self,
@@ -1898,7 +1921,7 @@ class TestMergeKeepSourceState:
             "--keep-source",
             "--no-commit",
         )
-        assert "skill-merge-keep/claude/tdd" in x_git.created_branches
+        _assert_keep_branch_used(x_git)
 
         # simulate the keep-source branch being abandoned (deleted) so a new
         # merge can start.
@@ -1937,8 +1960,7 @@ class TestMergeKeepSourceState:
             "--keep-source",
             "--no-commit",
         )
-        assert "skill-merge-keep/claude/tdd" in x_git.created_branches
-        assert "skill-merge/claude/tdd" not in x_git.created_branches
+        _assert_keep_branch_used(x_git)
 
         # abandon: drop the branch, edit the skill so a same-source merge runs.
         # content differs from the original Y baseline so a skip would leave the
@@ -1979,13 +2001,12 @@ class TestMergeKeepSourceState:
             "--keep-source",
             "--no-commit",
         )
-        assert "skill-merge-keep/claude/tdd" in x_git.created_branches
-        assert "skill-merge/claude/tdd" not in x_git.created_branches
+        _assert_keep_branch_used(x_git)
 
         # `skills remove tdd` between deferral and resume: entry vanishes
         save_manifest({})
 
-        x_git.branch = "skill-merge-keep/claude/tdd"
+        _resume_on_keep_branch(x_git)
         result = assert_invoke("merge", "--continue")
 
         # keep-source honored: no manifest entry resurrected/retargeted to X
@@ -1994,7 +2015,7 @@ class TestMergeKeepSourceState:
         source_skill = OTHER_REPO_ROOT / "skills" / "tdd" / "SKILL.md"
         assert source_skill.read_text() == "# edited by user"
         # branch deleted
-        assert "skill-merge-keep/claude/tdd" in x_git.deleted_branches
+        _assert_keep_branch_deleted(x_git)
         assert_words_in_message(result.output, "merged", "other-project")
 
 
@@ -2068,6 +2089,18 @@ class TestMergeContinue:
 
         assert_words_in_message(result.exception.message, "no merge branch")
         assert_words_in_message(result.exception.message, "skills merge")
+
+    def test_ignores_substring_non_merge_branch(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        # `skill-merge`-substring branch isn't a real merge branch -> not finalized
+        _setup_merge_branch(fs, git_repo, _fake_git, branch="main")
+        _fake_git.branches = ["skill-mergeable/claude/tdd"]
+
+        result = assert_invoke("merge", "--continue", expect_error=True)
+
+        assert_words_in_message(result.exception.message, "no merge branch")
+        assert _fake_git.ff_targets == []
 
     def test_errors_when_repo_dirty(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

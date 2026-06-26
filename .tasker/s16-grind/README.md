@@ -18,7 +18,7 @@ status: in-progress
 - [~] [s16t08](s16t08-refactor-orphaned-merge-state-json.md): **review** Refactor: Orphaned merge-state.json left on disk for upgrading users; no cleanup
 - [~] [s16t09](s16t09-refactor-keep-source-early-return.md): **review** Refactor: keep-source early-return pattern repeated across three finalize sinks
 - [~] [s16t10](s16t10-refactor-current-branch-or-list.md): **review** Refactor: current-branch-or-list prefix check duplicated in _has_merge_branch and _detect_merge_branch
-- [~] [s16t11](s16t11-refactor-in-progress-block-check.md): Refactor: In-progress block check re-parses branches that _list_merge_branches already validated
+- [~] [s16t11](s16t11-refactor-in-progress-block-check.md): **review** Refactor: In-progress block check re-parses branches that _list_merge_branches already validated
 - [ ] [s16t12](s16t12-refactor-in-progress-block-check.md): Refactor: In-progress block check routes pre-validated branches through the raising parser
 - [ ] [s16t13](s16t13-refactor-current-branch-or-list.md): Refactor: current-branch-or-list precedence probe duplicated across _has_merge_branch and _detect_merge_branch
 - [ ] [s16t14](s16t14-refactor-keep-source-early-return.md): Refactor: keep-source early-return guard now truly parallel across three finalize sinks

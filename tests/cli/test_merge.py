@@ -55,7 +55,8 @@ from tests.cli.helper import (
 COMMIT = "abc1234"
 CURSOR_DIR = Path("/home/user/.cursor/skills")
 OTHER_REPO_ROOT = Path("/repos/other-project")
-# provider/skill pair forming the merge-branch suffix (<prefix><provider>/<skill>)
+# provider/skill pair appended after a merge-branch prefix;
+# full name = <prefix><provider>/<skill>
 _MERGE_BRANCH_SUFFIX = "claude/tdd"
 _PLAIN_BRANCH = f"{MERGE_BRANCH_PREFIX}{_MERGE_BRANCH_SUFFIX}"
 _KEEP_BRANCH = f"{MERGE_KEEP_BRANCH_PREFIX}{_MERGE_BRANCH_SUFFIX}"
@@ -111,6 +112,11 @@ def _assert_keep_branch_deleted(x_git: FakeGitRepo) -> None:
 def _resume_on_keep_branch(x_git: FakeGitRepo) -> None:
     # mid-merge resume: simulate checkout of the keep-prefixed branch
     x_git.branch = _KEEP_BRANCH
+
+
+def _resume_on_plain_branch(x_git: FakeGitRepo) -> None:
+    # mid-merge resume: simulate checkout of the plain-prefixed merge branch
+    x_git.branch = _PLAIN_BRANCH
 
 
 class TestMergeStart:
@@ -1063,6 +1069,18 @@ class TestMergeValidation:
 
         assert _PLAIN_BRANCH in _fake_git.created_branches
 
+    def test_allows_merge_when_malformed_merge_branch_present(
+        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    ) -> None:
+        # merge-prefixed but skill-less name (no second path segment) is unparsable
+        # -> the in-progress check must skip it, not raise, and not block
+        _setup_diverged_skill(fs, git_repo)
+        _fake_git.branches = [f"{MERGE_BRANCH_PREFIX}claude"]
+
+        assert_invoke("merge", "tdd", "--offline")
+
+        assert _PLAIN_BRANCH in _fake_git.created_branches
+
     def test_errors_when_repo_dirty(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
@@ -1671,7 +1689,7 @@ class TestMergeRetarget:
         assert before.baseline.commit == COMMIT
 
         # simulate git leaving the repo mid-merge on the merge branch
-        x_git.branch = "skill-merge/claude/tdd"
+        _resume_on_plain_branch(x_git)
         x_git.merging = True
 
         assert_invoke("merge", "--continue")
@@ -1706,7 +1724,7 @@ class TestMergeRetarget:
         assert before.baseline.commit == COMMIT
 
         # branch was created; resume from there
-        x_git.branch = "skill-merge/claude/tdd"
+        _resume_on_plain_branch(x_git)
 
         assert_invoke("merge", "--continue")
 
@@ -2063,7 +2081,7 @@ class TestMergeLegacyKeepSourceMigration:
     ) -> FakeGitRepo:
         # cross-source in-flight merge in X's repo on the OLD plain branch
         x_git = _setup_cross_source_inflight(fs, git_repo, fake_git_manager)
-        x_git.branch = _PLAIN_BRANCH
+        _resume_on_plain_branch(x_git)
         return x_git
 
     def test_continue_refuses_when_legacy_keep_state_lists_branch(
@@ -2135,6 +2153,25 @@ class TestMergeLegacyKeepSourceMigration:
         assert branch in x_git.deleted_branches
         assert not stale.exists()
         # manifest never corrupted
+        assert load_manifest().skills["tdd"].source == "my-project"
+
+    def test_continue_does_not_misfire_on_keep_prefixed_branch(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        fake_git_manager: FakeGitRepoManager,
+    ) -> None:
+        # inverse safety: a post-upgrade KEEP-prefixed resume must not trip the
+        # legacy guard even when a stale legacy file lists a plain-prefixed branch
+        # (exact membership cannot match the keep-prefixed name).
+        x_git = self._setup(fs, git_repo, fake_git_manager)
+        _resume_on_keep_branch(x_git)
+        _write_legacy_keep_state(fs, _PLAIN_BRANCH)
+        x_git.merging = True
+
+        assert_invoke("merge", "--continue")
+
+        # keep-source finalize: content written, manifest still tracks Y
         assert load_manifest().skills["tdd"].source == "my-project"
 
     @pytest.mark.parametrize(
@@ -2525,7 +2562,7 @@ class TestMergeAbort:
         assert_invoke(
             "merge", "tdd", "--offline", "--source", "other-project", "--no-commit"
         )
-        x_git.branch = "skill-merge/claude/tdd"
+        _resume_on_plain_branch(x_git)
 
         result = assert_invoke("merge", "--abort")
 

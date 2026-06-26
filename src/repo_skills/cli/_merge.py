@@ -55,11 +55,14 @@ _MERGE_PREFIXES = (MERGE_KEEP_BRANCH_PREFIX, MERGE_BRANCH_PREFIX)
 
 # retired keep-source persistence artifact; see module note
 LEGACY_MERGE_STATE_FILE = "merge-state.json"
+_LEGACY_KEEP_SOURCE_KEY = "keep_source"
 
 
 def _branch_has_legacy_keep_intent(branch: str) -> bool:
     # pre-upgrade build persisted deferred --keep-source intent here as a list of
     # plain-prefixed branch names; intent now rides the keep-prefixed branch name.
+    # legacy schema (the deleted _MergeStateConfig, version 1):
+    #   {"version": 1, "keep_source": [<branch>, ...]}
     # Read via the shared loader but swallow its errors: a missing/corrupt/
     # pre-upgrade artifact yields no keep intent rather than raising.
     try:
@@ -68,7 +71,7 @@ def _branch_has_legacy_keep_intent(branch: str) -> bool:
         return False
     if data is None:
         return False
-    branches = data.get("keep_source")
+    branches = data.get(_LEGACY_KEEP_SOURCE_KEY)
     return isinstance(branches, list) and branch in branches
 
 
@@ -89,6 +92,11 @@ def _merge_branch_prefix(branch: str) -> str | None:
         if branch.startswith(prefix):
             return prefix
     return None
+
+
+def _branch_is_keep_source(branch: str) -> bool:
+    # decode side of _merge_branch_name's keep<->prefix mapping
+    return _merge_branch_prefix(branch) == MERGE_KEEP_BRANCH_PREFIX
 
 
 def _merged_still_tracking(
@@ -157,7 +165,7 @@ def _finalize_merge_branch(
     # (repo -> installed_path), different repo: same-source copies
     # source.repo_root/rel_path; retarget copies target.repo_root/rel_path.
     if not use_merge:
-        git.checkout(target_branch)
+        _checkout_if_needed(git, target_branch)
         git.fast_forward(branch_name)
 
     overwrite_dir(src, dst)
@@ -216,6 +224,8 @@ def _run_branch_merge(
     # keep-source (encoded in the branch name, see module note), and the
     # exact-match / finalize tails.
     branch_name = _merge_branch_name(provider.name, skill_name, keep_source=keep_source)
+    # block on either prefix: a stale keep/plain branch for this skill (not just
+    # branch_name's exact prefix) must not be re-merged.
     if _active_merge_branch_for(git, provider.name, skill_name) is not None:
         raise AppError(
             f"Merge already in progress for {fmt_ident(skill_name)}.",
@@ -1059,24 +1069,36 @@ class _ActiveMerge(NamedTuple):
 
 
 def _resolve_active_merge(ctx: ConfigContext) -> _ActiveMerge:
-    # side-effect-free locator for the in-progress merge's repo/branch/skill. The
-    # guard+cleanup ordering lives in the _consume_* helpers, not here.
+    # side-effect-free locator for the in-progress merge's repo/branch/skill.
+    # guard+cleanup ordering lives in _merge_continue / _merge_abort, not here.
     git = _detect_merge_repo(ctx)
     branch = _detect_merge_branch(git)
     parsed = _split_merge_branch(branch)
     if parsed is None:
-        raise AppError(f"Invalid merge branch: {fmt_ident(branch)}")
+        # prefix matched (else _detect_merge_branch skips it) but no skill segment
+        raise AppError(
+            f"Merge branch {fmt_ident(branch)} has no skill name.",
+            hint=f"Run {fmt_command('skills merge --abort')} to clear it.",
+        )
     provider_name, skill_name = parsed
     return _ActiveMerge(git, branch, provider_name, skill_name)
 
 
+def _consume_active_merge(ctx: ConfigContext, *, guard_legacy: bool) -> _ActiveMerge:
+    # resolve the in-flight merge, then clear legacy state. continue guards a
+    # deferred --keep-source resume BEFORE the unlink so a refusal leaves the
+    # legacy file for a later --abort; abort intentionally skips the guard.
+    active = _resolve_active_merge(ctx)
+    if guard_legacy:
+        _guard_legacy_keep_source(active.branch)
+    _cleanup_legacy_merge_state()
+    return active
+
+
 def _guard_legacy_keep_source(branch: str) -> None:
-    # pre-upgrade deferred --keep-source merge: intent lived in merge-state.json
-    # under the OLD plain prefix, not the branch name, so finalize would derive
-    # keep_source=False and retarget — the opposite of the user's request. Refuse
-    # to silently corrupt the manifest; --abort clears the state for a re-run.
-    # Best-effort — only fires while the legacy file still exists; once cleared, a
-    # plain-prefixed legacy keep branch is indistinguishable from a normal retarget.
+    # pre-upgrade deferred --keep-source: intent in merge-state.json, not the branch
+    # name -> finalize would retarget (opposite of request). Refuse; --abort clears
+    # state for re-run. Best-effort: only fires while the legacy file exists.
     if _branch_has_legacy_keep_intent(branch):
         raise AppError(
             f"In-flight merge {fmt_ident(branch)} was deferred with"
@@ -1085,17 +1107,6 @@ def _guard_legacy_keep_source(branch: str) -> None:
             hint=f"Run {fmt_command('skills merge --abort')}, then re-run with"
             f" {fmt_command('--keep-source')}.",
         )
-
-
-def _consume_active_merge(ctx: ConfigContext, *, guard_legacy: bool) -> _ActiveMerge:
-    active = _resolve_active_merge(ctx)
-    if guard_legacy:
-        # continue path: refuse a legacy deferred --keep-source resume BEFORE
-        # unlinking the legacy artifact, so the refused resume leaves the file for
-        # a later --abort to recover.
-        _guard_legacy_keep_source(active.branch)
-    _cleanup_legacy_merge_state()
-    return active
 
 
 def _merge_continue(ctx: ConfigContext) -> None:
@@ -1128,12 +1139,11 @@ def _finalize(
     already_merged: bool = False,
 ) -> None:
     # keep-source intent derived from branch prefix (see module note)
-    keep_source = _merge_branch_prefix(merge_branch) == MERGE_KEEP_BRANCH_PREFIX
+    keep_source = _branch_is_keep_source(merge_branch)
 
-    source = _source_for_repo(ctx.source_registry, git)
+    source, target_branch = _resolve_merge_target(ctx.source_registry, git)
     skill = source.get_skill(skill_name)
 
-    target_branch = source.get_branch(git)
     installed_path = provider.install_path / skill_name
 
     _finalize_merge_branch(
@@ -1155,14 +1165,13 @@ def _finalize(
         console.print(_merged_still_tracking(skill_name, source.name, old_source))
         return
 
-    is_same_source = prev is not None and prev.source == source.name
-
     new_hashes = compute_file_hashes(installed_path)
 
     # "already up to date" only applies to a same-source resume; a cross-source
     # retarget always changes the tracking source, so it never reads as a no-op.
-    # is_same_source implies prev is not None (see above).
-    is_equal = is_same_source and prev is not None and prev.match_files(new_hashes)
+    is_equal = (
+        prev is not None and prev.source == source.name and prev.match_files(new_hashes)
+    )
 
     ctx.manifest.register_skill(
         skill_name,
@@ -1194,15 +1203,26 @@ def _merge_abort(ctx: ConfigContext) -> None:
     elif git.is_merging():
         git.merge_abort()
 
-    source = _source_for_repo(ctx.source_registry, git)
-
-    target_branch = source.get_branch(git)
-    if git.current_branch() != target_branch:
-        git.checkout(target_branch)
+    _, target_branch = _resolve_merge_target(ctx.source_registry, git)
+    _checkout_if_needed(git, target_branch)
 
     git.delete_branch(active.branch)
 
     console.print(f"Merge aborted for {fmt_ident(active.skill_name)}.")
+
+
+def _checkout_if_needed(git: GitRepo, branch: str) -> None:
+    # park the repo back on its pinned branch (no-op if already there)
+    if git.current_branch() != branch:
+        git.checkout(branch)
+
+
+def _resolve_merge_target(
+    source_registry: SourceRegistry, git: GitRepo
+) -> tuple[Source, str]:
+    # canonical "where does this merge land": cross-source source + its pinned branch
+    source = _source_for_repo(source_registry, git)
+    return source, source.get_branch(git)
 
 
 def _source_for_repo(source_registry: SourceRegistry, git: GitRepo) -> Source:
@@ -1262,24 +1282,23 @@ def _list_merge_branches(git: GitRepo) -> list[str]:
     ]
 
 
-def _current_or_listed_merge_branches(git: GitRepo) -> tuple[str | None, list[str]]:
-    # single home for "current branch takes precedence": prefixed current branch
-    # (or None) plus the listed merge branches.
+def _current_merge_branch(git: GitRepo) -> str | None:
+    # current branch when it's a merge branch, else None. lets the fast
+    # --continue/--abort case skip the git branch --list shell entirely.
     current = git.current_branch()
-    prefixed = current if _merge_branch_prefix(current) is not None else None
-    return prefixed, _list_merge_branches(git)
+    return current if _merge_branch_prefix(current) is not None else None
 
 
 def _has_merge_branch(git: GitRepo) -> bool:
-    current, branches = _current_or_listed_merge_branches(git)
-    return current is not None or bool(branches)
+    # current-first still short-circuits the list shell
+    return _current_merge_branch(git) is not None or bool(_list_merge_branches(git))
 
 
 def _detect_merge_branch(git: GitRepo) -> str:
-    current, branches = _current_or_listed_merge_branches(git)
-    if current is not None:
+    if (current := _current_merge_branch(git)) is not None:
         return current
 
+    branches = _list_merge_branches(git)
     if len(branches) == 1:
         return branches[0]
 

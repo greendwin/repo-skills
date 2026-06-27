@@ -1,7 +1,7 @@
 ---
 id: s16t16
 slug: refactor-legacy-merge-state-json
-status: pending
+status: in-progress
 ---
 
 # Refactor: Legacy merge-state.json cleanup never fires for upgrading users who don't resume a merge

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import difflib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, NamedTuple, NoReturn, Optional
@@ -47,7 +47,8 @@ from ._app import app
 from ._deps import prepare_source_repo, resolve_git_repo
 
 # Deferred --keep-source intent rides in the keep-prefixed branch *name*, so a
-# resumed `--continue`/`--abort` derives it from the branch — no persisted state.
+# resumed `--continue` derives it from the branch — no persisted state.
+# (`--abort` just deletes the branch regardless of keep-source.)
 MERGE_BRANCH_STEM = "skill-merge"
 MERGE_BRANCH_PREFIX = f"{MERGE_BRANCH_STEM}/"
 MERGE_KEEP_BRANCH_PREFIX = f"{MERGE_BRANCH_STEM}-keep/"
@@ -99,15 +100,32 @@ def _branch_is_keep_source(branch: str) -> bool:
     return _merge_branch_prefix(branch) == MERGE_KEEP_BRANCH_PREFIX
 
 
-def _merged_still_tracking(
+def _emit_keep_source(
     skill_name: str, target_name: str, old_source: str | None
-) -> str:
-    # keep-source publish: content lands in target, manifest still tracks old.
+) -> None:
+    # single keep-source sink: content landed in target, manifest left untouched.
     # old_source None (entry vanished mid-merge) => no tracking suffix.
     tracking = (
         f" (still tracking {fmt_ident(old_source)})" if old_source is not None else ""
     )
-    return f"Merged {fmt_ident(skill_name)} into {fmt_ident(target_name)}{tracking}."
+    console.print(
+        f"Merged {fmt_ident(skill_name)} into {fmt_ident(target_name)}{tracking}."
+    )
+
+
+def _register_and_save(
+    manifest: SkillManifest,
+    skill_name: str,
+    *,
+    source_name: str,
+    baseline: Baseline | None,
+) -> InstalledSkill:
+    # baseline-write invariant: every register must be followed by a save.
+    installed = manifest.register_skill(
+        skill_name, source_name=source_name, baseline=baseline
+    )
+    save_skill_manifest(manifest)
+    return installed
 
 
 @dataclass
@@ -172,6 +190,31 @@ def _finalize_merge_branch(
     git.delete_branch(branch_name)
 
 
+def _join_idents(names: Iterable[str]) -> str:
+    # sorted, green-styled, comma-joined identifier list (ADR-0001)
+    return ", ".join(fmt_ident(n) for n in sorted(names))
+
+
+def _raise_ambiguous(
+    noun: str,
+    skill_name: str,
+    names: Iterable[str],
+    *,
+    opt: str,
+    verb: str = "have",
+) -> NoReturn:
+    # unify the "Multiple <noun> <verb> <skill> (<names>)" ambiguity raise (ADR-0001)
+    raise AppError(
+        f"Multiple {noun} {verb} {fmt_ident(skill_name)} ({_join_idents(names)}).",
+        hint=f"Use {fmt_command(opt)} to specify.",
+    )
+
+
+def _retarget_suffix(target_name: str, old_source: str) -> str:
+    # canonical tracking-change fragment; ADR-0001 green identifiers
+    return f"now tracking {fmt_ident(target_name)} (was {fmt_ident(old_source)})"
+
+
 def _write_retarget_manifest(
     ctx: ConfigContext,
     git: GitRepo,
@@ -185,20 +228,20 @@ def _write_retarget_manifest(
 ) -> None:
     # publish-or-keep sink: keep-source leaves the manifest tracking old_source.
     if keep_source:
-        console.print(_merged_still_tracking(skill_name, target_name, old_source))
+        _emit_keep_source(skill_name, target_name, old_source)
         return
 
     commit = git.get_skill_commit(rel_path)
-    ctx.manifest.register_skill(
+    _register_and_save(
+        ctx.manifest,
         skill_name,
         source_name=target_name,
         baseline=make_baseline(commit, content_dir),
     )
-    save_skill_manifest(ctx.manifest)
 
     console.print(
-        f"Retargeted {fmt_ident(skill_name)}: now tracking {fmt_ident(target_name)}"
-        f" (was {fmt_ident(old_source)})."
+        f"Retargeted {fmt_ident(skill_name)}: "
+        f"{_retarget_suffix(target_name, old_source)}."
     )
 
 
@@ -226,7 +269,7 @@ def _run_branch_merge(
     branch_name = _merge_branch_name(provider.name, skill_name, keep_source=keep_source)
     # block on either prefix: a stale keep/plain branch for this skill (not just
     # branch_name's exact prefix) must not be re-merged.
-    if _active_merge_branch_for(git, provider.name, skill_name) is not None:
+    if _has_active_merge_for(git, provider.name, skill_name):
         raise AppError(
             f"Merge already in progress for {fmt_ident(skill_name)}.",
             hint=f"Run {fmt_command('skills merge --continue')} to finish active merge "
@@ -277,11 +320,8 @@ def _run_branch_merge(
         clean = git.rebase_root(target_branch)
 
     if not clean:
-        if use_merge:
-            console.print("[yellow]Warning:[/yellow] Merge has conflicts.\n")
-        else:
-            console.print("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
-
+        kind = "Merge" if use_merge else "Rebase"
+        console.print(f"[yellow]Warning:[/yellow] {kind} has conflicts.\n")
         console.print(
             f"Resolve them, then run {fmt_command('skills merge --continue')}."
         )
@@ -421,12 +461,12 @@ def _merge_start(
         provider = untracked.provider
 
         # add untracked skill to manifest (aka detached skill)
-        installed = ctx.manifest.register_skill(
+        installed = _register_and_save(
+            ctx.manifest,
             skill_name,
             source_name=untracked.source.name,
             baseline=None,
         )
-        save_skill_manifest(ctx.manifest)
 
     # cross-source: --source X given and X differs from tracking source Y.
     # Work against X, ignoring the Y baseline entirely.
@@ -609,6 +649,34 @@ def _merge_retarget(
     )
 
 
+_UPDATE_HINT = f"Run {fmt_command('skills update')} to pull the latest changes."
+
+
+def _emit_previous_version(body: str) -> None:
+    # shared not-latest tail: previous-version body + the `skills update` prompt
+    console.print(f"{body}\n{_UPDATE_HINT}")
+
+
+def _register_in_sync_baseline(
+    manifest: SkillManifest,
+    git: GitRepo,
+    *,
+    skill: SourceSkill,
+    source_name: str,
+    base_commit: str,
+    installed_path: Path,
+) -> bool:
+    # register the in-sync baseline; return whether base_commit is the skill's tip
+    # (False => matched a previous version, caller prompts `skills update`).
+    _register_and_save(
+        manifest,
+        skill.name,
+        source_name=source_name,
+        baseline=make_baseline(base_commit, installed_path),
+    )
+    return base_commit == git.get_skill_commit(skill.rel_path)
+
+
 def _retarget_in_sync(
     ctx: ConfigContext,
     git: GitRepo,
@@ -622,32 +690,30 @@ def _retarget_in_sync(
 ) -> None:
     if keep_source:
         # content already lives in X at base_commit; leave the manifest untouched
-        console.print(_merged_still_tracking(skill.name, target.name, old_source))
+        _emit_keep_source(skill.name, target.name, old_source)
         return
 
-    baseline = make_baseline(base_commit, installed_path)
-    ctx.manifest.register_skill(
-        skill.name,
+    is_latest = _register_in_sync_baseline(
+        ctx.manifest,
+        git,
+        skill=skill,
         source_name=target.name,
-        baseline=baseline,
+        base_commit=base_commit,
+        installed_path=installed_path,
     )
-    save_skill_manifest(ctx.manifest)
 
-    # if the matched commit is not X's tip, warn it is a previous version (cf.
-    # _finalize_in_sync_skill) instead of claiming a clean "already matches".
-    latest = git.get_skill_commit(skill.rel_path)
-    if base_commit != latest:
-        console.print(
+    # if the matched commit is not X's tip, warn it is a previous version instead
+    # of claiming a clean "already matches".
+    if not is_latest:
+        _emit_previous_version(
             f"{fmt_ident(skill.name)} matches a previous version of"
-            f" {fmt_ident(target.name)} — now tracking {fmt_ident(target.name)}"
-            f" (was {fmt_ident(old_source)}).\n"
-            f"Run {fmt_command('skills update')} to pull the latest changes."
+            f" {fmt_ident(target.name)} — {_retarget_suffix(target.name, old_source)}."
         )
         return
 
     console.print(
         f"{fmt_ident(skill.name)} already matches {fmt_ident(target.name)}"
-        f" — now tracking {fmt_ident(target.name)} (was {fmt_ident(old_source)})."
+        f" — {_retarget_suffix(target.name, old_source)}."
     )
 
 
@@ -687,28 +753,25 @@ def _retarget_orphan_add(
 def _finalize_in_sync_skill(
     ctx: ConfigContext,
     git: GitRepo,
+    *,
     source: Source,
     skill: SourceSkill,
     base_commit: str,
     installed_path: Path,
 ) -> None:
-    baseline = make_baseline(base_commit, installed_path)
-    ctx.manifest.register_skill(
-        skill.name,
+    is_latest = _register_in_sync_baseline(
+        ctx.manifest,
+        git,
+        skill=skill,
         source_name=source.name,
-        baseline=baseline,
+        base_commit=base_commit,
+        installed_path=installed_path,
     )
-    save_skill_manifest(ctx.manifest)
-
-    latest = git.get_skill_commit(skill.rel_path)
-    if base_commit == latest:
+    if is_latest:
         console.print(f"{fmt_ident(skill.name)} is already up to date.")
         return
 
-    console.print(
-        f"{fmt_ident(skill.name)} matches a previous version.\n"
-        f"Run {fmt_command('skills update')} to pull the latest changes."
-    )
+    _emit_previous_version(f"{fmt_ident(skill.name)} matches a previous version.")
 
 
 def _raise_in_sync(
@@ -738,12 +801,12 @@ def _reattach_installed_skill(
         git.get_skill_commit(skill.rel_path),
         source.repo_root / skill.rel_path,
     )
-    manifest.register_skill(
+    _register_and_save(
+        manifest,
         skill.name,
         source_name=source.name,
         baseline=baseline,
     )
-    save_skill_manifest(manifest)
 
 
 @dataclass
@@ -776,12 +839,8 @@ def _resolve_untracked(
             matches.append((source, skill))
 
     if len(matches) > 1:
-        names = ", ".join(
-            fmt_ident(s.name) for s, _ in sorted(matches, key=lambda x: x[0].name)
-        )
-        raise AppError(
-            f"Multiple sources have {fmt_ident(skill_name)} ({names}).",
-            hint=f"Use {fmt_command('--source')} to specify.",
+        _raise_ambiguous(
+            "sources", skill_name, (s.name for s, _ in matches), opt="--source"
         )
 
     if not matches:
@@ -820,12 +879,12 @@ def _merge_orphan(
     commit = repo.git.get_skill_commit(added.skill_rel_path)
 
     manifest = load_skill_manifest()
-    manifest.register_skill(
+    _register_and_save(
+        manifest,
         skill_name,
         source_name=source.name,
         baseline=make_baseline(commit, added.skill_dst),
     )
-    save_skill_manifest(manifest)
 
     console.print(f"Merge complete for {fmt_ident(skill_name)}.")
 
@@ -850,12 +909,8 @@ def _find_skill_in_provider(
             matches.append(prov)
 
     if len(matches) > 1:
-        names = ", ".join(
-            fmt_ident(p.name) for p in sorted(matches, key=lambda x: x.name)
-        )
-        raise AppError(
-            f"Multiple providers have {fmt_ident(skill_name)} ({names}).",
-            hint=f"Use {fmt_command('--from')} to specify.",
+        _raise_ambiguous(
+            "providers", skill_name, (p.name for p in matches), opt="--from"
         )
 
     if not matches:
@@ -888,12 +943,12 @@ def _resolve_diverged_provider(
         return None
 
     if len(diverged) > 1:
-        names = ", ".join(
-            fmt_ident(p.name) for p in sorted(diverged, key=lambda x: x.name)
-        )
-        raise AppError(
-            "Multiple providers have modified" f" {fmt_ident(skill_name)} ({names}).",
-            hint=f"Use {fmt_command('--from')} to specify.",
+        _raise_ambiguous(
+            "providers",
+            skill_name,
+            (p.name for p in diverged),
+            opt="--from",
+            verb="have modified",
         )
 
     return diverged[0]
@@ -1113,20 +1168,25 @@ def _merge_continue(ctx: ConfigContext) -> None:
     active = _consume_active_merge(ctx, guard_legacy=True)
     git = active.git
 
-    rebasing = git.is_rebasing()
-    merging = git.is_merging()
-    if rebasing:
+    if git.is_rebasing():
         git.rebase_continue()
-    elif merging:
-        pass
-    elif not git.is_clean():
+    # an in-progress merge legitimately leaves the tree dirty
+    elif not git.is_merging() and not git.is_clean():
         raise AppError(
             "Repo has uncommitted changes.",
             props={"repo": fmt_path(git.root)},
         )
 
     provider = ctx.provider_registry.require(active.provider_name)
-    _finalize(ctx, git, provider, active.skill_name, merge_branch=active.branch)
+    _finalize(
+        ctx,
+        git,
+        provider,
+        active.skill_name,
+        merge_branch=active.branch,
+        # resume path: ff/cleanup handled here, not a merge-vs-rebase signal
+        already_merged=False,
+    )
 
 
 def _finalize(
@@ -1136,7 +1196,7 @@ def _finalize(
     skill_name: str,
     *,
     merge_branch: str,
-    already_merged: bool = False,
+    already_merged: bool,
 ) -> None:
     # keep-source intent derived from branch prefix (see module note)
     keep_source = _branch_is_keep_source(merge_branch)
@@ -1160,9 +1220,9 @@ def _finalize(
     # keep-source: finalize content into X but leave the manifest entry untouched
     # (and never resurrect an entry removed mid-merge → prev is None).
     if keep_source:
-        # prev gone (entry removed mid-merge): nothing to keep tracking
+        # prev gone mid-merge => nothing to keep tracking
         old_source = prev.source if prev is not None else None
-        console.print(_merged_still_tracking(skill_name, source.name, old_source))
+        _emit_keep_source(skill_name, source.name, old_source)
         return
 
     new_hashes = compute_file_hashes(installed_path)
@@ -1173,7 +1233,8 @@ def _finalize(
         prev is not None and prev.source == source.name and prev.match_files(new_hashes)
     )
 
-    ctx.manifest.register_skill(
+    _register_and_save(
+        ctx.manifest,
         skill_name,
         source_name=source.name,
         baseline=Baseline(
@@ -1183,7 +1244,6 @@ def _finalize(
             files=new_hashes,
         ),
     )
-    save_skill_manifest(ctx.manifest)
 
     if is_equal:
         console.print(
@@ -1263,7 +1323,7 @@ def _detect_merge_repo(ctx: ConfigContext) -> GitRepo:
         )
 
     if len(candidates) > 1:
-        names = ", ".join(fmt_ident(str(g.root)) for g in candidates)
+        names = _join_idents(str(g.root) for g in candidates)
         raise AppError(
             f"Multiple source repos have merge branches ({names}).",
             hint="Run from within the target source repo.",
@@ -1273,8 +1333,8 @@ def _detect_merge_repo(ctx: ConfigContext) -> GitRepo:
 
 
 def _list_merge_branches(git: GitRepo) -> list[str]:
-    # glob is a coarse prefilter; _merge_branch_prefix is the real prefix
-    # guard (excludes e.g. skill-mergeable/*)
+    # glob is a coarse prefilter; the prefix lookup is the real guard
+    # (excludes e.g. skill-mergeable/*)
     return [
         b
         for b in git.list_branches(f"{MERGE_BRANCH_STEM}*")
@@ -1282,9 +1342,18 @@ def _list_merge_branches(git: GitRepo) -> list[str]:
     ]
 
 
+def _has_active_merge_for(git: GitRepo, provider_name: str, skill_name: str) -> bool:
+    # prefix-agnostic: a stale keep/plain merge branch for this skill blocks a re-merge.
+    # _split_merge_branch drops malformed names (no /<skill> segment)
+    return any(
+        _split_merge_branch(b) == (provider_name, skill_name)
+        for b in _list_merge_branches(git)
+    )
+
+
 def _current_merge_branch(git: GitRepo) -> str | None:
-    # current branch when it's a merge branch, else None. lets the fast
-    # --continue/--abort case skip the git branch --list shell entirely.
+    # current branch when it's a merge branch, else None — lets the common
+    # resume case skip the git branch --list shell.
     current = git.current_branch()
     return current if _merge_branch_prefix(current) is not None else None
 
@@ -1303,7 +1372,7 @@ def _detect_merge_branch(git: GitRepo) -> str:
         return branches[0]
 
     if len(branches) > 1:
-        names = ", ".join(fmt_ident(n) for n in sorted(branches))
+        names = _join_idents(branches)
         raise AppError(
             f"Multiple merge branches found ({names}).",
             hint="Checkout the one to continue.",
@@ -1323,20 +1392,6 @@ def _split_merge_branch(branch: str) -> tuple[str, str] | None:
         if len(parts) == 2:
             return parts[0], parts[1]
     return None
-
-
-def _active_merge_branch_for(
-    git: GitRepo, provider_name: str, skill_name: str
-) -> str | None:
-    # active merge branch for this skill regardless of keep/plain prefix
-    return next(
-        (
-            b
-            for b in _list_merge_branches(git)
-            if _split_merge_branch(b) == (provider_name, skill_name)
-        ),
-        None,
-    )
 
 
 def _compute_distance(
@@ -1384,9 +1439,7 @@ def _resolve_orphan_source(source_registry: SourceRegistry) -> Source:
         raise AppError("No sources registered.")
 
     if len(source_registry.sources) > 1:
-        names = ", ".join(
-            fmt_ident(name) for name in sorted(source_registry.sources.keys())
-        )
+        names = _join_idents(source_registry.sources.keys())
         raise AppError(
             f"Multiple sources registered ({names}).",
             hint=f"Use {fmt_command('--source')} to specify.",

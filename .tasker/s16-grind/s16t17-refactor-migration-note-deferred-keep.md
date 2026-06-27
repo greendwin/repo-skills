@@ -1,7 +1,7 @@
 ---
 id: s16t17
 slug: refactor-migration-note-deferred-keep
-status: pending
+status: in-progress
 ---
 
 # Refactor: Migration note ('deferred keep-source merges must be re-run') lives only in a code comment, not surfaced to us

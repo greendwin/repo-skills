@@ -1,7 +1,7 @@
 ---
 id: s16t12
 slug: refactor-in-progress-block-check
-status: pending
+status: in-progress
 ---
 
 # Refactor: In-progress block check routes pre-validated branches through the raising parser

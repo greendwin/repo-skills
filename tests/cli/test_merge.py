@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Generator
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 import repo_skills.cli._deps as deps_mod
 import repo_skills.cli._merge as merge_mod
 from repo_skills.cli._merge import (
+    _LEGACY_KEEP_SOURCE_KEY,
     LEGACY_MERGE_STATE_FILE,
     MERGE_BRANCH_PREFIX,
     MERGE_KEEP_BRANCH_PREFIX,
@@ -109,14 +111,9 @@ def _assert_keep_branch_deleted(x_git: FakeGitRepo) -> None:
     assert _KEEP_BRANCH in x_git.deleted_branches
 
 
-def _resume_on_keep_branch(x_git: FakeGitRepo) -> None:
-    # mid-merge resume: simulate checkout of the keep-prefixed branch
-    x_git.branch = _KEEP_BRANCH
-
-
-def _resume_on_plain_branch(x_git: FakeGitRepo) -> None:
-    # mid-merge resume: simulate checkout of the plain-prefixed merge branch
-    x_git.branch = _PLAIN_BRANCH
+def _resume_on(x_git: FakeGitRepo, branch: str) -> None:
+    # mid-merge resume: simulate checkout of the in-progress merge branch
+    x_git.branch = branch
 
 
 class TestMergeStart:
@@ -127,8 +124,8 @@ class TestMergeStart:
 
         assert_invoke("merge", "tdd", "--offline")
 
-        assert _fake_git.created_branches["skill-merge/claude/tdd"] == COMMIT
-        assert _fake_git.merged_branch == "skill-merge/claude/tdd"
+        assert _fake_git.created_branches[_PLAIN_BRANCH] == COMMIT
+        assert _fake_git.merged_branch == _PLAIN_BRANCH
 
     def test_auto_detects_diverged_provider(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -150,7 +147,7 @@ class TestMergeStart:
 
         result = assert_invoke("merge", "tdd", "--offline")
 
-        assert _fake_git.created_branches["skill-merge/claude/tdd"] == COMMIT
+        assert _fake_git.created_branches[_PLAIN_BRANCH] == COMMIT
         assert_words_in_message(result.output, "merge", "complete")
 
     def test_auto_finalizes_on_clean_merge(
@@ -162,7 +159,7 @@ class TestMergeStart:
 
         assert _fake_git.ff_targets == []
         assert _fake_git.branch == "main"
-        assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
+        assert _PLAIN_BRANCH in _fake_git.deleted_branches
         installed = (INSTALL_DIR / "tdd" / "SKILL.md").read_text()
         assert installed == "# edited by user"
         manifest = load_manifest()
@@ -319,7 +316,7 @@ class TestBaseCommitSearch:
 
         result = assert_invoke("merge", "tdd", "--offline")
 
-        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "bbb222"
+        assert _fake_git.created_branches[_PLAIN_BRANCH] == "bbb222"
         assert_words_in_message(result.output, "merge", "complete")
 
     def test_closest_match_with_missing_file(
@@ -341,7 +338,7 @@ class TestBaseCommitSearch:
 
         result = assert_invoke("merge", "tdd", "--offline")
 
-        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "bbb222"
+        assert _fake_git.created_branches[_PLAIN_BRANCH] == "bbb222"
         assert_words_in_message(result.output, "merge", "complete")
 
     def test_extra_file_commit_is_not_an_exact_base(
@@ -361,7 +358,7 @@ class TestBaseCommitSearch:
 
         # not an exact match: a merge branch is created rather than early-exiting
         # with "up to date"
-        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "bbb222"
+        assert _fake_git.created_branches[_PLAIN_BRANCH] == "bbb222"
         assert_words_in_message(result.output, "merge", "complete")
 
     def test_orphan_branch_when_no_commits(
@@ -371,7 +368,7 @@ class TestBaseCommitSearch:
 
         result = assert_invoke("merge", "tdd", "--offline")
 
-        assert "skill-merge/claude/tdd" in _fake_git.orphan_branches
+        assert _PLAIN_BRANCH in _fake_git.orphan_branches
         assert _fake_git.rebase_root_onto == "main"
         assert_words_in_message(result.output, "merge", "complete")
 
@@ -388,7 +385,7 @@ class TestBaseCommitSearch:
 
         result = assert_invoke("merge", "tdd", "--search-base", "--offline")
 
-        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "bbb222"
+        assert _fake_git.created_branches[_PLAIN_BRANCH] == "bbb222"
         assert_words_in_message(result.output, "merge", "complete")
 
     def test_search_base_reports_found_commit(
@@ -448,7 +445,7 @@ class TestBaseCommitSearch:
 
         result = assert_invoke("merge", "tdd", "--search-base", "--offline")
 
-        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "bbb222"
+        assert _fake_git.created_branches[_PLAIN_BRANCH] == "bbb222"
         assert_words_in_message(result.output, "merge", "complete")
 
     def test_search_base_propagates_unexpected_error(
@@ -506,7 +503,7 @@ class TestCommitReachability:
 
         result = assert_invoke("merge", "tdd", "--offline")
 
-        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "found111"
+        assert _fake_git.created_branches[_PLAIN_BRANCH] == "found111"
         assert "dangling" in result.output.lower()
         assert_words_in_message(result.output, "merge", "complete")
 
@@ -526,7 +523,7 @@ class TestCommitReachability:
 
         result = assert_invoke("merge", "tdd", "--search-base", "--offline")
 
-        assert _fake_git.created_branches["skill-merge/claude/tdd"] == "found111"
+        assert _fake_git.created_branches[_PLAIN_BRANCH] == "found111"
         assert_words_in_message(result.output, "merge", "complete")
 
 
@@ -540,7 +537,7 @@ class TestResolveBaseCommit:
         # No commit_logs -> _find_base_commit returns None
         result = assert_invoke("merge", "tdd", "--search-base", "--offline")
 
-        assert "skill-merge/claude/tdd" in _fake_git.orphan_branches
+        assert _PLAIN_BRANCH in _fake_git.orphan_branches
         assert_words_in_message(result.output, "no", "base", "commit", "rebase")
         assert_words_in_message(result.output, "merge", "complete")
 
@@ -662,7 +659,7 @@ class TestMergeUntracked:
 
         result = assert_invoke("merge", "tdd", "--offline")
 
-        assert "skill-merge/claude/tdd" in _fake_git.orphan_branches
+        assert _PLAIN_BRANCH in _fake_git.orphan_branches
         assert len(_fake_git.committed_messages) == 1
         assert_words_in_message(result.output, "merge", "complete")
 
@@ -1012,7 +1009,7 @@ class TestMergeValidation:
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _setup_diverged_skill(fs, git_repo)
-        _fake_git.branches = ["skill-merge/claude/tdd"]
+        _fake_git.branches = [_PLAIN_BRANCH]
 
         result = assert_invoke(
             "merge", "tdd", "--offline", "--from", "claude", expect_error=True
@@ -1024,7 +1021,7 @@ class TestMergeValidation:
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _setup_diverged_skill(fs, git_repo)
-        _fake_git.branches = ["skill-merge/claude/tdd"]
+        _fake_git.branches = [_PLAIN_BRANCH]
 
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
@@ -1118,7 +1115,7 @@ class TestMergeValidation:
 
         assert_invoke("merge", "tdd", "--offline")
 
-        assert _fake_git.merged_branch == "skill-merge/claude/tdd"
+        assert _fake_git.merged_branch == _PLAIN_BRANCH
 
     def test_auto_checkouts_main_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1128,7 +1125,7 @@ class TestMergeValidation:
 
         assert_invoke("merge", "tdd", "--offline")
 
-        assert "skill-merge/claude/tdd" in _fake_git.created_branches
+        assert _PLAIN_BRANCH in _fake_git.created_branches
 
     def test_auto_commit_message(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1158,7 +1155,7 @@ def _setup_merge_branch(
     git_repo: Path,
     fake_git: FakeGitRepo,
     *,
-    branch: str = "skill-merge/claude/tdd",
+    branch: str = _PLAIN_BRANCH,
     content: str = "# merged",
     source_branch: str = "",
 ) -> None:
@@ -1250,8 +1247,8 @@ class TestMergeRetarget:
         result = assert_invoke("merge", "tdd", "--offline", "--source", "other-project")
 
         # branch+merge happens in X's repo, not Y's
-        assert x_git.created_branches["skill-merge/claude/tdd"] == "x-base"
-        assert x_git.merged_branch == "skill-merge/claude/tdd"
+        assert x_git.created_branches[_PLAIN_BRANCH] == "x-base"
+        assert x_git.merged_branch == _PLAIN_BRANCH
         source_skill = OTHER_REPO_ROOT / "skills" / "tdd" / "SKILL.md"
         assert source_skill.read_text() == "# edited by user"
 
@@ -1271,7 +1268,7 @@ class TestMergeRetarget:
     ) -> None:
         # in-progress plain merge (in X's repo) blocks a fresh keep-source merge
         x_git = self._setup(fs, git_repo, fake_git_manager)
-        x_git.branches = ["skill-merge/claude/tdd"]
+        x_git.branches = [_PLAIN_BRANCH]
 
         result = assert_invoke(
             "merge",
@@ -1373,8 +1370,8 @@ class TestMergeRetarget:
         result = assert_invoke("merge", "tdd", "--offline", "--source", "my-project")
 
         # unchanged same-source merge against Y
-        assert _fake_git.created_branches["skill-merge/claude/tdd"] == COMMIT
-        assert _fake_git.merged_branch == "skill-merge/claude/tdd"
+        assert _fake_git.created_branches[_PLAIN_BRANCH] == COMMIT
+        assert _fake_git.merged_branch == _PLAIN_BRANCH
         assert_words_in_message(result.output, "merge", "complete")
         manifest = load_manifest()
         assert manifest.skills["tdd"].source == "my-project"
@@ -1593,7 +1590,7 @@ class TestMergeRetarget:
         )
 
         # X==Y: keep-source ignored, legacy same-source merge runs + retracks Y
-        assert _fake_git.merged_branch == "skill-merge/claude/tdd"
+        assert _fake_git.merged_branch == _PLAIN_BRANCH
         assert_words_in_message(result.output, "merge", "complete")
         manifest = load_manifest()
         assert manifest.skills["tdd"].source == "my-project"
@@ -1611,10 +1608,10 @@ class TestMergeRetarget:
         )
 
         # rebase onto X's branch, then post-rebase checkout + fast-forward
-        assert x_git.created_branches["skill-merge/claude/tdd"] == "x-base"
+        assert x_git.created_branches[_PLAIN_BRANCH] == "x-base"
         assert x_git.rebased_onto == "main"
         assert x_git.merged_branch is None
-        assert x_git.ff_targets == ["skill-merge/claude/tdd"]
+        assert x_git.ff_targets == [_PLAIN_BRANCH]
 
         manifest = load_manifest()
         entry = manifest.skills["tdd"]
@@ -1633,7 +1630,7 @@ class TestMergeRetarget:
         fake_git_manager: FakeGitRepoManager,
     ) -> None:
         x_git = self._setup(fs, git_repo, fake_git_manager)
-        x_git.branches = ["skill-merge/claude/tdd"]
+        x_git.branches = [_PLAIN_BRANCH]
 
         result = assert_invoke(
             "merge", "tdd", "--offline", "--source", "other-project", expect_error=True
@@ -1689,7 +1686,7 @@ class TestMergeRetarget:
         assert before.baseline.commit == COMMIT
 
         # simulate git leaving the repo mid-merge on the merge branch
-        _resume_on_plain_branch(x_git)
+        _resume_on(x_git, _PLAIN_BRANCH)
         x_git.merging = True
 
         assert_invoke("merge", "--continue")
@@ -1724,7 +1721,7 @@ class TestMergeRetarget:
         assert before.baseline.commit == COMMIT
 
         # branch was created; resume from there
-        _resume_on_plain_branch(x_git)
+        _resume_on(x_git, _PLAIN_BRANCH)
 
         assert_invoke("merge", "--continue")
 
@@ -1758,7 +1755,7 @@ class TestMergeRetarget:
         _assert_keep_branch_used(x_git)
 
         # resume from the keep-source merge branch created in X
-        _resume_on_keep_branch(x_git)
+        _resume_on(x_git, _KEEP_BRANCH)
 
         assert_invoke("merge", "--continue")
 
@@ -1797,7 +1794,7 @@ class TestMergeRetarget:
         _assert_keep_branch_used(x_git)
 
         # simulate git leaving the repo mid-merge on the keep-source branch
-        _resume_on_keep_branch(x_git)
+        _resume_on(x_git, _KEEP_BRANCH)
         x_git.merging = True
 
         assert_invoke("merge", "--continue")
@@ -1837,7 +1834,7 @@ class TestMergeRetarget:
         _assert_keep_branch_used(x_git)
 
         # simulate git leaving the repo mid-rebase on the keep-source branch
-        _resume_on_keep_branch(x_git)
+        _resume_on(x_git, _KEEP_BRANCH)
         x_git.rebasing = True
 
         assert_invoke("merge", "--continue")
@@ -1903,7 +1900,7 @@ class TestMergeKeepSourceState:
             "--no-commit",
         )
 
-        _resume_on_keep_branch(x_git)
+        _resume_on(x_git, _KEEP_BRANCH)
         assert_invoke("merge", "--continue")
 
         # finalize drops the keep-source branch; intent self-invalidates with it
@@ -1929,7 +1926,7 @@ class TestMergeKeepSourceState:
             "--no-commit",
         )
 
-        _resume_on_keep_branch(x_git)
+        _resume_on(x_git, _KEEP_BRANCH)
         assert_invoke("merge", "--abort")
 
         _assert_keep_branch_deleted(x_git)
@@ -2039,7 +2036,7 @@ class TestMergeKeepSourceState:
         # `skills remove tdd` between deferral and resume: entry vanishes
         save_manifest({})
 
-        _resume_on_keep_branch(x_git)
+        _resume_on(x_git, _KEEP_BRANCH)
         result = assert_invoke("merge", "--continue")
 
         # keep-source honored: no manifest entry resurrected/retargeted to X
@@ -2054,12 +2051,14 @@ class TestMergeKeepSourceState:
 
 # legacy merge-state.json schema: keep_source lists plain-prefixed branch names
 # whose deferred --continue must NOT retarget. Written by the pre-upgrade build.
-_LEGACY_KEEP_STATE = '{{"version": 1, "keep_source": ["{branch}"]}}'
+# Key string sourced from production so the test breaks loudly on a rename.
+def _legacy_keep_state(branch: str) -> str:
+    return json.dumps({"version": 1, _LEGACY_KEEP_SOURCE_KEY: [branch]})
 
 
 def _write_legacy_keep_state(fs: FakeFilesystem, branch: str) -> Path:
     path = default_config_path(LEGACY_MERGE_STATE_FILE)
-    fs.create_file(path, contents=_LEGACY_KEEP_STATE.format(branch=branch))
+    fs.create_file(path, contents=_legacy_keep_state(branch))
     return path
 
 
@@ -2081,7 +2080,7 @@ class TestMergeLegacyKeepSourceMigration:
     ) -> FakeGitRepo:
         # cross-source in-flight merge in X's repo on the OLD plain branch
         x_git = _setup_cross_source_inflight(fs, git_repo, fake_git_manager)
-        _resume_on_plain_branch(x_git)
+        _resume_on(x_git, _PLAIN_BRANCH)
         return x_git
 
     def test_continue_refuses_when_legacy_keep_state_lists_branch(
@@ -2165,14 +2164,16 @@ class TestMergeLegacyKeepSourceMigration:
         # legacy guard even when a stale legacy file lists a plain-prefixed branch
         # (exact membership cannot match the keep-prefixed name).
         x_git = self._setup(fs, git_repo, fake_git_manager)
-        _resume_on_keep_branch(x_git)
+        _resume_on(x_git, _KEEP_BRANCH)
         _write_legacy_keep_state(fs, _PLAIN_BRANCH)
         x_git.merging = True
 
         assert_invoke("merge", "--continue")
 
-        # keep-source finalize: content written, manifest still tracks Y
+        # keep-source finalize: manifest still tracks Y and the stale legacy
+        # file is cleared on resume
         assert load_manifest().skills["tdd"].source == "my-project"
+        assert not default_config_path(LEGACY_MERGE_STATE_FILE).exists()
 
     @pytest.mark.parametrize(
         "contents",
@@ -2206,9 +2207,9 @@ class TestMergeContinue:
 
         result = assert_invoke("merge", "--continue")
 
-        assert _fake_git.ff_targets == ["skill-merge/claude/tdd"]
+        assert _fake_git.ff_targets == [_PLAIN_BRANCH]
         assert _fake_git.branch == "main"
-        assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
+        assert _PLAIN_BRANCH in _fake_git.deleted_branches
         installed = (INSTALL_DIR / "tdd" / "SKILL.md").read_text()
         assert installed == "# merged"
         manifest = load_manifest()
@@ -2251,7 +2252,7 @@ class TestMergeContinue:
     ) -> None:
         _setup_merge_branch(fs, git_repo, _fake_git, branch="main")
         _fake_git.branches = [
-            "skill-merge/claude/tdd",
+            _PLAIN_BRANCH,
             "skill-merge/cursor/tdd",
         ]
 
@@ -2332,7 +2333,7 @@ class TestMergeContinue:
         result = assert_invoke("merge", "--continue")
 
         assert_words_in_message(result.output, "already up to date")
-        assert _fake_git.deleted_branches == ["skill-merge/claude/tdd"]
+        assert _fake_git.deleted_branches == [_PLAIN_BRANCH]
 
     def test_auto_detects_merge_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -2379,7 +2380,7 @@ class TestMergeNoCommit:
 
         result = assert_invoke("merge", "tdd", "--offline", "--no-commit")
 
-        assert _fake_git.created_branches["skill-merge/claude/tdd"] == COMMIT
+        assert _fake_git.created_branches[_PLAIN_BRANCH] == COMMIT
         source_skill = git_repo / "skills" / "tdd" / "SKILL.md"
         assert source_skill.read_text() == "# edited by user"
         assert _fake_git.committed_messages == []
@@ -2409,7 +2410,7 @@ class TestMergeRebase:
 
         assert _fake_git.rebased_onto == "main"
         assert _fake_git.merged_branch is None
-        assert _fake_git.ff_targets == ["skill-merge/claude/tdd"]
+        assert _fake_git.ff_targets == [_PLAIN_BRANCH]
         assert_words_in_message(result.output, "merge", "complete")
 
     def test_rebase_conflict_prompts_continue(
@@ -2431,7 +2432,7 @@ class TestMergeRebase:
 
         result = assert_invoke("merge", "tdd", "--offline", "--rebase")
 
-        assert "skill-merge/claude/tdd" in _fake_git.orphan_branches
+        assert _PLAIN_BRANCH in _fake_git.orphan_branches
         assert _fake_git.rebase_root_onto == "main"
         assert_words_in_message(result.output, "merge", "complete")
 
@@ -2447,7 +2448,7 @@ class TestMergeAbort:
 
         assert _fake_git.rebasing is False
         assert _fake_git.branch == "main"
-        assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
+        assert _PLAIN_BRANCH in _fake_git.deleted_branches
         assert_words_in_message(result.output, "aborted")
 
     def test_aborts_merge_and_cleans_up(
@@ -2460,7 +2461,7 @@ class TestMergeAbort:
 
         assert _fake_git.merging is False
         assert _fake_git.branch == "main"
-        assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
+        assert _PLAIN_BRANCH in _fake_git.deleted_branches
         assert_words_in_message(result.output, "aborted")
 
     def test_unlinks_orphaned_merge_state(
@@ -2487,7 +2488,7 @@ class TestMergeAbort:
         result = assert_invoke("merge", "--abort")
 
         assert _fake_git.branch == "main"
-        assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
+        assert _PLAIN_BRANCH in _fake_git.deleted_branches
         assert_words_in_message(result.output, "aborted")
 
     def test_abort_targets_pinned_branch(
@@ -2517,7 +2518,7 @@ class TestMergeAbort:
         result = assert_invoke("merge", "--abort")
 
         assert _fake_git.branch == "main"
-        assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
+        assert _PLAIN_BRANCH in _fake_git.deleted_branches
         assert_words_in_message(result.output, "aborted")
 
     def test_cross_source_abort_uses_x_branch_not_y_pinned(
@@ -2562,13 +2563,13 @@ class TestMergeAbort:
         assert_invoke(
             "merge", "tdd", "--offline", "--source", "other-project", "--no-commit"
         )
-        _resume_on_plain_branch(x_git)
+        _resume_on(x_git, _PLAIN_BRANCH)
 
         result = assert_invoke("merge", "--abort")
 
         # abort lands on X's branch (main), not Y's pinned `develop`
         assert x_git.branch == "main"
-        assert "skill-merge/claude/tdd" in x_git.deleted_branches
+        assert _PLAIN_BRANCH in x_git.deleted_branches
         assert_words_in_message(result.output, "aborted")
 
 
@@ -2648,7 +2649,7 @@ class TestDetectMergeRepo:
 
         source_git = FakeGitRepo(
             root=SOURCE_REPO_ROOT,
-            branch="skill-merge/claude/tdd",
+            branch=_PLAIN_BRANCH,
             commits={"skills/tdd": "merged-commit"},
         )
         _install_multi_git({SOURCE_REPO_ROOT: source_git})
@@ -2668,7 +2669,7 @@ class TestDetectMergeRepo:
 
         result = assert_invoke("merge", "--continue")
 
-        assert source_git.ff_targets == ["skill-merge/claude/tdd"]
+        assert source_git.ff_targets == [_PLAIN_BRANCH]
         assert_words_in_message(result.output, "merge", "complete")
 
     def test_continue_errors_when_multiple_sources_have_merge_branches(
@@ -2682,7 +2683,7 @@ class TestDetectMergeRepo:
 
         git_a = FakeGitRepo(
             root=SOURCE_REPO_ROOT,
-            branches=["skill-merge/claude/tdd"],
+            branches=[_PLAIN_BRANCH],
         )
         git_b = FakeGitRepo(
             root=OTHER_REPO_ROOT,
@@ -2692,9 +2693,11 @@ class TestDetectMergeRepo:
 
         monkeypatch.chdir("/somewhere/else")
 
+        # register in reverse-sorted order so candidate-iteration order differs
+        # from sorted output, making the sort observable
         registry = SourceRegistry()
-        registry.register_source("my-project", SOURCE_REPO_ROOT)
         registry.register_source("other-project", OTHER_REPO_ROOT)
+        registry.register_source("my-project", SOURCE_REPO_ROOT)
         save_source_registry(registry)
         save_source_config(
             SourceConfig(name="my-project", skills_dirs=["skills"]), SOURCE_REPO_ROOT
@@ -2714,7 +2717,12 @@ class TestDetectMergeRepo:
 
         result = assert_invoke("merge", "--continue", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "multiple source repos")
+        message = result.exception.message
+        assert_words_in_message(message, "multiple source repos")
+        # repo roots listed in sorted order, not candidate-iteration order
+        assert message.index(str(SOURCE_REPO_ROOT)) < message.index(
+            str(OTHER_REPO_ROOT)
+        )
 
     def test_continue_cwd_disambiguates_multiple_merge_repos(
         self,
@@ -2726,7 +2734,7 @@ class TestDetectMergeRepo:
 
         cwd_git = FakeGitRepo(
             root=SOURCE_REPO_ROOT,
-            branch="skill-merge/claude/tdd",
+            branch=_PLAIN_BRANCH,
             commits={"skills/tdd": "merged-commit"},
         )
         other_git = FakeGitRepo(
@@ -2760,7 +2768,7 @@ class TestDetectMergeRepo:
 
         result = assert_invoke("merge", "--continue")
 
-        assert cwd_git.ff_targets == ["skill-merge/claude/tdd"]
+        assert cwd_git.ff_targets == [_PLAIN_BRANCH]
         assert_words_in_message(result.output, "merge", "complete")
 
 

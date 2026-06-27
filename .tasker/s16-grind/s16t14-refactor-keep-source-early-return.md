@@ -1,7 +1,7 @@
 ---
 id: s16t14
 slug: refactor-keep-source-early-return
-status: pending
+status: in-progress
 ---
 
 # Refactor: keep-source early-return guard now truly parallel across three finalize sinks

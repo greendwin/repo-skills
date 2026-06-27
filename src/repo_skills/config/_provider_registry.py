@@ -38,6 +38,9 @@ class Provider:
     name: str
     install_path: Path
 
+    def installed_path(self, skill_name: str) -> Path:
+        return self.install_path / skill_name
+
 
 class ProviderRegistry:
     def __init__(self) -> None:

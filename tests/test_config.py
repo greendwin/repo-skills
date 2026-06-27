@@ -356,6 +356,11 @@ class TestProviderRegistry:
         )
         assert reloaded.require("cursor").install_path == Path("/opt/cursor/skills")
 
+    def test_installed_path_joins_skill_name(self) -> None:
+        reg = ProviderRegistry()
+        prov = reg.register("test", "/opt/test")
+        assert prov.installed_path("tdd") == Path("/opt/test/tdd")
+
     def test_require_unknown_raises(self) -> None:
         reg = ProviderRegistry()
         with pytest.raises(AppError):
@@ -429,6 +434,37 @@ class TestSourceRegistry:
             "/home/user/projects/my-repo"
         )
         assert loaded.sources["other"].repo_root == Path("/opt/other")
+
+    @pytest.mark.usefixtures("fs")
+    def test_source_for_repo_root_returns_matching_source(self) -> None:
+        repo_root = Path("/repos/proj")
+        save_source_config(SourceConfig(name="proj", skills_dirs=[]), repo_root)
+        reg = SourceRegistry()
+        reg.register_source("proj", repo_root)
+
+        source = reg.source_for_repo_root(repo_root)
+        assert source.name == "proj"
+
+    @pytest.mark.usefixtures("fs")
+    def test_source_for_repo_root_no_match_raises(self) -> None:
+        reg = SourceRegistry()
+        reg.register_source("proj", Path("/repos/proj"))
+
+        with pytest.raises(AppError) as exc:
+            reg.source_for_repo_root(Path("/repos/other"))
+        assert "no registered source" in exc.value.message.lower()
+
+    @pytest.mark.usefixtures("fs")
+    def test_source_for_repo_root_multiple_matches_raise(self) -> None:
+        repo_root = Path("/repos/shared")
+        reg = SourceRegistry()
+        reg.register_source("first", repo_root)
+        reg.register_source("second", repo_root)
+
+        with pytest.raises(AppError) as exc:
+            reg.source_for_repo_root(repo_root)
+        assert "first" in exc.value.message
+        assert "second" in exc.value.message
 
 
 # -- SkillManifest --

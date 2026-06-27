@@ -276,7 +276,7 @@ def _run_branch_merge(
             f"or {fmt_command('skills merge --abort')} to start over.",
         )
 
-    installed_path = provider.install_path / skill_name
+    installed_path = provider.installed_path(skill_name)
 
     base_result = _resolve_base_commit(
         git,
@@ -494,7 +494,7 @@ def _merge_start(
 
     # check whether skill is in sync already
     if provider is not None:
-        current_hashes = compute_file_hashes(provider.install_path / skill_name)
+        current_hashes = compute_file_hashes(provider.installed_path(skill_name))
         if installed.match_files(current_hashes):
             # match_files implies baseline is not None, so detached alone is enough
             _raise_in_sync(ctx, source, skill, git, reattached=installed.detached)
@@ -516,7 +516,7 @@ def _merge_start(
                 reattached=installed.detached or not installed.baseline,
             )
 
-    installed_path = provider.install_path / skill_name
+    installed_path = provider.installed_path(skill_name)
 
     def _on_exact_match(base_commit: str) -> None:
         # Provider files are byte-identical to a historical commit;
@@ -594,7 +594,7 @@ def _merge_retarget(
         )
         return
 
-    installed_path = provider.install_path / skill_name
+    installed_path = provider.installed_path(skill_name)
 
     def _on_exact_match(base_commit: str) -> None:
         _retarget_in_sync(
@@ -731,7 +731,7 @@ def _retarget_orphan_add(
     added = _orphan_add_commit(
         git,
         source=target,
-        installed_path=provider.install_path / skill_name,
+        installed_path=provider.installed_path(skill_name),
         skill_name=skill_name,
         no_commit=no_commit,
     )
@@ -869,7 +869,7 @@ def _merge_orphan(
     added = _orphan_add_commit(
         repo.git,
         source=source,
-        installed_path=provider.install_path / skill_name,
+        installed_path=provider.installed_path(skill_name),
         skill_name=skill_name,
         no_commit=no_commit,
     )
@@ -893,7 +893,7 @@ def _find_skill_in_provider(
     provider_registry: ProviderRegistry, provider: Provider | None, skill_name: str
 ) -> Provider:
     if provider:
-        skill_path = provider.install_path / skill_name
+        skill_path = provider.installed_path(skill_name)
         if not skill_path.is_dir():
             raise AppError(
                 f"Skill {fmt_ident(skill_name)} is not installed "
@@ -904,7 +904,7 @@ def _find_skill_in_provider(
 
     matches = []
     for prov in provider_registry.providers:
-        skill_path = prov.install_path / skill_name
+        skill_path = prov.installed_path(skill_name)
         if skill_path.is_dir():
             matches.append(prov)
 
@@ -927,7 +927,7 @@ def _resolve_diverged_provider(
     # search providers for existing skills that installed but not synced
     diverged: list[Provider] = []
     for provider in provider_registry.providers:
-        installed_path = provider.install_path / skill_name
+        installed_path = provider.installed_path(skill_name)
         if not installed_path.exists():
             continue
 
@@ -1204,7 +1204,7 @@ def _finalize(
     source, target_branch = _resolve_merge_target(ctx.source_registry, git)
     skill = source.get_skill(skill_name)
 
-    installed_path = provider.install_path / skill_name
+    installed_path = provider.installed_path(skill_name)
 
     _finalize_merge_branch(
         git,
@@ -1280,23 +1280,13 @@ def _checkout_if_needed(git: GitRepo, branch: str) -> None:
 def _resolve_merge_target(
     source_registry: SourceRegistry, git: GitRepo
 ) -> tuple[Source, str]:
-    # canonical "where does this merge land": cross-source source + its pinned branch
-    source = _source_for_repo(source_registry, git)
-    return source, source.get_branch(git)
-
-
-def _source_for_repo(source_registry: SourceRegistry, git: GitRepo) -> Source:
+    # canonical "where does this merge land": cross-source source + its pinned branch.
     # derive source from the repo holding the merge branch, not installed.source:
     # a cross-source retarget runs the merge in X's repo while the manifest still
     # tracks Y, so installed.source (Y) is wrong — Y's pinned branch is absent in
     # X and resuming via Y would corrupt the entry.
-    # compare by string: repo roots may be different Path implementations
-    root = str(git.root)
-    for name, entry in source_registry.sources.items():
-        if str(entry.repo_root) == root:
-            return source_registry.load_source(name)
-
-    raise AppError(f"No registered source at {fmt_path(git.root)}.")
+    source = source_registry.source_for_repo_root(git.root)
+    return source, source.get_branch(git)
 
 
 def _detect_merge_repo(ctx: ConfigContext) -> GitRepo:

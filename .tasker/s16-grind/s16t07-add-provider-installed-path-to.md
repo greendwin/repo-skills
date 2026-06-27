@@ -1,7 +1,7 @@
 ---
 id: s16t07
 slug: add-provider-installed-path-to
-status: pending
+status: in-review
 ---
 
 # Add Provider.installed_path() to dedupe install-path math

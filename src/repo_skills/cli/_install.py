@@ -78,7 +78,7 @@ def uninstall(
             raise AppError(f"Skill {fmt_ident(name)} is not installed.")
 
         for provider in provider_registry.providers:
-            dst = provider.install_path / name
+            dst = provider.installed_path(name)
             if dst.exists():
                 shutil.rmtree(dst)
 

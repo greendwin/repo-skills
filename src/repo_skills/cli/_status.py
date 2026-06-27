@@ -301,7 +301,7 @@ def _render_source_section(view: _StatusView, source_name: str) -> None:
         entry = view.manifest.skills[skill_name]
         pairs: list[tuple[str, str]] = []
         for provider in view.provider_registry.providers:
-            installed_path = provider.install_path / skill_name
+            installed_path = provider.installed_path(skill_name)
             divergence = _check_divergence(installed_path, entry.baseline)
             if skill_name in view.outdated and installed_path.exists():
                 divergence = f"{divergence}, {STATUS_OUTDATED}"

@@ -1,7 +1,7 @@
 ---
 id: s16t04
 slug: move-repo-root-source-mapping
-status: pending
+status: in-progress
 ---
 
 # Move repo-root→source mapping onto SourceRegistry with ambiguity guard

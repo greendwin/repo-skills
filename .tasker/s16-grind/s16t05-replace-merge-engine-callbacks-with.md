@@ -1,7 +1,7 @@
 ---
 id: s16t05
 slug: replace-merge-engine-callbacks-with
-status: pending
+status: in-progress
 ---
 
 # Replace merge-engine callbacks with a discriminated result object

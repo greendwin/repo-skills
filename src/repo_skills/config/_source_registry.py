@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from repo_skills.console import console, fmt_ident
+from repo_skills.console import console, fmt_ident, fmt_path
 from repo_skills.errors import AppError, ConfigBrokenError
 from repo_skills.utils import load_config, save_config
 
@@ -52,6 +52,19 @@ class SourceRegistry:
 
         # don't cache source without loaded skills
         return load_source(entry.repo_root, load_skills=False)
+
+    def source_for_repo_root(self, root: Path) -> Source:
+        # compare by string: repo roots may be different Path implementations
+        target = str(root)
+        names = [n for n, e in self._entries.items() if str(e.repo_root) == target]
+        if not names:
+            raise AppError(f"No registered source at {fmt_path(root)}.")
+        if len(names) > 1:
+            joined = ", ".join(fmt_ident(n) for n in names)
+            raise AppError(
+                f"Multiple registered sources map to {fmt_path(root)}: {joined}."
+            )
+        return self.load_source(names[0])
 
     def _get_entry(self, name: str) -> SourceEntry:
         entry = self._entries.get(name)

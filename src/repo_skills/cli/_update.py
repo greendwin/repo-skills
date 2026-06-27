@@ -451,7 +451,7 @@ def _decide_actions(
     decisions: list[_ProviderDecision] = []
 
     for provider in provider_registry.providers:
-        dst = provider.install_path / skill_name
+        dst = provider.installed_path(skill_name)
         if not dst.exists():
             decisions.append(_ProviderDecision(provider.name, dst, _Action.FRESH, None))
             continue

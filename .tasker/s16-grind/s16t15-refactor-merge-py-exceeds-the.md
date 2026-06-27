@@ -1,7 +1,7 @@
 ---
 id: s16t15
 slug: refactor-merge-py-exceeds-the
-status: pending
+status: in-progress
 ---
 
 # Refactor: _merge.py exceeds the 1k-line module threshold

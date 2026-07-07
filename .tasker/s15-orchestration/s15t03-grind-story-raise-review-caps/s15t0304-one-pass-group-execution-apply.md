@@ -1,7 +1,7 @@
 ---
 id: s15t0304
 slug: one-pass-group-execution-apply
-status: pending
+status: cancelled
 ---
 
 # One-pass group execution: apply + single commit

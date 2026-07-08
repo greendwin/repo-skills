@@ -65,3 +65,5 @@ status: pending
 - [x] [s08t2322](s08t2322-refactor-path-containment-check-duplicated.md): Refactor: Path-containment check duplicated between new _within helper and _merge.py
 - [x] [s08t2323](s08t2323-refactor-dir-has-skills-uses.md): Refactor: _dir_has_skills uses the heavy classification walk just to ask a yes/no question
 - [ ] [s08t2324](s08t2324-dedup-two-source-test-fixture.md): Dedup two-source test fixture into a helper
+- [ ] [s08t2325](s08t2325-unify-skilldir-walkers-decide-dotdir.md): Unify skill-dir walkers + decide dot-dir pruning policy
+- [ ] [s08t2326](s08t2326-collapse-nestedoverlapping-skillsdirs-at-normalization.md): Collapse nested/overlapping skills_dirs at normalization

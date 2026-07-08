@@ -715,6 +715,20 @@ class TestCollectSourceSkillsMultiDir:
 
         assert _collect_source_skills(repo_root, []) == {}
 
+    def test_overlapping_dirs_collect_same_skill_once_without_warning(
+        self, fs: FakeFilesystem, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        repo_root = Path("/repo-overlap")
+        fs.create_file(repo_root / "skills/group/tdd/SKILL.md", contents="# tdd")
+
+        skills = _collect_source_skills(repo_root, ["skills", "skills/group"])
+
+        assert set(skills) == {"tdd"}
+        assert skills["tdd"].rel_path == "skills/group/tdd"
+
+        out = capsys.readouterr().out
+        assert "Warning" not in out
+
     def test_collision_excludes_all_copies_and_reports(
         self, fs: FakeFilesystem, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -762,8 +776,8 @@ class TestCollectSourceSkillsMultiDir:
         _collect_source_skills(repo_root, ["copilot", "claude/skills"])
 
         out = capsys.readouterr().out
-        # scan order, not the sorted view: the first-scanned dir comes first
-        assert out.index("copilot") < out.index("claude/skills")
+        # scan order, not the sorted view: the first-scanned dir is listed first
+        assert out.index("copilot/tdd") < out.index("claude/skills/tdd")
 
     def test_intra_dir_duplicate_basename_excluded_and_reported(
         self, fs: FakeFilesystem, capsys: pytest.CaptureFixture[str]

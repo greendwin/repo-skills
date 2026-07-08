@@ -115,9 +115,8 @@ def load_source(repo_root: Path, *, load_skills: bool) -> Source:
 def _collect_source_skills(
     repo_root: Path, skills_dirs: Sequence[str]
 ) -> dict[str, SourceSkill]:
-    # note: single load warns about it exactly once.
-    found: dict[str, SourceSkill] = {}
-    collisions: dict[str, list[str]] = {}
+    # warn once per name found in >1 location; all colliding copies excluded
+    by_name: dict[str, list[str]] = {}
 
     for skills_dir in skills_dirs:
         skills_root = repo_root / skills_dir
@@ -131,28 +130,28 @@ def _collect_source_skills(
             dirnames.clear()
             name = os.path.basename(dirpath)
             rel_path = rel_posix(Path(dirpath), repo_root)
-            if name in collisions:
-                collisions[name].append(rel_path)
-                continue
-            if name in found:
-                collisions[name] = [found[name].rel_path, rel_path]
-                continue
+            # overlapping/nested skills dirs surface the same physical skill at an
+            # identical rel_path; that re-sighting is one skill, not a collision,
+            # so dedup paths (first-seen order) before partitioning below
+            paths = by_name.setdefault(name, [])
+            if rel_path not in paths:
+                paths.append(rel_path)
 
-            found[name] = SourceSkill(name=name, rel_path=rel_path)
-
-    for name, rel_paths in collisions.items():
-        found.pop(name)
-        _warn_collision(name, rel_paths)
+    found: dict[str, SourceSkill] = {}
+    for name, paths in by_name.items():
+        if len(paths) == 1:
+            found[name] = SourceSkill(name=name, rel_path=paths[0])
+        else:
+            _warn_collision(name, paths)
 
     return found
 
 
 def _warn_collision(name: str, rel_paths: Sequence[str]) -> None:
-    # TODO: multiple colliding paths look ugly in a single line, need to split
-    #       them to multiple lines
-    ordered = list(dict.fromkeys(rel_paths))
-    rendered = ", ".join(fmt_data(p) for p in ordered)
+    # one path per line in discovery order so the user can locate the dups
     console.print(
         f"[yellow]Warning[/yellow]: Skill {fmt_ident(name)} found in "
-        f"multiple locations ({rendered}); excluding it from the source."
+        f"multiple locations; excluding it from the source:"
     )
+    for path in rel_paths:
+        console.print(f"  - {fmt_data(path)}")

@@ -91,8 +91,10 @@ def status(
         loaded_source_names=set(loaded_sources),
     )
 
+    # registry subsumes available_by_source; union adds skill-less registered sources
+    # plus manifest-lingering (unregistered-but-installed) ones
     all_sources = sorted(
-        set(installed_by_source.keys()) | set(available_by_source.keys())
+        set(ctx.source_registry.sources) | set(installed_by_source.keys())
     )
     orphans = sorted((p for p in untracked if not p.source_match), key=lambda x: x.name)
 
@@ -285,14 +287,17 @@ def _mergeable_providers(untracked: list[UntrackedEntry]) -> dict[str, list[str]
 def _render_source_section(view: _StatusView, source_name: str) -> None:
     # a registered source that failed to load during the scan is broken; rely on
     # the scan's result instead of re-loading, which would re-print the warning
-    if source_name in view.loaded_source_names:
+    loaded = source_name in view.loaded_source_names
+    if loaded:
         console.print(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
     else:
         console.print(
             f"[yellow]Source[/yellow] {fmt_ident(source_name)}  [red](broken)[/red]"
         )
 
-    for skill_name in sorted(view.installed_by_source.get(source_name, [])):
+    installed = view.installed_by_source.get(source_name, [])
+    available = view.available_by_source.get(source_name, [])
+    for skill_name in sorted(installed):
         entry = view.manifest.skills[skill_name]
         pairs: list[tuple[str, str]] = []
         for provider in view.provider_registry.providers:
@@ -304,7 +309,7 @@ def _render_source_section(view: _StatusView, source_name: str) -> None:
 
         _print_skill_rows(skill_name, pairs, view.name_width, view.provider_width)
 
-    for skill_name in sorted(view.available_by_source.get(source_name, [])):
+    for skill_name in sorted(available):
         providers = view.mergeable_providers.get(skill_name)
         if providers:
             pairs = [(p, STATUS_MERGEABLE) for p in providers]
@@ -312,6 +317,9 @@ def _render_source_section(view: _StatusView, source_name: str) -> None:
             pairs = [("", STATUS_AVAILABLE)]
 
         _print_skill_rows(skill_name, pairs, view.name_width, view.provider_width)
+
+    if loaded and not installed and not available:
+        console.print("  [dim](no skills)[/dim]")
 
 
 def _print_untracked_section(

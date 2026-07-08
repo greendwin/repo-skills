@@ -1598,6 +1598,55 @@ class TestDetectMergeRepo:
         assert cwd_git.ff_targets == ["skill-merge/claude/tdd"]
         assert_words_in_message(result.output, "merge", "complete")
 
+    def test_continue_nested_cwd_selects_containing_source(
+        self,
+        fs: FakeFilesystem,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fs.create_dir(SOURCE_REPO_ROOT / ".git")
+        fs.create_dir(OTHER_REPO_ROOT / ".git")
+
+        cwd_git = FakeGitRepo(
+            root=SOURCE_REPO_ROOT,
+            branch="skill-merge/claude/tdd",
+            commits={"skills/tdd": "merged-commit"},
+        )
+        other_git = FakeGitRepo(
+            root=OTHER_REPO_ROOT,
+            branches=["skill-merge/claude/review"],
+        )
+        _install_multi_git({SOURCE_REPO_ROOT: cwd_git, OTHER_REPO_ROOT: other_git})
+
+        nested = SOURCE_REPO_ROOT / "skills"
+        fs.create_dir(nested)
+        monkeypatch.chdir(nested)
+
+        registry = SourceRegistry()
+        registry.register_source("my-project", SOURCE_REPO_ROOT)
+        registry.register_source("other-project", OTHER_REPO_ROOT)
+        save_source_registry(registry)
+        save_source_config(
+            SourceConfig(name="my-project", skills_dirs=["skills"]), SOURCE_REPO_ROOT
+        )
+        save_source_config(
+            SourceConfig(name="other-project", skills_dirs=["skills"]), OTHER_REPO_ROOT
+        )
+
+        create_source_skill(fs, "tdd", content="# merged")
+        hashes = install_skill(fs, "tdd", content="# original")
+        save_manifest(
+            {
+                "tdd": InstalledSkill(
+                    source="my-project", baseline=Baseline(commit=COMMIT, files=hashes)
+                )
+            }
+        )
+
+        result = assert_invoke("merge", "--continue")
+
+        assert cwd_git.ff_targets == ["skill-merge/claude/tdd"]
+        assert_words_in_message(result.output, "merge", "complete")
+
 
 class TestResolveBaseCommitReturnType:
     """Unit tests for _resolve_base_commit returning _BaseCommit."""

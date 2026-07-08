@@ -42,3 +42,4 @@ Fix TODO-documented bugs and issues across the CLI.
 - [ ] [s08t36](s08t36-allow-to-merge-a-skill.md): Allow to merge a skill to *another* skill source
 - [x] [s08t37](s08t37-showing-outdated-even-though-its/): Showing 'outdated' even though it's up-to-date
 - [ ] [s08t38](s08t38-unclear-error-on-install-failure.md): Unclear error on install failure
+- [ ] [s08t39](s08t39-audit-path-manipulations-for-windows.md): Audit path manipulations for Windows compatibility

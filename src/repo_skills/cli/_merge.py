@@ -26,6 +26,7 @@ from repo_skills.config import (
     save_skill_manifest,
 )
 from repo_skills.console import console, fmt_command, fmt_data, fmt_ident, fmt_path
+from repo_skills.discovery import path_within
 from repo_skills.errors import AppError, FileNotInCommitError, NoopError
 from repo_skills.git import GitRepo, ensure_on_branch
 from repo_skills.utils import hash_content, normalize_line_endings, overwrite_dir
@@ -768,7 +769,7 @@ def _detect_merge_repo(ctx: ConfigContext) -> GitRepo:
         if not _has_merge_branch(git):
             continue
 
-        if cwd == source.repo_root or source.repo_root in cwd.parents:
+        if path_within(cwd, source.repo_root):
             return git
 
         candidates.append(git)

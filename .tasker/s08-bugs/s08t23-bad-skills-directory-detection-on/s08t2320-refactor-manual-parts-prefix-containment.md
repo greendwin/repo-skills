@@ -1,7 +1,7 @@
 ---
 id: s08t2320
 slug: refactor-manual-parts-prefix-containment
-status: pending
+status: done
 ---
 
 # Refactor: Manual `.parts`-prefix containment in `_within` overlaps with the zip-prefix loop in `_deepest_common_ancestor

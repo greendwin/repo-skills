@@ -9,6 +9,8 @@ from repo_skills.discovery import (
     detect_skills_dir,
     find_repo_skills_dir,
     has_any_skill,
+    normalize_repo_dir,
+    path_within,
 )
 
 
@@ -117,6 +119,65 @@ def test_has_any_skill_with_nested_skill_file(fs: FakeFilesystem) -> None:
     fs.create_file(root / "pkg/skill/inner/SKILL.md")
 
     assert has_any_skill(root) is True
+
+
+def test_path_within_root_itself(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_dir(root)
+
+    assert path_within(root, root) is True
+
+
+def test_path_within_nested_path(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_dir(root / "a/b/c")
+
+    assert path_within(root / "a/b/c", root) is True
+
+
+def test_path_within_sibling_is_outside(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_dir(root)
+    fs.create_dir("/other")
+
+    assert path_within(Path("/other"), root) is False
+
+
+def test_path_within_rejects_relative_path(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_dir(root)
+
+    with pytest.raises(AssertionError):
+        path_within(Path("nested"), root)
+
+
+def test_path_within_rejects_relative_root(fs: FakeFilesystem) -> None:
+    fs.create_dir("/repo")
+
+    with pytest.raises(AssertionError):
+        path_within(Path("/repo"), Path("repo"))
+
+
+def test_normalize_repo_dir_rejects_parent_traversal(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_dir(root / "sub")
+
+    assert normalize_repo_dir(root, "sub/../..") is None
+
+
+def test_normalize_repo_dir_accepts_nested_dir(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_dir(root / "claude/skills")
+
+    assert normalize_repo_dir(root, "claude/skills") == root / "claude/skills"
+
+
+def test_normalize_repo_dir_rejects_absolute_outside(fs: FakeFilesystem) -> None:
+    root = Path("/repo")
+    fs.create_dir(root)
+    fs.create_dir("/other")
+
+    assert normalize_repo_dir(root, "/other") is None
 
 
 def test_find_repo_skills_dir_from_git_root(

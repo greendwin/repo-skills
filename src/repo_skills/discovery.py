@@ -73,29 +73,17 @@ def has_any_skill(root: Path) -> bool:
     return next(_iter_skill_dirs(root), None) is not None
 
 
-def _within(path: Path, root: Path) -> bool:
-    """Return whether ``path`` is ``root`` itself or nested inside it.
-
-    Both inputs must already be absolute and resolved. Compared by ``parts``
-    (not ``is_relative_to``) to avoid differing or raising across drive-relative
-    or symlinked roots; the prefix check stays robust now both inputs are
-    ``.resolve()``d.
-    """
-    return path.parts[: len(root.parts)] == root.parts
+def path_within(path: Path, root: Path) -> bool:
+    assert path.is_absolute() and root.is_absolute()
+    return path.is_relative_to(root)
 
 
 def normalize_repo_dir(git_root: Path, skills_dir: str) -> Path | None:
-    """Resolve ``skills_dir`` to an absolute path inside ``git_root``.
-
-    Accepts any path (existing or not, including the repo root itself) as long
-    as it does not escape the repo; an absolute path outside the repo or a
-    ``../`` traversal beyond the root returns ``None``.
-    """
+    # resolve ``skills_dir`` to an absolute path inside `git_root`
     root = git_root.resolve()
     target = (root / skills_dir).resolve()
-    if not _within(target, root):
+    if not path_within(target, root):
         return None
-
     return target
 
 

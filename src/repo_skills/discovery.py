@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
 
-from .config import SKILL_FILE
+from .config import iter_skill_dirs
 from .manifest import Manifest, default_install_dir, default_manifest_path
 
 _GIT_DIR = ".git"
@@ -42,17 +41,8 @@ def find_git_root(start: Path) -> Path | None:
         current = parent
 
 
-def _iter_skill_dirs(root: Path) -> Iterator[Path]:
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-        if SKILL_FILE in filenames:
-            # outermost SKILL.md wins; don't descend into a skill's internals
-            dirnames.clear()
-            yield Path(dirpath)
-
-
 def detect_skills_dir(git_root: Path) -> DetectResult:
-    skill_dirs = list(_iter_skill_dirs(git_root))
+    skill_dirs = list(iter_skill_dirs(git_root))
 
     if not skill_dirs:
         return DetectResult(DetectKind.NONE, None)
@@ -60,9 +50,8 @@ def detect_skills_dir(git_root: Path) -> DetectResult:
     parents = [sd.parent for sd in skill_dirs]
     common = _deepest_common_ancestor(parents, fallback=git_root)
 
-    # compared by `parts` (not `==`) so detection stays correct when the two
-    # paths come from different `Path` flavours (e.g. a real `pathlib` path
-    # built here versus a faked filesystem root)
+    # compare by `parts`, not `==`: a real and a faked-fs `Path` to the same
+    # location are unequal under `==` but share `parts`
     if common.parts == git_root.parts:
         return DetectResult(DetectKind.AMBIGUOUS, None)
 
@@ -70,7 +59,7 @@ def detect_skills_dir(git_root: Path) -> DetectResult:
 
 
 def has_any_skill(root: Path) -> bool:
-    return next(_iter_skill_dirs(root), None) is not None
+    return next(iter_skill_dirs(root), None) is not None
 
 
 def path_within(path: Path, root: Path) -> bool:
@@ -95,6 +84,7 @@ def find_repo_skills_dir(
 ) -> Path | None:
     if cwd is None:
         cwd = Path.cwd()
+
     root = find_git_root(cwd)
     if root is not None:
         skills_dir = root / "skills"

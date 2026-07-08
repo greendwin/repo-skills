@@ -1,7 +1,7 @@
 ---
 id: s08t2325
 slug: unify-skilldir-walkers-decide-dotdir
-status: pending
+status: done
 ---
 
 # Unify skill-dir walkers + decide dot-dir pruning policy

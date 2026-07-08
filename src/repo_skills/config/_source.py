@@ -1,4 +1,4 @@
-import os
+from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,7 +9,7 @@ from repo_skills.errors import AppError
 from repo_skills.git import GitRepo
 from repo_skills.utils import rel_posix, save_config
 
-from ._skill_md import SKILL_FILE
+from ._skill_md import iter_skill_dirs
 from ._utils import (
     ConfigState,
     LoadedConfig,
@@ -116,24 +116,19 @@ def _collect_source_skills(
     repo_root: Path, skills_dirs: Sequence[str]
 ) -> dict[str, SourceSkill]:
     # warn once per name found in >1 location; all colliding copies excluded
-    by_name: dict[str, list[str]] = {}
+    by_name: dict[str, list[str]] = defaultdict(list)
 
     for skills_dir in skills_dirs:
         skills_root = repo_root / skills_dir
         if not skills_root.is_dir():
             continue
 
-        for dirpath, dirnames, filenames in os.walk(skills_root):
-            if SKILL_FILE not in filenames:
-                continue
-
-            dirnames.clear()
-            name = os.path.basename(dirpath)
-            rel_path = rel_posix(Path(dirpath), repo_root)
-            # overlapping/nested skills dirs surface the same physical skill at an
-            # identical rel_path; that re-sighting is one skill, not a collision,
-            # so dedup paths (first-seen order) before partitioning below
-            paths = by_name.setdefault(name, [])
+        for skill_dir in iter_skill_dirs(skills_root):
+            name = skill_dir.name
+            rel_path = rel_posix(skill_dir, repo_root)
+            # overlapping/nested dirs re-sight one physical skill at the same rel_path
+            # dedup (first-seen order) so it isn't read as a collision
+            paths = by_name[name]
             if rel_path not in paths:
                 paths.append(rel_path)
 

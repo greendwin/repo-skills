@@ -43,6 +43,7 @@ from tests.cli.helper import (
     load_manifest,
     register_provider,
     register_source,
+    register_two_sources,
     save_manifest,
 )
 
@@ -721,17 +722,7 @@ class TestMergeUntracked:
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         other_repo = OTHER_REPO_ROOT
-        fs.create_dir(other_repo / ".git")
-        registry = SourceRegistry()
-        registry.register_source("my-project", git_repo)
-        registry.register_source("other-project", other_repo)
-        save_source_registry(registry)
-        save_source_config(
-            SourceConfig(name="my-project", skills_dirs=["skills"]), git_repo
-        )
-        save_source_config(
-            SourceConfig(name="other-project", skills_dirs=["skills"]), other_repo
-        )
+        register_two_sources(fs, git_repo, other_repo)
         create_source_skill(fs, "tdd", content="# original")
         create_source_skill(fs, "tdd", content="# original", root=other_repo / "skills")
         install_skill(fs, "tdd", content="# original")
@@ -758,17 +749,7 @@ class TestMergeUntracked:
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         other_repo = OTHER_REPO_ROOT
-        fs.create_dir(other_repo / ".git")
-        registry = SourceRegistry()
-        registry.register_source("my-project", git_repo)
-        registry.register_source("other-project", other_repo)
-        save_source_registry(registry)
-        save_source_config(
-            SourceConfig(name="my-project", skills_dirs=["skills"]), git_repo
-        )
-        save_source_config(
-            SourceConfig(name="other-project", skills_dirs=["skills"]), other_repo
-        )
+        register_two_sources(fs, git_repo, other_repo)
         create_source_skill(fs, "tdd", content="# original")
         create_source_skill(fs, "tdd", content="# original", root=other_repo / "skills")
         install_skill(fs, "tdd", content="# original")
@@ -782,17 +763,7 @@ class TestMergeUntracked:
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         other_repo = OTHER_REPO_ROOT
-        fs.create_dir(other_repo / ".git")
-        registry = SourceRegistry()
-        registry.register_source("my-project", git_repo)
-        registry.register_source("other-project", other_repo)
-        save_source_registry(registry)
-        save_source_config(
-            SourceConfig(name="my-project", skills_dirs=["skills"]), git_repo
-        )
-        save_source_config(
-            SourceConfig(name="other-project", skills_dirs=["skills"]), other_repo
-        )
+        register_two_sources(fs, git_repo, other_repo)
         create_source_skill(fs, "tdd", content="# original")
         create_source_skill(fs, "tdd", content="# original", root=other_repo / "skills")
         install_skill(fs, "tdd", content="# original")
@@ -822,18 +793,8 @@ class TestMergeOrphan:
     def test_errors_when_multiple_sources_without_flag(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        other_repo = Path("/repos/other-project")
-        fs.create_dir(other_repo / ".git")
-        registry = SourceRegistry()
-        registry.register_source("my-project", git_repo)
-        registry.register_source("other-project", other_repo)
-        save_source_registry(registry)
-        save_source_config(
-            SourceConfig(name="my-project", skills_dirs=["skills"]), git_repo
-        )
-        save_source_config(
-            SourceConfig(name="other-project", skills_dirs=["skills"]), other_repo
-        )
+        other_repo = OTHER_REPO_ROOT
+        register_two_sources(fs, git_repo, other_repo)
         install_skill(fs, "my-new-skill", content="# brand new")
 
         result = assert_invoke("merge", "my-new-skill", "--offline", expect_error=True)
@@ -845,18 +806,8 @@ class TestMergeOrphan:
     def test_source_flag_selects_target(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        other_repo = Path("/repos/other-project")
-        fs.create_dir(other_repo / ".git")
-        registry = SourceRegistry()
-        registry.register_source("my-project", git_repo)
-        registry.register_source("other-project", other_repo)
-        save_source_registry(registry)
-        save_source_config(
-            SourceConfig(name="my-project", skills_dirs=["skills"]), git_repo
-        )
-        save_source_config(
-            SourceConfig(name="other-project", skills_dirs=["skills"]), other_repo
-        )
+        other_repo = OTHER_REPO_ROOT
+        register_two_sources(fs, git_repo, other_repo)
         install_skill(fs, "my-new-skill", content="# brand new")
 
         result = assert_invoke(

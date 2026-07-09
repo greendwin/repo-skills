@@ -63,6 +63,10 @@ Error: Repo has uncommitted changes.
   repo: /path/to/repo
 ```
 
+> **Note (ADR-0007):** this role table is the styling *contract*; it is now
+> *implemented* by cli-error's `DEFAULT_STYLES` theme (`id/data/path/cmd/warn/err`).
+> The `status` color-as-data exception below stays raw markup, not a role.
+
 ## Consequences
 
 - One color per semantic role — easier to apply consistently.

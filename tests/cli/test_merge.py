@@ -4,6 +4,7 @@ from collections.abc import Generator
 from pathlib import Path
 
 import pytest
+from cli_error import CliError
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 import repo_skills.cli._deps as deps_mod
@@ -27,7 +28,6 @@ from repo_skills.config import (
     save_source_config,
     save_source_registry,
 )
-from repo_skills.errors import AppError
 from repo_skills.utils import normalize_line_endings
 from tests.cli.helper import (
     BROKEN_CONFIG_JSON,
@@ -171,9 +171,7 @@ class TestMergeProviderResolution:
 
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(
-            result.exception.message, "multiple providers", "--from"
-        )
+        assert_words_in_message(result.message, "multiple providers", "--from")
 
     def test_selects_provider_with_from_flag(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -228,9 +226,7 @@ class TestMergeProviderResolution:
 
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(
-            result.exception.message, "multiple providers", "--from"
-        )
+        assert_words_in_message(result.message, "multiple providers", "--from")
 
     def test_from_flag_selects_provider_for_untracked_skill(
         self, fs: FakeFilesystem, git_repo: Path
@@ -421,12 +417,12 @@ class TestBaseCommitSearch:
         _setup_diverged_skill(fs, git_repo, commit=None)
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111"]
-        # Inject a generic AppError by using a custom side effect
+        # Inject a generic CliError by using a custom side effect
         _orig = _fake_git.get_file_at_commit
 
         def _boom(commit: str, path: str) -> bytes:
             if commit == "aaa111":
-                raise AppError("unexpected git failure")
+                raise CliError("unexpected git failure")
             return _orig(commit, path)
 
         monkeypatch.setattr(_fake_git, "get_file_at_commit", _boom)
@@ -435,7 +431,7 @@ class TestBaseCommitSearch:
             "merge", "tdd", "--search-base", "--offline", expect_error=True
         )
 
-        assert "unexpected git failure" in result.exception.message
+        assert "unexpected git failure" in result.message
 
 
 class TestCommitReachability:
@@ -449,7 +445,7 @@ class TestCommitReachability:
 
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
-        assert "--search-base" in result.exception.message
+        assert "--search-base" in result.message
 
     def test_dangling_commit_auto_searches(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -729,9 +725,7 @@ class TestMergeUntracked:
 
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(
-            result.exception.message, "multiple sources", "--source"
-        )
+        assert_words_in_message(result.message, "multiple sources", "--source")
 
     def test_untracked_falls_through_to_orphan_when_source_lacks_skill(
         self, fs: FakeFilesystem, git_repo: Path
@@ -799,9 +793,7 @@ class TestMergeOrphan:
 
         result = assert_invoke("merge", "my-new-skill", "--offline", expect_error=True)
 
-        assert_words_in_message(
-            result.exception.message, "multiple sources", "--source"
-        )
+        assert_words_in_message(result.message, "multiple sources", "--source")
 
     def test_source_flag_selects_target(
         self, fs: FakeFilesystem, git_repo: Path
@@ -922,7 +914,7 @@ class TestMergeOrphan:
 
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "not installed")
+        assert_words_in_message(result.message, "not installed")
 
     def test_errors_when_multiple_providers_have_orphan_skill(
         self, fs: FakeFilesystem, git_repo: Path
@@ -934,9 +926,7 @@ class TestMergeOrphan:
 
         result = assert_invoke("merge", "my-new-skill", "--offline", expect_error=True)
 
-        assert_words_in_message(
-            result.exception.message, "multiple providers", "--from"
-        )
+        assert_words_in_message(result.message, "multiple providers", "--from")
 
     def test_from_flag_selects_provider_for_orphan_skill(
         self, fs: FakeFilesystem, git_repo: Path
@@ -963,7 +953,7 @@ class TestMergeOrphan:
 
         result = assert_invoke("merge", "my-new-skill", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "no skills directory")
+        assert_words_in_message(result.message, "no skills directory")
 
 
 class TestMergeValidation:
@@ -979,7 +969,7 @@ class TestMergeValidation:
         )
 
         assert_words_in_message(
-            result.exception.message, "merge already in progress", "--continue"
+            result.message, "merge already in progress", "--continue"
         )
 
     def test_errors_when_same_merge_in_progress_auto_provider(
@@ -991,7 +981,7 @@ class TestMergeValidation:
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
         assert_words_in_message(
-            result.exception.message, "merge already in progress", "--continue"
+            result.message, "merge already in progress", "--continue"
         )
 
     def test_allows_merge_when_different_merge_in_progress(
@@ -1010,7 +1000,7 @@ class TestMergeValidation:
 
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "uncommitted changes")
+        assert_words_in_message(result.message, "uncommitted changes")
 
     def test_pulls_by_default(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1148,7 +1138,7 @@ class TestMergeContinue:
 
         result = assert_invoke("merge", "--continue", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "multiple merge branches")
+        assert_words_in_message(result.message, "multiple merge branches")
 
     def test_errors_when_no_merge_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1157,8 +1147,8 @@ class TestMergeContinue:
 
         result = assert_invoke("merge", "--continue", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "no merge branch")
-        assert_words_in_message(result.exception.message, "skills merge")
+        assert_words_in_message(result.message, "no merge branch")
+        assert_words_in_message(result.message, "skills merge")
 
     def test_errors_when_repo_dirty(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1168,7 +1158,7 @@ class TestMergeContinue:
 
         result = assert_invoke("merge", "--continue", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "uncommitted changes")
+        assert_words_in_message(result.message, "uncommitted changes")
 
     def test_errors_when_ff_fails(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1178,7 +1168,7 @@ class TestMergeContinue:
 
         result = assert_invoke("merge", "--continue", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "fast-forward failed")
+        assert_words_in_message(result.message, "fast-forward failed")
 
     def test_updates_manifest_commit(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1333,7 +1323,7 @@ class TestMergeAbort:
 
         result = assert_invoke("merge", "--abort", "--continue", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "--abort", "--continue")
+        assert_words_in_message(result.message, "--abort", "--continue")
 
     def test_works_when_no_rebase_in_progress(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1362,7 +1352,7 @@ class TestMergeAbort:
 
         result = assert_invoke("merge", "--abort", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "no merge branch")
+        assert_words_in_message(result.message, "no merge branch")
 
     def test_works_when_repo_dirty(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -1519,7 +1509,7 @@ class TestDetectMergeRepo:
 
         result = assert_invoke("merge", "--continue", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "multiple source repos")
+        assert_words_in_message(result.message, "multiple source repos")
 
     def test_continue_cwd_disambiguates_multiple_merge_repos(
         self,

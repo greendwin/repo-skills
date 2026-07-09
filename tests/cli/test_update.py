@@ -547,7 +547,7 @@ class TestUpdateValidation:
 
         result = assert_invoke("update", "nope", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "not installed")
+        assert_words_in_message(result.message, "not installed")
 
     @pytest.mark.usefixtures("fs", "git_repo")
     def test_shows_message_when_no_skills_installed(self) -> None:

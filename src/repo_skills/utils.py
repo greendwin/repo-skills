@@ -5,11 +5,17 @@ import shutil
 from pathlib import Path
 from typing import Any, TypeVar
 
+from cli_error import CliError
 from pydantic import BaseModel, ValidationError
 
-from repo_skills.errors import ConfigBrokenError
-
 _T = TypeVar("_T", bound=BaseModel)
+
+
+class ConfigBrokenError(CliError):
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        super().__init__("Broken config file")
+        self.prop_path("path", str(path))
 
 
 def read_text(path: Path) -> str:

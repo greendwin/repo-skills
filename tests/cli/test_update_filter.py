@@ -78,7 +78,7 @@ class TestUpdateSourceFilter:
             "update", "--offline", "--source", "nope", expect_error=True
         )
 
-        assert_words_in_message(result.exception.message, "nope", "not found")
+        assert_words_in_message(result.message, "nope", "not found")
         assert "Updating tdd" not in result.output
 
     def test_unknown_source_errors_even_with_valid_one(
@@ -113,7 +113,7 @@ class TestUpdateSourceFilter:
             expect_error=True,
         )
 
-        assert_words_in_message(result.exception.message, "nope", "not found")
+        assert_words_in_message(result.message, "nope", "not found")
 
     def test_name_and_source_compose_as_union(
         self, fs: FakeFilesystem, git_repo: Path
@@ -281,4 +281,4 @@ class TestUpdateMultipleNames:
 
         result = assert_invoke("update", "tdd", "nope", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "nope", "not installed")
+        assert_words_in_message(result.message, "nope", "not installed")

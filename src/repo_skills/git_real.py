@@ -3,21 +3,22 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from rich.markup import escape
-
-from repo_skills.console import console, fmt_command, fmt_ident, fmt_path
-from repo_skills.errors import AppError, FileNotInCommitError
-from repo_skills.git import CommitVerificationError, GitRepo
+from repo_skills.console import fmt_command, reporter
+from repo_skills.git import (
+    CommitVerificationError,
+    FileNotInCommitError,
+    GitCommandError,
+    GitRepo,
+)
 from repo_skills.utils import hash_content, normalize_line_endings, rel_posix
 
 
-def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> AppError:
+def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> GitCommandError:
     cmd = " ".join(["git", *args])
 
-    props = {"repo": fmt_path(repo_path)}
-
+    branch = ""
     branch_cmd = ["git", "branch", "--show-current"]
-    console.debug_cmd(branch_cmd, repo_path)
+    reporter.debug_cmd(branch_cmd, repo_path)
     try:
         result = subprocess.run(
             branch_cmd,
@@ -27,19 +28,17 @@ def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> AppError:
             check=True,
         )
         branch = result.stdout.strip()
-        console.debug_output(result.stdout.strip(), result.stderr.strip())
-        if branch:
-            props["branch"] = fmt_ident(branch)
+        reporter.debug_output(result.stdout.strip(), result.stderr.strip())
     except subprocess.CalledProcessError as exc:
-        console.debug_output("", (exc.stderr or "").strip())
+        reporter.debug_output("", (exc.stderr or "").strip())
 
-    if output:
-        props[""] = f"[dim]{escape(output)}[/dim]"
-
-    return AppError(
-        f"Git command failed: {fmt_command(cmd)}",
-        props=props,
+    err = GitCommandError(f"Git command failed: {fmt_command(cmd)}", output).prop_path(
+        "repo", repo_path
     )
+    if branch:
+        err.prop_id("branch", branch)
+
+    return err
 
 
 class RealGitRepo:
@@ -52,7 +51,7 @@ class RealGitRepo:
 
     def _run(self, *args: str) -> str:
         cmd = ["git", *args]
-        console.debug_cmd(cmd, self._path)
+        reporter.debug_cmd(cmd, self._path)
         try:
             result = subprocess.run(
                 cmd,
@@ -63,15 +62,15 @@ class RealGitRepo:
             )
         except subprocess.CalledProcessError as exc:
             output = (exc.stderr or exc.stdout or "").strip()
-            console.debug_output("", output)
+            reporter.debug_output("", output)
             raise _git_error(args, output, self._path) from exc
 
-        console.debug_output(result.stdout.strip(), result.stderr.strip())
+        reporter.debug_output(result.stdout.strip(), result.stderr.strip())
         return result.stdout.strip()
 
     def _run_bytes(self, *args: str) -> bytes:
         cmd = ["git", *args]
-        console.debug_cmd(cmd, self._path)
+        reporter.debug_cmd(cmd, self._path)
         try:
             result = subprocess.run(
                 cmd,
@@ -81,18 +80,18 @@ class RealGitRepo:
             )
         except subprocess.CalledProcessError as exc:
             stderr = exc.stderr.decode(errors="replace").strip() if exc.stderr else ""
-            console.debug_output("", stderr)
+            reporter.debug_output("", stderr)
             raise _git_error(args, stderr, self._path) from exc
 
         stderr = result.stderr.decode(errors="replace").strip() if result.stderr else ""
-        console.debug_output("", stderr)
+        reporter.debug_output("", stderr)
         return result.stdout
 
     def pull(self) -> None:
         try:
             self._run("pull")
-        except AppError as exc:
-            if "no tracking information" not in exc.message:
+        except GitCommandError as exc:
+            if "no tracking information" not in exc.stderr:
                 raise
             branch = self.current_branch()
             self._run("pull", "origin", branch)
@@ -101,7 +100,7 @@ class RealGitRepo:
         try:
             ref = self._run("symbolic-ref", "refs/remotes/origin/HEAD")
             return ref.removeprefix("refs/remotes/origin/")
-        except AppError:
+        except GitCommandError:
             return "main"
 
     def current_branch(self) -> str:
@@ -148,7 +147,7 @@ class RealGitRepo:
         # `<oid> <type> <size>\n<size bytes>\n` per requested spec, in order
         specs = "".join(f"{commit}:{path}\n" for path in files)
         cmd = ["git", "cat-file", "--batch"]
-        console.debug_cmd(cmd, self._path)
+        reporter.debug_cmd(cmd, self._path)
         try:
             result = subprocess.run(
                 cmd,
@@ -159,7 +158,7 @@ class RealGitRepo:
             )
         except subprocess.CalledProcessError as exc:
             stderr = exc.stderr.decode(errors="replace").strip() if exc.stderr else ""
-            console.debug_output("", stderr)
+            reporter.debug_output("", stderr)
             raise _git_error(("cat-file", "--batch"), stderr, self._path) from exc
 
         return self._parse_cat_file_batch(commit, files, result.stdout)
@@ -188,8 +187,8 @@ class RealGitRepo:
     def get_file_at_commit(self, commit: str, path: str) -> bytes:
         try:
             data = self._run_bytes("show", f"{commit}:{path}")
-        except AppError as exc:
-            if "not exist" in exc.message:
+        except GitCommandError as exc:
+            if "not exist" in exc.stderr:
                 raise FileNotInCommitError(commit, path) from exc
             raise
         return normalize_line_endings(data)
@@ -201,7 +200,7 @@ class RealGitRepo:
         self._run("checkout", "--orphan", name)
         try:
             self._run("rm", "-rf", ".")
-        except AppError:
+        except GitCommandError:
             pass
 
     def checkout(self, branch: str) -> None:
@@ -214,7 +213,7 @@ class RealGitRepo:
     def rebase(self, onto: str) -> bool:
         try:
             self._run("rebase", onto)
-        except AppError:
+        except GitCommandError:
             if self._in_rebase():
                 return False
             raise
@@ -223,7 +222,7 @@ class RealGitRepo:
     def rebase_root(self, onto: str) -> bool:
         try:
             self._run("rebase", "--root", "--onto", onto)
-        except AppError:
+        except GitCommandError:
             if self._in_rebase():
                 return False
             raise
@@ -241,7 +240,7 @@ class RealGitRepo:
     def merge(self, branch: str) -> bool:
         try:
             self._run("merge", branch)
-        except AppError:
+        except GitCommandError:
             if self._in_merge():
                 return False
             raise
@@ -262,7 +261,7 @@ class RealGitRepo:
     def list_branches(self, pattern: str) -> list[str]:
         try:
             output = self._run("branch", "--list", pattern)
-        except AppError:
+        except GitCommandError:
             return []
         return [
             line.strip().lstrip("* ") for line in output.splitlines() if line.strip()
@@ -274,14 +273,14 @@ class RealGitRepo:
     def is_ancestor(self, commit: str, branch: str) -> bool:
         try:
             self._run("merge-base", "--is-ancestor", commit, branch)
-        except AppError:
+        except GitCommandError:
             return False
         return True
 
     def commit_exists_in_any_branch(self, commit: str) -> bool:
         try:
             output = self._run("branch", "--contains", commit)
-        except AppError:
+        except GitCommandError:
             return False
         return output != ""
 
@@ -289,7 +288,7 @@ class RealGitRepo:
         try:
             self._run("rev-parse", "--verify", "REBASE_HEAD")
             return True
-        except AppError:
+        except GitCommandError:
             return False
 
     def _in_merge(self) -> bool:

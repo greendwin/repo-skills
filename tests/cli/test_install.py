@@ -120,7 +120,7 @@ class TestInstallMultipleSkills:
             "install", "tdd", "missing", "--offline", expect_error=True
         )
 
-        assert_words_in_message(result.exception.message, "missing", "not found")
+        assert_words_in_message(result.message, "missing", "not found")
         assert (INSTALL_DIR / "tdd" / "SKILL.md").exists()
 
     def test_pulls_source_only_once(
@@ -140,9 +140,9 @@ class TestInstallSourceResolution:
     def test_errors_when_no_sources(self) -> None:
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "no sources")
-        assert_words_in_message(result.exception.message, "skills init")
-        assert "source init" not in result.exception.message
+        assert_words_in_message(result.message, "no sources")
+        assert_words_in_message(result.message, "skills init")
+        assert "source init" not in result.message
 
     def test_auto_resolves_when_skill_in_one_source(
         self, fs: FakeFilesystem, git_repo: Path
@@ -165,9 +165,7 @@ class TestInstallSourceResolution:
 
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(
-            result.exception.message, "multiple sources", "--source"
-        )
+        assert_words_in_message(result.message, "multiple sources", "--source")
 
     def test_selects_source_with_flag(self, fs: FakeFilesystem, git_repo: Path) -> None:
         register_source(git_repo)
@@ -203,7 +201,7 @@ class TestInstallSourceResolution:
             "install", "tdd", "--source", "nope", "--offline", expect_error=True
         )
 
-        assert_words_in_message(result.exception.message, "not found")
+        assert_words_in_message(result.message, "not found")
 
 
 class TestInstallMultiProvider:
@@ -232,7 +230,7 @@ class TestInstallCollision:
 
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "already exists", "--force")
+        assert_words_in_message(result.message, "already exists", "--force")
 
     def test_force_overwrites_existing(
         self, fs: FakeFilesystem, git_repo: Path
@@ -282,7 +280,7 @@ class TestInstallGitValidation:
 
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "uncommitted changes")
+        assert_words_in_message(result.message, "uncommitted changes")
 
     def test_errors_when_dirty_and_wrong_branch(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -294,7 +292,7 @@ class TestInstallGitValidation:
 
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "uncommitted changes")
+        assert_words_in_message(result.message, "uncommitted changes")
 
     def test_errors_when_skill_not_in_source(
         self, fs: FakeFilesystem, git_repo: Path
@@ -304,7 +302,7 @@ class TestInstallGitValidation:
 
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "not found")
+        assert_words_in_message(result.message, "not found")
 
     def test_errors_when_content_does_not_match_commit(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -316,7 +314,7 @@ class TestInstallGitValidation:
 
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "content mismatch")
+        assert_words_in_message(result.message, "content mismatch")
         # the verification fails before any copy: nothing installed or recorded
         assert not (INSTALL_DIR / "tdd").exists()
         assert "tdd" not in load_skill_manifest().skills
@@ -331,7 +329,7 @@ class TestInstallGitValidation:
 
         result = assert_invoke("install", "tdd", "--offline", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "no commit found")
+        assert_words_in_message(result.message, "no commit found")
         assert not (INSTALL_DIR / "tdd").exists()
         assert "tdd" not in load_skill_manifest().skills
 

@@ -63,7 +63,7 @@ class TestUninstall:
 
         result = assert_invoke("uninstall", "nope", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "not installed")
+        assert_words_in_message(result.message, "not installed")
 
 
 class TestUninstallMultiple:
@@ -86,5 +86,5 @@ class TestUninstallMultiple:
 
         result = assert_invoke("uninstall", "tdd", "missing", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "missing", "not installed")
+        assert_words_in_message(result.message, "missing", "not installed")
         assert not (INSTALL_DIR / "tdd").exists()

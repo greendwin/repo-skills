@@ -1,7 +1,7 @@
 ---
 id: s04t1001
 slug: cli-error-release-3-10
-status: pending
+status: done
 ---
 
 # Cli-error release: 3.10 support + report_error + handler delegation

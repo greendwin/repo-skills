@@ -5,10 +5,15 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from cli_error import CliError, render_error
 
 from repo_skills.config import compute_file_hashes
-from repo_skills.errors import AppError
-from repo_skills.git import CommitVerificationError, find_commit_with_content
+from repo_skills.git import (
+    CommitVerificationError,
+    FileNotInCommitError,
+    GitCommandError,
+    find_commit_with_content,
+)
 from repo_skills.git_real import RealGitRepo
 
 
@@ -131,8 +136,23 @@ def test_pull_falls_back_when_no_tracking(tmp_path: Path) -> None:
 
 def test_git_error_includes_repo_path(repo: Path) -> None:
     git = RealGitRepo(repo)
-    with pytest.raises(AppError, match=str(repo)):
+    with pytest.raises(CliError) as exc:
         git._run("log", "--bad-flag")
+    # repo path lands in a prop, not str(exc); read the full render
+    assert str(repo) in render_error(exc.value.desc)
+
+
+def test_git_command_error_keeps_raw_stderr_for_control_flow() -> None:
+    # control flow must read `.stderr` (verbatim git output), not `.desc.detail`
+    # which markup-wraps + escapes brackets — coupling to that render is fragile
+    stderr = "fatal: [worktree] there is no tracking information"
+    err = GitCommandError("Git command failed", stderr)
+
+    assert err.stderr == stderr  # exact, unescaped
+    assert "no tracking information" in err.stderr
+    # detail mangles the raw brackets (`[` -> `\[`) and wraps them in markup
+    assert "\\[worktree]" in err.desc.detail
+    assert "\\[worktree]" not in err.stderr
 
 
 def test_get_skill_commit(repo: Path) -> None:
@@ -350,6 +370,16 @@ def test_get_file_at_commit_normalizes_crlf(repo: Path) -> None:
     data = git.get_file_at_commit(commit, "skills/tdd/SKILL.md")
     assert b"\r\n" not in data
     assert data == b"line1\nline2\n"
+
+
+def test_get_file_at_commit_missing_path_raises_file_not_in_commit(repo: Path) -> None:
+    # git's "does not exist" stderr drives the fallback to FileNotInCommitError
+    # via the raw `exc.stderr`, not the markup-escaped detail
+    commit = _git(repo, "log", "-1", "--format=%H")
+
+    git = RealGitRepo(repo)
+    with pytest.raises(FileNotInCommitError):
+        git.get_file_at_commit(commit, "skills/missing/SKILL.md")
 
 
 def test_verify_commit_content_crlf_matches_lf(repo: Path) -> None:

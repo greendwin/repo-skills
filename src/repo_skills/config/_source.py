@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from repo_skills.console import console, fmt_data, fmt_ident, fmt_path
-from repo_skills.errors import AppError
+from cli_error import CliError
+
+from repo_skills.console import fmt_data, fmt_ident, reporter
 from repo_skills.git import GitRepo
 from repo_skills.utils import rel_posix, save_config
 
@@ -23,12 +24,12 @@ SOURCE_CONFIG_PATH = f"{REPO_SKILLS_DIR}/source.json"
 CURRENT_VERSION = 1
 
 
-class SourceBrokenError(AppError):
+class SourceBrokenError(CliError):
     def __init__(self, repo_root: Path) -> None:
         super().__init__(
-            f"Source {fmt_ident(repo_root.name)} either broken or uninitialized.",
-            props={"repo": fmt_path(repo_root)},
+            f"Source {fmt_ident(repo_root.name)} either broken or uninitialized."
         )
+        self.prop_path("repo", repo_root)
 
 
 class SourceConfig(VersionedConfig):
@@ -64,11 +65,10 @@ class Source:
     def get_skill(self, name: str) -> SourceSkill:
         skill = self.skills.get(name)
         if skill is None:
-            raise AppError(
+            raise CliError(
                 f"Skill {fmt_ident(name)} does not exist "
-                f"in source {fmt_ident(self.name)}",
-                props={"repo": fmt_path(self.repo_root)},
-            )
+                f"in source {fmt_ident(self.name)}"
+            ).prop_path("repo", self.repo_root)
 
         return skill
 
@@ -144,9 +144,9 @@ def _collect_source_skills(
 
 def _warn_collision(name: str, rel_paths: Sequence[str]) -> None:
     # one path per line in discovery order so the user can locate the dups
-    console.print(
-        f"[yellow]Warning[/yellow]: Skill {fmt_ident(name)} found in "
+    reporter.print(
+        f"[warn]Warning[/warn]: Skill {fmt_ident(name)} found in "
         f"multiple locations; excluding it from the source:"
     )
     for path in rel_paths:
-        console.print(f"  - {fmt_data(path)}")
+        reporter.print(f"  - {fmt_data(path)}")

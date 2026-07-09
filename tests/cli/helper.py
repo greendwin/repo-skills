@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, overload
 
+from cli_error import CliError, CliExit, render_error
 from pyfakefs.fake_filesystem import FakeFilesystem
 from typer.testing import CliRunner
 
@@ -25,8 +26,7 @@ from repo_skills.config import (
     save_source_config,
     save_source_registry,
 )
-from repo_skills.errors import AppError, FileNotInCommitError, NoopError
-from repo_skills.git import CommitVerificationError
+from repo_skills.git import CommitVerificationError, FileNotInCommitError
 from repo_skills.utils import normalize_line_endings
 
 
@@ -44,8 +44,11 @@ class NoopResult:
 
 @dataclass
 class ErrorResult:
-    exception: AppError
+    exception: CliError
     output: str
+    # full rendered layout (message + props + detail + hint); props/hint are
+    # NOT in str(exc), so substring assertions read this
+    message: str
 
 
 SOURCE_REPO_ROOT = Path("/repos/my-project")
@@ -95,12 +98,11 @@ class FakeGitRepo:
                 try:
                     raise RuntimeError(self.pull_cause)
                 except RuntimeError as inner:
-                    raise AppError(
-                        "Failed to pull from remote.",
-                        props={"repo": str(self.root)},
+                    raise CliError("Failed to pull from remote.").prop_path(
+                        "repo", str(self.root)
                     ) from inner
-            raise AppError(
-                "Failed to pull from remote.", props={"repo": str(self.root)}
+            raise CliError("Failed to pull from remote.").prop_path(
+                "repo", str(self.root)
             )
         self.pulled = True
 
@@ -194,7 +196,7 @@ class FakeGitRepo:
 
     def fast_forward(self, branch: str) -> None:
         if self.ff_fails:
-            raise AppError("Fast-forward failed.")
+            raise CliError("Fast-forward failed.")
         self.ff_targets.append(branch)
 
     def delete_branch(self, name: str) -> None:
@@ -256,12 +258,17 @@ def assert_invoke(
     result = runner.invoke(app, args)
 
     if expect_error:
-        assert isinstance(result.exception, AppError), (
-            f"Expected AppError, got {result.exception!r}.\n" f"Output: {result.output}"
+        exc = result.exception
+        assert isinstance(exc, CliError), (
+            f"Expected CliError, got {exc!r}.\n" f"Output: {result.output}"
         )
-        return ErrorResult(exception=result.exception, output=result.output)
+        return ErrorResult(
+            exception=exc,
+            output=result.output,
+            message=render_error(exc.desc),
+        )
 
-    if isinstance(result.exception, NoopError):
+    if isinstance(result.exception, CliExit):
         output = result.output
         if output and not output.endswith("\n"):
             output += "\n"

@@ -2,14 +2,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from cli_error import CliError
 from pydantic import BaseModel
 
-from repo_skills.console import console, fmt_ident
-from repo_skills.errors import AppError, ConfigBrokenError
-from repo_skills.utils import load_config, save_config
+from repo_skills.console import fmt_ident
+from repo_skills.utils import ConfigBrokenError, load_config, save_config
 
 from ._source import Source, load_source
-from ._utils import default_config_path
+from ._utils import default_config_path, report_broken_config
 
 SOURCES_REGISTRY_FILE = "sources.json"
 
@@ -56,7 +56,7 @@ class SourceRegistry:
     def _get_entry(self, name: str) -> SourceEntry:
         entry = self._entries.get(name)
         if entry is None:
-            raise AppError(f"Source {fmt_ident(name)} not found.")
+            raise CliError(f"Source {fmt_ident(name)} not found.")
 
         return entry
 
@@ -73,9 +73,7 @@ def load_source_registry() -> SourceRegistry:
     try:
         cfg = load_config(_SourceRegistryConfig, path)
     except ConfigBrokenError:
-        console.debug_traceback()
-
-        console.print(f"[yellow]Warning[/yellow]: broken config file: {path}")
+        report_broken_config(path)
         return SourceRegistry()
 
     if cfg is None:

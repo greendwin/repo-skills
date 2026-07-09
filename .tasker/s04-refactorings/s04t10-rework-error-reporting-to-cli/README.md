@@ -36,6 +36,6 @@ status: pending
 
 ## Subtasks
 
-- [ ] [s04t1001](s04t1001-cli-error-release-3-10.md): Cli-error release: 3.10 support + report_error + handler delegation
-- [ ] [s04t1002](s04t1002-repo-skills-errors-first-migration.md): Repo_skills errors-first migration onto cli-error
+- [x] [s04t1001](s04t1001-cli-error-release-3-10.md): Cli-error release: 3.10 support + report_error + handler delegation
+- [x] [s04t1002](s04t1002-repo-skills-errors-first-migration.md): Repo_skills errors-first migration onto cli-error
 - [ ] [s04t1003](s04t1003-repo-skills-fmt-absorption-retire.md): Repo_skills fmt-absorption: retire fmt_* for cli-error roles

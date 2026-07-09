@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2.0",
     "rich>=13.0",
     "typing-extensions>=4.15.0",
+    "cli-error>=0.2.0",
 ]
 
 [project.urls]

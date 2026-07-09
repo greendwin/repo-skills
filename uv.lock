@@ -127,6 +127,19 @@ wheels = [
 ]
 
 [[package]]
+name = "cli-error"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "rich" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c6/f3/e40f7143c4cace3202bc1b655b635903d2b6a9043bee5ab83b4c4523035c/cli_error-0.2.0.tar.gz", hash = "sha256:6e71caf791aefd0f87707f3ba73c5956f67cb4aab7eb7415183569fed4e422af", size = 96167, upload-time = "2026-07-09T07:39:02.873Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c4/3d/0538fe74bb3a22ec25c3d9b94fc52a6178825cbba7e3723a62581065f48d/cli_error-0.2.0-py3-none-any.whl", hash = "sha256:e0aa0f48e474e2dc6797c675b4e8c89696f95e89f23f762dc0f2aa702acaae4a", size = 5237, upload-time = "2026-07-09T07:39:01.575Z" },
+]
+
+[[package]]
 name = "click"
 version = "8.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -696,6 +709,7 @@ name = "repo-skills"
 version = "0.11.0"
 source = { editable = "." }
 dependencies = [
+    { name = "cli-error" },
     { name = "pydantic" },
     { name = "rich" },
     { name = "typer" },
@@ -718,6 +732,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cli-error", specifier = ">=0.2.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "rich", specifier = ">=13.0" },
     { name = "typer", specifier = ">=0.9.0" },

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import typer
+from cli_error import CliError
 from typer_di import TyperDI
 
 from repo_skills.config import (
     load_provider_registry,
     save_provider_registry,
 )
-from repo_skills.console import console, fmt_data, fmt_ident
-from repo_skills.errors import AppError
+from repo_skills.console import fmt_data, fmt_ident, reporter
 
 from ._app import app
 
@@ -29,25 +29,25 @@ def provider_add(
     provider_registry = load_provider_registry()
 
     if provider_registry.is_registered(name):
-        raise AppError(f"Provider {fmt_ident(name)} already exists.")
+        raise CliError(f"Provider {fmt_ident(name)} already exists.")
 
     provider_registry.register(name, install_dir)
     save_provider_registry(provider_registry)
 
-    console.print(f"Added provider {fmt_ident(name)}.")
+    reporter.print(f"Added provider {fmt_ident(name)}.")
 
 
 @provider_app.command(name="list", help="List all registered providers.")
 def provider_list() -> None:
     registry = load_provider_registry()
 
-    console.print("[yellow]Providers:[/yellow]")
+    reporter.print("[yellow]Providers:[/yellow]")
     width = max(len(p.name) for p in registry.providers)
     width = max(width, 16)
     for provider in registry.providers:
         label = fmt_ident(f"{provider.name:<{width}}")
         path = fmt_data(str(provider.install_path))
-        console.print(f"* {label}  {path}")
+        reporter.print(f"* {label}  {path}")
 
 
 @provider_app.command(name="remove", help="Remove a provider.")
@@ -60,4 +60,4 @@ def provider_remove(
     registry.unregister(name)
     save_provider_registry(registry)
 
-    console.print(f"Removed provider {fmt_ident(name)}.")
+    reporter.print(f"Removed provider {fmt_ident(name)}.")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 
 import pytest
+from cli_error import render_error
 
 from repo_skills.git import (
     CommitVerificationError,
@@ -118,9 +119,10 @@ def test_resolve_verified_commit_raises_when_no_commit() -> None:
     with pytest.raises(SkillCommitNotFoundError) as ex:
         resolve_verified_commit(SyncedRepo(git, "main"), "skills/tdd")
 
-    assert "No commit found" in ex.value.message
-    assert "skills/tdd" in ex.value.message
-    assert str(git.root) in ex.value.message
+    rendered = render_error(ex.value.desc)
+    assert "No commit found" in rendered
+    assert "skills/tdd" in rendered
+    assert str(git.root) in rendered
 
 
 def test_resolve_verified_commit_propagates_verification_error() -> None:

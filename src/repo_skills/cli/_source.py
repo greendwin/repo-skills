@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
+from cli_error import CliError, CliExit
 from typer_di import Depends, TyperDI
 
 from repo_skills.config import (
@@ -20,7 +21,7 @@ from repo_skills.config import (
     save_source_config,
     save_source_registry,
 )
-from repo_skills.console import console, fmt_data, fmt_ident, fmt_path
+from repo_skills.console import fmt_data, fmt_ident, fmt_path, reporter
 from repo_skills.discovery import (
     DetectKind,
     detect_skills_dir,
@@ -28,7 +29,6 @@ from repo_skills.discovery import (
     normalize_repo_dir,
     path_within,
 )
-from repo_skills.errors import AppError, NoopError
 from repo_skills.git import GitRepo
 from repo_skills.utils import rel_posix, write_text
 
@@ -165,21 +165,21 @@ def _normalize_skills_dirs(git: GitRepo, skills_dirs: Sequence[str]) -> list[str
 
 
 def _note_nested_skills_dir(repo_root: Path, dropped: Path, container: Path) -> None:
-    console.print(
+    reporter.print(
         f"[dim]Note:[/dim] {fmt_path(rel_posix(dropped, repo_root))} "
         f"[dim]is inside {fmt_path(rel_posix(container, repo_root))}; "
         f"ignoring the duplicate.[/dim]"
     )
 
 
-def _repo_error(git: GitRepo, msg: str) -> AppError:
-    return AppError(msg, props={"repo": fmt_path(git.root)})
+def _repo_error(git: GitRepo, msg: str) -> CliError:
+    return CliError(msg).prop_path("repo", git.root)
 
 
 def _note_empty_skills_dirs(repo_root: Path, skills_dirs: Sequence[str]) -> None:
     for rel in skills_dirs:
         if not _dir_has_skills(repo_root / rel):
-            console.print(
+            reporter.print(
                 f"[dim]Note:[/dim] {fmt_path(rel)} "
                 f"[dim]currently has no skills.[/dim]"
             )
@@ -213,7 +213,7 @@ def _handle_fresh_init(git: GitRepo, requested: _RequestedChanges) -> None:
     registry.register_source(source_name, git.root)
     save_source_registry(registry)
 
-    console.print(f"Initialized source {fmt_ident(source_name)}.")
+    reporter.print(f"Initialized source {fmt_ident(source_name)}.")
 
 
 def _detect_fresh_skills_dir(git: GitRepo) -> str:
@@ -272,14 +272,14 @@ def _handle_reinit(
 
     source_label = fmt_ident(effective_name)
     if not was_registered:
-        console.print(f"Registered source {source_label}.")
+        reporter.print(f"Registered source {source_label}.")
     elif changes:
-        console.print(f"Updated source {source_label}.")
+        reporter.print(f"Updated source {source_label}.")
     else:
-        console.print(f"Source {source_label} already initialized.")
+        reporter.print(f"Source {source_label} already initialized.")
 
     for change in changes:
-        console.print(change)
+        reporter.print(change)
 
 
 def _change_line(label: str, old: _ChangeValue, new: _ChangeValue) -> str:
@@ -322,9 +322,9 @@ def source_list() -> None:
     registry = load_source_registry()
 
     if not registry.sources:
-        raise NoopError("[dim]No sources registered.[/dim]")
+        raise CliExit("[dim]No sources registered.[/dim]")
 
-    console.print("[yellow]Skill sources[/yellow]")
+    reporter.print("[yellow]Skill sources[/yellow]")
     width = max(len(n) for n in registry.sources)
     width = max(width, 16)
     for name, entry in registry.sources.items():
@@ -332,7 +332,7 @@ def source_list() -> None:
 
         if not entry.repo_root.exists():
             message += "  [red](missing)[/red]"
-            console.print(message)
+            reporter.print(message)
             continue
 
         result = load_source_config(entry.repo_root)
@@ -344,7 +344,7 @@ def source_list() -> None:
         else:
             message += "  [red](not-inited)[/red]"
 
-        console.print(message)
+        reporter.print(message)
 
 
 @source_app.command(name="remove", help="Remove a source from registry.")
@@ -357,7 +357,7 @@ def source_remove(
     source_registry = load_source_registry()
 
     if source_name not in source_registry.sources:
-        raise AppError(f"Source {fmt_ident(source_name)} not found.")
+        raise CliError(f"Source {fmt_ident(source_name)} not found.")
 
     # removal only needs the repo path; no need to load the source (broken or not)
     repo_root = source_registry.sources[source_name].repo_root
@@ -371,16 +371,16 @@ def source_remove(
 
     if matching:
         if not force:
-            raise AppError("Cannot remove a source with installed skills.")
+            raise CliError("Cannot remove a source with installed skills.")
 
         for skill_name in matching:
             manifest.unregister_skill(skill_name)
         save_skill_manifest(manifest)
 
         names = ", ".join(fmt_ident(n) for n in sorted(matching))
-        console.print(f"Unregistered {fmt_data(len(matching))} skill(s): {names}.")
+        reporter.print(f"Unregistered {fmt_data(len(matching))} skill(s): {names}.")
 
     source_registry.unregister_source(source_name)
     save_source_registry(source_registry)
 
-    console.print(f"Removed source {fmt_ident(source_name)} at {fmt_path(repo_root)}.")
+    reporter.print(f"Removed source {fmt_ident(source_name)} at {fmt_path(repo_root)}.")

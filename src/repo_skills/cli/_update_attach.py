@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from rich.markup import escape
+from cli_error import CliError, render_error
 
 from repo_skills.config import (
     Baseline,
@@ -14,8 +14,7 @@ from repo_skills.config import (
     SourceRegistry,
     compute_file_hashes,
 )
-from repo_skills.console import console, fmt_data, fmt_ident
-from repo_skills.errors import AppError
+from repo_skills.console import fmt_data, fmt_ident, reporter
 from repo_skills.git import (
     CommitVerificationError,
     SkillCommitNotFoundError,
@@ -77,12 +76,14 @@ def eligible_attach_sources(
 
         try:
             sources[source_name] = source_registry.load_source(source_name)
-        except AppError as ex:
-            console.debug_traceback()
+        except CliError as ex:
+            reporter.debug_traceback()
 
-            console.print(
+            # full descriptor, not str(ex): keep the repo/path prop that
+            # locates the broken source (str(CliError) is the message only)
+            reporter.print(
                 f"[yellow]Warning[/yellow]: skipping broken source "
-                f"{fmt_ident(source_name)}: {escape(str(ex))}"
+                f"{fmt_ident(source_name)}: {render_error(ex.desc)}"
             )
 
     return sources
@@ -144,7 +145,7 @@ def _attach_skill(
         return None
 
     if len(matches) > 1:
-        console.print(
+        reporter.print(
             f"[yellow]Skipped[/yellow] skill {fmt_data(candidate.skill_name)}: "
             f"matched multiple sources "
             f"{fmt_data(sorted(m.source_name for m in matches))}"
@@ -162,10 +163,10 @@ def _attach_skill(
     try:
         commit = resolve_verified_commit(repo, skill.rel_path)
     except (CommitVerificationError, SkillCommitNotFoundError):
-        console.debug_traceback()
+        reporter.debug_traceback()
         return None
 
-    console.print(
+    reporter.print(
         f"Attached skill {fmt_ident(candidate.skill_name)} "
         f"(matched source {fmt_data(match.source_name)})"
     )

@@ -1,56 +1,36 @@
 from __future__ import annotations
 
-import shlex
+import os
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
-from rich.console import Console as RichConsole
+from cli_error import CliReporter, make_console
 from rich.markup import escape
 
 
-class Console:
-    debug = False
+class Reporter(CliReporter):
+    """CliReporter + in-place progress lines (running/finish + pending-eoln)."""
 
     def __init__(self) -> None:
-        self._con = RichConsole(highlight=False)
-        self._con_err = RichConsole(highlight=False, stderr=True)
+        # console_err defaults to derive_stderr_console(console)
+        # honor NO_COLOR (presence-based, matching Rich's native fallback)
+        super().__init__(make_console(no_color="NO_COLOR" in os.environ))
         self._pending_eoln = False
         self._active_prefix: str | None = None
 
-    def print(self, message: str) -> None:
+    @property
+    def no_color(self) -> bool:
+        return bool(self.console.no_color)
+
+    @no_color.setter
+    def no_color(self, value: bool) -> None:
+        self.console.no_color = value
+        self.console_err.no_color = value
+
+    def print(self, template: str, /, *, end: str = "\n", **args: object) -> None:
         self._finish_eoln()
-        self._con.print(message)
-
-    def debug_traceback(self) -> None:
-        if not self.debug:
-            return
-
-        self._finish_eoln()
-        self._con_err.print_exception()
-
-    def debug_cmd(self, cmd: list[str], cwd: Path) -> None:
-        if not self.debug:
-            return
-
-        self._finish_eoln()
-
-        joined = shlex.join(cmd)
-        self._con_err.print(f"[dim]COMMAND: {escape(joined)}[/dim]")
-        self._con_err.print(f"[dim]  cwd: {escape(str(cwd))}[/dim]")
-
-    def debug_output(self, stdout: str, stderr: str) -> None:
-        if not self.debug:
-            return
-
-        self._finish_eoln()
-
-        if stdout:
-            for line in stdout.splitlines():
-                self._con_err.print(f"[dim]  stdout: {escape(line)}[/dim]")
-        if stderr:
-            for line in stderr.splitlines():
-                self._con_err.print(f"[dim]  stderr: {escape(line)}[/dim]")
+        super().print(template, end=end, **args)
 
     @contextmanager
     def running(self, prefix: str, *, tty_subprocess: bool = False) -> Generator[None]:
@@ -61,7 +41,8 @@ class Console:
             )
 
         self._finish_eoln()
-        self._con.print(f"{prefix} ... ", end="")
+        # pre-formatted markup, no {} → template passthrough
+        super().print(f"{prefix} ... ", end="")
         self._pending_eoln = True
 
         self._active_prefix = prefix
@@ -79,25 +60,16 @@ class Console:
 
     def finish(self, suffix: str) -> None:
         if self._pending_eoln:
-            self._con.print(suffix)
+            super().print(suffix)
             self._pending_eoln = False
             return
 
         prefix = self._active_prefix or ""
-        self._con.print(f"{prefix} ... {suffix}")
-
-    @property
-    def no_color(self) -> bool:
-        return self._con.no_color
-
-    @no_color.setter
-    def no_color(self, value: bool) -> None:
-        self._con.no_color = value
-        self._con_err.no_color = value
+        super().print(f"{prefix} ... {suffix}")
 
     def _finish_eoln(self) -> None:
         if self._pending_eoln:
-            self._con.print()
+            super().print("")
             self._pending_eoln = False
 
 
@@ -120,24 +92,5 @@ def fmt_command(text: str) -> str:
     return f"[blue]{escape(text)}[/blue]"
 
 
-def fmt_message(
-    message: str,
-    *,
-    hint: str = "",
-    props: dict[str, str] | None = None,
-) -> str:
-    r = message
-    if props:
-        for k, v in props.items():
-            if k:
-                r += f"\n  {k}: {v}"
-            else:
-                # support little hack for data without key
-                r += f"\n{v.rstrip()}"
-    if hint:
-        r += f"\n\n{hint}"
-    return r
-
-
 # global instance
-console = Console()
+reporter = Reporter()

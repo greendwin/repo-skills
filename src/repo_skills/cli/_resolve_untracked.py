@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from cli_error import CliError
+
 from repo_skills.config import (
     Provider,
     ProviderRegistry,
@@ -10,7 +12,6 @@ from repo_skills.config import (
     SourceSkill,
 )
 from repo_skills.console import fmt_command, fmt_ident
-from repo_skills.errors import AppError
 
 
 @dataclass
@@ -26,7 +27,7 @@ def find_skill_in_provider(
     if provider:
         skill_path = provider.install_path / skill_name
         if not skill_path.is_dir():
-            raise AppError(
+            raise CliError(
                 f"Skill {fmt_ident(skill_name)} is not installed "
                 f"in {fmt_ident(provider.name)}."
             )
@@ -43,13 +44,12 @@ def find_skill_in_provider(
         names = ", ".join(
             fmt_ident(p.name) for p in sorted(matches, key=lambda x: x.name)
         )
-        raise AppError(
-            f"Multiple providers have {fmt_ident(skill_name)} ({names}).",
-            hint=f"Use {fmt_command('--from')} to specify.",
-        )
+        raise CliError(
+            f"Multiple providers have {fmt_ident(skill_name)} ({names})."
+        ).hint(f"Use {fmt_command('--from')} to specify.")
 
     if not matches:
-        raise AppError(f"Skill {fmt_ident(skill_name)} is not installed.")
+        raise CliError(f"Skill {fmt_ident(skill_name)} is not installed.")
 
     return matches[0]
 
@@ -84,10 +84,9 @@ def resolve_untracked(
         names = ", ".join(
             fmt_ident(s.name) for s, _ in sorted(matches, key=lambda x: x[0].name)
         )
-        raise AppError(
-            f"Multiple sources have {fmt_ident(skill_name)} ({names}).",
-            hint=f"Use {fmt_command('--source')} to specify.",
-        )
+        raise CliError(
+            f"Multiple sources have {fmt_ident(skill_name)} ({names})."
+        ).hint(f"Use {fmt_command('--source')} to specify.")
 
     if not matches:
         return None
@@ -98,15 +97,14 @@ def resolve_untracked(
 
 def resolve_orphan_source(source_registry: SourceRegistry) -> Source:
     if not source_registry.sources:
-        raise AppError("No sources registered.")
+        raise CliError("No sources registered.")
 
     if len(source_registry.sources) > 1:
         names = ", ".join(
             fmt_ident(name) for name in sorted(source_registry.sources.keys())
         )
-        raise AppError(
-            f"Multiple sources registered ({names}).",
-            hint=f"Use {fmt_command('--source')} to specify.",
+        raise CliError(f"Multiple sources registered ({names}).").hint(
+            f"Use {fmt_command('--source')} to specify."
         )
 
     source_name = list(source_registry.sources)[0]

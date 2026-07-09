@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
+from cli_error import CliError
 
 from repo_skills.config import (
     SkillManifest,
@@ -17,8 +18,7 @@ from repo_skills.config import (
     make_baseline,
     save_skill_manifest,
 )
-from repo_skills.console import console, fmt_command, fmt_ident
-from repo_skills.errors import AppError
+from repo_skills.console import fmt_command, fmt_ident, reporter
 from repo_skills.git import resolve_verified_commit
 from repo_skills.utils import overwrite_dir
 
@@ -75,7 +75,7 @@ def uninstall(
 
     for name in names:
         if name not in manifest.skills:
-            raise AppError(f"Skill {fmt_ident(name)} is not installed.")
+            raise CliError(f"Skill {fmt_ident(name)} is not installed.")
 
         for provider in provider_registry.providers:
             dst = provider.install_path / name
@@ -85,7 +85,7 @@ def uninstall(
         manifest.unregister_skill(name)
         save_skill_manifest(manifest)
 
-        console.print(f"Uninstalled {fmt_ident(name)}.")
+        reporter.print(f"Uninstalled {fmt_ident(name)}.")
 
 
 def _install_one(
@@ -108,7 +108,7 @@ def _install_one(
 
     skill = source.skills.get(skill_name)
     if skill is None:
-        raise AppError(
+        raise CliError(
             f"Skill {fmt_ident(skill_name)} not found in source "
             f"{fmt_ident(source.name)}."
         )
@@ -129,21 +129,20 @@ def _install_one(
 
     _record_manifest(manifest, source, skill, commit)
 
-    console.print(f"Installed {fmt_ident(skill_name)} from {fmt_ident(source.name)}.")
+    reporter.print(f"Installed {fmt_ident(skill_name)} from {fmt_ident(source.name)}.")
 
 
 def _resolve_source(
     source_registry: SourceRegistry, source_name: str | None, *, skill_name: str
 ) -> Source:
     if not source_registry.sources:
-        raise AppError(
-            "No sources registered.",
-            hint=f"Run {fmt_command('skills init')} first.",
+        raise CliError("No sources registered.").hint(
+            f"Run {fmt_command('skills init')} first."
         )
 
     if source_name is not None:
         if source_name not in source_registry.sources:
-            raise AppError(f"Source {fmt_ident(source_name)} not found.")
+            raise CliError(f"Source {fmt_ident(source_name)} not found.")
 
         return source_registry.load_source(source_name)
 
@@ -163,9 +162,8 @@ def _resolve_source(
     names = ", ".join(
         fmt_ident(name) for name in sorted(source_registry.sources.keys())
     )
-    raise AppError(
-        f"Multiple sources registered ({names}).",
-        hint=f"Use {fmt_command('--source')} to specify.",
+    raise CliError(f"Multiple sources registered ({names}).").hint(
+        f"Use {fmt_command('--source')} to specify."
     )
 
 
@@ -191,10 +189,9 @@ def _copy_skill(
     dst = install_dir / name
 
     if dst.exists() and not force:
-        raise AppError(
+        raise CliError(
             f"Skill {fmt_ident(name)} already exists at provider "
-            f"{fmt_ident(provider_name)}.",
-            hint=f"Use {fmt_command('--force')} to overwrite.",
-        )
+            f"{fmt_ident(provider_name)}."
+        ).hint(f"Use {fmt_command('--force')} to overwrite.")
 
     overwrite_dir(src, dst)

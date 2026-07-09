@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Annotated, NamedTuple, TypeAlias
 
 import typer
+from cli_error import CliError, CliExit
 
 from repo_skills.config import (
     Baseline,
@@ -20,8 +21,7 @@ from repo_skills.config import (
     compute_file_hashes,
     load_config_context,
 )
-from repo_skills.console import console, fmt_data, fmt_ident
-from repo_skills.errors import AppError, NoopError
+from repo_skills.console import fmt_data, fmt_ident, reporter
 from repo_skills.git import ensure_on_branch
 
 from ._app import app
@@ -108,11 +108,11 @@ def status(
         )
 
     if not sections:
-        raise NoopError("[dim]No skills found.[/dim]")
+        raise CliExit("[dim]No skills found.[/dim]")
 
     for index, render_section in enumerate(sections):
         if index:
-            console.print("")
+            reporter.print("")
         render_section()
 
 
@@ -150,10 +150,10 @@ def _scan_sources(
         target_branch = source.get_branch(git)
         try:
             ensure_on_branch(git, target_branch, pull=sync, require_clean=False)
-        except AppError:
-            console.debug_traceback()
+        except CliError:
+            reporter.debug_traceback()
 
-            console.print(
+            reporter.print(
                 f"[yellow]Warning[/yellow]: {fmt_ident(source_name)} repo is dirty\n"
                 f"Showing skills from {fmt_data(git.current_branch())}"
                 f" instead of {fmt_data(target_branch)}"
@@ -256,7 +256,7 @@ def _print_skill_rows(
 
     for status_str, providers in grouped.items():
         joined = ", ".join(providers)
-        console.print(
+        reporter.print(
             f"  {skill_name:<{name_width}}"
             f"  [dim]{joined:<{provider_width}}[/dim]"
             f"  {status_str}"
@@ -289,9 +289,9 @@ def _render_source_section(view: _StatusView, source_name: str) -> None:
     # the scan's result instead of re-loading, which would re-print the warning
     loaded = source_name in view.loaded_source_names
     if loaded:
-        console.print(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
+        reporter.print(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
     else:
-        console.print(
+        reporter.print(
             f"[yellow]Source[/yellow] {fmt_ident(source_name)}  [red](broken)[/red]"
         )
 
@@ -319,7 +319,7 @@ def _render_source_section(view: _StatusView, source_name: str) -> None:
         _print_skill_rows(skill_name, pairs, view.name_width, view.provider_width)
 
     if loaded and not installed and not available:
-        console.print("  [dim](no skills)[/dim]")
+        reporter.print("  [dim](no skills)[/dim]")
 
 
 def _print_untracked_section(
@@ -332,7 +332,7 @@ def _print_untracked_section(
     for entry in orphans:
         orphan_providers[entry.name].append(entry.provider)
 
-    console.print("[yellow]Untracked[/yellow]")
+    reporter.print("[yellow]Untracked[/yellow]")
     for skill_name, providers in orphan_providers.items():
         _print_skill_rows(
             skill_name,

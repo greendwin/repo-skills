@@ -38,7 +38,7 @@ class TestSourceRemove:
     def test_error_when_source_not_found(self) -> None:
         result = assert_invoke("source", "remove", "nonexistent", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "not found")
+        assert_words_in_message(result.message, "not found")
 
     @pytest.mark.usefixtures("fs")
     def test_blocked_when_skills_installed(self, git_repo: Path) -> None:
@@ -48,7 +48,7 @@ class TestSourceRemove:
 
         result = assert_invoke("source", "remove", "alpha", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "installed skills")
+        assert_words_in_message(result.message, "installed skills")
 
         updated = load_source_registry()
         assert "alpha" in updated.sources

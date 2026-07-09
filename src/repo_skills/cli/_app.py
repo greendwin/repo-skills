@@ -3,10 +3,10 @@ from __future__ import annotations
 from importlib.metadata import version
 
 import typer
+from cli_error import CliExit
 from typer_di import TyperDI
 
-from repo_skills.console import console
-from repo_skills.errors import NoopError
+from repo_skills.console import reporter
 
 app = TyperDI(
     help="Manage agent skills.",
@@ -19,7 +19,7 @@ app = TyperDI(
 def _version_callback(value: bool) -> None:
     if value:
         ver = version("repo-skills")
-        raise NoopError(f"[bold]repo-skills[/bold] [green]{ver}[/green]")
+        raise CliExit("[bold]repo-skills[/bold] [id]{ver}[/id]", ver=ver)
 
 
 @app.callback()
@@ -33,4 +33,4 @@ def _main_callback(
         help="Show version and exit.",
     ),
 ) -> None:
-    console.debug = debug
+    reporter.debug = debug

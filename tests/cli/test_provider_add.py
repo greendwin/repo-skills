@@ -41,7 +41,7 @@ class TestProviderAdd:
             expect_error=True,
         )
 
-        assert_words_in_message(result.exception.message, "already exists")
+        assert_words_in_message(result.message, "already exists")
 
     @pytest.mark.usefixtures("git_repo")
     def test_error_when_adding_builtin_name(self) -> None:
@@ -54,4 +54,4 @@ class TestProviderAdd:
             expect_error=True,
         )
 
-        assert_words_in_message(result.exception.message, "already exists")
+        assert_words_in_message(result.message, "already exists")

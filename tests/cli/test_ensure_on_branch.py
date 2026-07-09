@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
+from cli_error import CliError
 
-from repo_skills.errors import AppError
 from repo_skills.git import ensure_on_branch
 from tests.cli.helper import FakeGitRepo
 
@@ -15,7 +15,7 @@ class TestEnsureOnBranch:
 
     def test_raises_when_dirty_on_wrong_branch_no_checkout(self) -> None:
         git = FakeGitRepo(branch="other", clean=False)
-        with pytest.raises(AppError, match="uncommitted changes"):
+        with pytest.raises(CliError, match="uncommitted changes"):
             ensure_on_branch(git, "main")
         assert git.branch == "other"
 
@@ -41,7 +41,7 @@ class TestEnsureOnBranch:
 
     def test_raises_when_dirty_on_correct_branch_with_require_clean(self) -> None:
         git = FakeGitRepo(branch="main", clean=False)
-        with pytest.raises(AppError, match="uncommitted changes"):
+        with pytest.raises(CliError, match="uncommitted changes"):
             ensure_on_branch(git, "main")
 
     def test_pulls_after_switching_branch(self) -> None:

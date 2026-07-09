@@ -1,7 +1,7 @@
 ---
 id: s04t1002
 slug: repo-skills-errors-first-migration
-status: pending
+status: done
 ---
 
 # Repo_skills errors-first migration onto cli-error

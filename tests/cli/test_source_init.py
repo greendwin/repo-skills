@@ -137,7 +137,7 @@ class TestSourceInitBranch:
         result = assert_invoke(
             "source", "init", "--branch", "no-such", expect_error=True
         )
-        assert_words_in_message(result.exception.message, "no-such", "not found")
+        assert_words_in_message(result.message, "no-such", "not found")
 
     def test_reinit_preserves_existing_branch(
         self, git_repo: Path, _fake_git: FakeGitRepo
@@ -372,7 +372,7 @@ class TestSourceInitErrors:
         monkeypatch.chdir("/not-a-repo")
 
         result = assert_invoke("source", "init", expect_error=True)
-        assert_words_in_message(result.exception.message, "git")
+        assert_words_in_message(result.message, "git")
 
 
 class TestSourceInitAutoDetect:
@@ -843,9 +843,7 @@ class TestSourceInitSkillsDir:
             "source", "init", "--skills-dir", skills_dir, expect_error=True
         )
 
-        assert_words_in_message(
-            result.exception.message, "Skills dir", "escapes", skills_dir
-        )
+        assert_words_in_message(result.message, "Skills dir", "escapes", skills_dir)
 
     def test_error_escaping_skills_dir_in_multi_dir_list(
         self, fs: FakeFilesystem, git_repo: Path
@@ -865,9 +863,7 @@ class TestSourceInitSkillsDir:
             expect_error=True,
         )
 
-        assert_words_in_message(
-            result.exception.message, "Skills dir", "escapes", "../sibling"
-        )
+        assert_words_in_message(result.message, "Skills dir", "escapes", "../sibling")
 
 
 class TestSourceInitAmbiguous:
@@ -878,7 +874,7 @@ class TestSourceInitAmbiguous:
 
         result = assert_invoke("source", "init", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "--skills-dir")
+        assert_words_in_message(result.message, "--skills-dir")
         assert load_source_config(git_repo).state is ConfigState.MISSING
         assert not (git_repo / REPO_SKILLS_DIR / "source.json").exists()
 

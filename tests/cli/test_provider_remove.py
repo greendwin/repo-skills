@@ -29,7 +29,7 @@ class TestProviderRemove:
     def test_error_when_not_found(self) -> None:
         result = assert_invoke("provider", "remove", "nonexistent", expect_error=True)
 
-        assert_words_in_message(result.exception.message, "not found")
+        assert_words_in_message(result.message, "not found")
 
     @pytest.mark.usefixtures("git_repo")
     def test_allows_removing_claude(self) -> None:

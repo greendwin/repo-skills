@@ -7,7 +7,7 @@ import pytest
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 import repo_skills.cli._deps as deps_mod
-from repo_skills.console import console
+from repo_skills.console import reporter
 from tests.cli.helper import (
     SOURCE_REPO_ROOT,
     FakeGitRepo,
@@ -48,4 +48,4 @@ def _fake_git(fake_git_manager: FakeGitRepoManager) -> Generator[FakeGitRepo]:
 @pytest.fixture(autouse=True)
 def _reset_debug() -> Generator[None]:
     yield
-    console.debug = False
+    reporter.debug = False

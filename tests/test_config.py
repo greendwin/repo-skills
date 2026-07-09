@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
+from cli_error import CliError, render_error
 from pyfakefs.fake_filesystem import FakeFilesystem
 
 from repo_skills.config import (
@@ -38,7 +39,6 @@ from repo_skills.config._skill_manifest import (
     SKILL_MANIFEST_FILE,
 )
 from repo_skills.config._source import SOURCE_CONFIG_PATH, _collect_source_skills
-from repo_skills.errors import AppError
 from repo_skills.utils import rel_posix, to_posix_path
 from tests.cli.helper import FakeGitRepo
 
@@ -259,7 +259,7 @@ class TestSourceConfig:
             contents='{"version": 2, "name": "x", "skills_dirs": ["s"]}',
         )
 
-        with pytest.raises(AppError, match="newer version"):
+        with pytest.raises(CliError, match="newer version"):
             load_source_config(Path("/repo"))
 
     def test_load_malformed_yields_broken_and_warns(
@@ -358,7 +358,7 @@ class TestProviderRegistry:
 
     def test_require_unknown_raises(self) -> None:
         reg = ProviderRegistry()
-        with pytest.raises(AppError):
+        with pytest.raises(CliError):
             reg.require("nonexistent")
 
     def test_require_returns_registered_provider(self) -> None:
@@ -401,10 +401,10 @@ class TestProviderRegistry:
         }
         fs.create_file(path, contents=json.dumps(data))
 
-        with pytest.raises(AppError) as exc:
+        with pytest.raises(CliError) as exc:
             load_provider_registry()
 
-        assert str(PROVIDER_CURRENT_VERSION + 1) in exc.value.message
+        assert str(PROVIDER_CURRENT_VERSION + 1) in render_error(exc.value.desc)
 
 
 # -- SourceRegistry --
@@ -504,11 +504,11 @@ class TestSkillManifest:
         }
         fs.create_file(path, contents=json.dumps(data))
 
-        with pytest.raises(AppError) as exc:
+        with pytest.raises(CliError) as exc:
             load_skill_manifest()
 
-        assert str(CURRENT_VERSION + 1) in exc.value.message
-        assert str(CURRENT_VERSION) in exc.value.message
+        assert str(CURRENT_VERSION + 1) in render_error(exc.value.desc)
+        assert str(CURRENT_VERSION) in render_error(exc.value.desc)
 
     def test_version_gating_loads_for_current_version(self, fs: FakeFilesystem) -> None:
         path = default_config_path(SKILL_MANIFEST_FILE)

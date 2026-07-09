@@ -4,8 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from .console import fmt_path
-from .errors import AppError
+from cli_error import CliError
 
 
 @dataclass
@@ -14,26 +13,44 @@ class SyncedRepo:
     branch: str
 
 
-class CommitVerificationError(AppError):
+class GitCommandError(CliError):
+    def __init__(self, message: str, stderr: str) -> None:
+        super().__init__(message)
+        # raw, unescaped git stderr for control-flow matching (message/detail
+        # are markup-escaped, so substring checks there are fragile)
+        self.stderr = stderr
+        if stderr:
+            self.detail(stderr)
+
+
+class FileNotInCommitError(CliError):
+    def __init__(self, commit: str, path: str) -> None:
+        self.commit = commit
+        self.path = path
+        super().__init__("File not found at commit")
+        self.prop_id("commit", commit)
+        self.prop_path("path", path)
+
+
+class CommitVerificationError(CliError):
     def __init__(
         self, reason: str, *, repo_path: str, file_path: str | None = None
     ) -> None:
-        props = {"repo": fmt_path(repo_path)}
+        super().__init__(reason)
+        self.prop_path("repo", repo_path)
         if file_path is not None:
-            props["file"] = fmt_path(file_path)
-        super().__init__(reason, props=props)
+            self.prop_path("file", file_path)
 
         self.reason = reason
         self.repo = repo_path
         self.file = file_path
 
 
-class SkillCommitNotFoundError(AppError):
+class SkillCommitNotFoundError(CliError):
     def __init__(self, *, repo_path: str, file_path: str) -> None:
-        super().__init__(
-            "No commit found for skill content.",
-            props={"repo": fmt_path(repo_path), "file": fmt_path(file_path)},
-        )
+        super().__init__("No commit found for skill content.")
+        self.prop_path("repo", repo_path)
+        self.prop_path("file", file_path)
 
         self.repo = repo_path
         self.file = file_path
@@ -107,10 +124,7 @@ def ensure_on_branch(
     #       not prevent us from changing branch
     if require_clean or needs_checkout or pull:
         if not git.is_clean():
-            raise AppError(
-                "Repo has uncommitted changes.",
-                props={"repo": fmt_path(git.root)},
-            )
+            raise CliError("Repo has uncommitted changes.").prop_path("repo", git.root)
 
     if needs_checkout:
         git.checkout(branch)

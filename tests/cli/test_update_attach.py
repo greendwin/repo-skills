@@ -457,6 +457,9 @@ class TestUpdateBrokenSource:
         result = assert_invoke("update", "--offline")
 
         assert_words_in_message(result.output, "warning", "broken-project")
+        # the repo path must locate the broken source (regression: str(ex)
+        # dropped the repo prop, leaving only the message)
+        assert str(broken_root) in result.output
         assert_words_in_message(result.output, "tdd", "updated")
         assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v2"
 

@@ -5,11 +5,11 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
+from cli_error import CliError
 from typer_di import Depends
 
 from repo_skills.config import Source
 from repo_skills.discovery import find_git_root, find_install_dir
-from repo_skills.errors import AppError
 from repo_skills.git import GitRepo, SyncedRepo, ensure_on_branch
 from repo_skills.git_real import RealGitRepo
 from repo_skills.manifest import default_manifest_path
@@ -36,7 +36,7 @@ def resolve_install_dir(
     install_dir: Optional[Path] = Depends(resolve_install_dir_opt),
 ) -> Path:
     if install_dir is None:
-        raise AppError("Cannot find install directory.")
+        raise CliError("Cannot find install directory.")
 
     return install_dir
 
@@ -58,7 +58,7 @@ _git_repo_factory: Callable[[Path], GitRepo] | None = None
 def resolve_git_repo(path: Path) -> GitRepo:
     git_root = find_git_root(path)
     if git_root is None:
-        raise AppError("Not inside a git repository.")
+        raise CliError("Not inside a git repository.")
 
     if _git_repo_factory is not None:
         return _git_repo_factory(git_root)

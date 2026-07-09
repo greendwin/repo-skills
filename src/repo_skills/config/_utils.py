@@ -5,12 +5,18 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
+from cli_error import CliError
 from pydantic import BaseModel, ValidationError
 from typing_extensions import TypeAlias
 
-from repo_skills.console import console
-from repo_skills.errors import AppError, ConfigBrokenError
-from repo_skills.utils import hash_content, load_raw_config, rel_posix, save_config
+from repo_skills.console import reporter
+from repo_skills.utils import (
+    ConfigBrokenError,
+    hash_content,
+    load_raw_config,
+    rel_posix,
+    save_config,
+)
 
 
 class VersionedConfig(BaseModel):
@@ -39,12 +45,6 @@ class LoadedConfig(Generic[_C]):
     cfg: _C
 
 
-def _report_broken(model: type[_C], path: Path) -> LoadedConfig[_C]:
-    console.debug_traceback()
-    console.print(f"[yellow]Warning[/yellow]: broken config file: {path}")
-    return LoadedConfig(ConfigState.BROKEN, model())
-
-
 def load_versioned_config(
     model: type[_C],
     path: Path,
@@ -55,21 +55,20 @@ def load_versioned_config(
     try:
         raw = load_raw_config(path)
     except ConfigBrokenError:
-        return _report_broken(model, path)
+        report_broken_config(path)
+        return LoadedConfig(ConfigState.BROKEN, model())
 
     if raw is None:
         return LoadedConfig(ConfigState.MISSING, model())
 
     version = raw.get("version", 0)
     if version > current_version:
-        raise AppError(
-            "Config was written by a newer version of the tool",
-            hint="Update the tool to the latest version.",
-            props={
-                "path": str(path),
-                "found": str(version),
-                "supported": str(current_version),
-            },
+        raise (
+            CliError("Config was written by a newer version of the tool")
+            .prop_path("path", str(path))
+            .prop_data("found", str(version))
+            .prop_data("supported", str(current_version))
+            .hint("Update the tool to the latest version.")
         )
 
     if version < current_version and migrate is not None:
@@ -81,12 +80,18 @@ def load_versioned_config(
     try:
         cfg = model.model_validate(raw)
     except ValidationError:
-        return _report_broken(model, path)
+        report_broken_config(path)
+        return LoadedConfig(ConfigState.BROKEN, model())
 
     if version < current_version:
         return LoadedConfig(ConfigState.OUTDATED, cfg)
 
     return LoadedConfig(ConfigState.OK, cfg)
+
+
+def report_broken_config(path: Path) -> None:
+    reporter.debug_traceback()
+    reporter.print("[warn]Warning[/warn]: broken config file: {path}", path=path)
 
 
 def default_config_path(*parts: str) -> Path:

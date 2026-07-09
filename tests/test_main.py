@@ -4,21 +4,21 @@ import sys
 from io import StringIO
 
 import pytest
+from cli_error import CliError
 
 from repo_skills.cli._app import app
-from repo_skills.console import console
-from repo_skills.errors import AppError, render_error
+from repo_skills.console import reporter
 from repo_skills.main import main
 
 
 @pytest.fixture(autouse=True)
 def _reset_debug() -> None:
-    console.debug = False
+    reporter.debug = False
 
 
 @app.command(name="__test-raise-app-error", hidden=True)
 def _raise_app_error() -> None:
-    raise AppError("something went wrong")
+    raise CliError("something went wrong")
 
 
 @app.command(name="__test-raise-unhandled", hidden=True)
@@ -32,6 +32,14 @@ def _raise_chained_implicit() -> None:
         raise PermissionError("access denied")
     except PermissionError:
         raise RuntimeError("git pull failed")
+
+
+@app.command(name="__test-raise-app-error-with-prop-and-cause", hidden=True)
+def _raise_app_error_with_prop_and_cause() -> None:
+    cause = PermissionError("access denied")
+    raise CliError("config is broken").prop_path(
+        "path", "/etc/app/config.json"
+    ) from cause
 
 
 class RunMain:
@@ -71,6 +79,16 @@ def test_unhandled_exception_prints_formatted_message(run_main: RunMain) -> None
     assert "unexpected failure" in output
 
 
+def test_app_error_renders_props_and_cause_chain(run_main: RunMain) -> None:
+    # a typed CliError's props render alongside the caused-by chain
+    output, code = run_main("__test-raise-app-error-with-prop-and-cause")
+    assert code == 1
+    assert "config is broken" in output
+    assert "/etc/app/config.json" in output
+    assert "caused by:" in output
+    assert "access denied" in output
+
+
 def test_chained_exception_shows_caused_by(run_main: RunMain) -> None:
     output, code = run_main("__test-raise-chained-implicit")
     assert code == 1
@@ -86,7 +104,7 @@ def test_debug_flag_shows_traceback_for_app_error(run_main: RunMain) -> None:
     assert "Error:" in output
     assert "something went wrong" in output
     assert "Traceback" in output
-    assert "AppError" in output
+    assert "CliError" in output
 
 
 def test_debug_flag_shows_traceback_for_unhandled(run_main: RunMain) -> None:
@@ -126,7 +144,7 @@ def test_render_error_terminates_on_cyclic_cause_chain(
     a.__cause__ = b
     b.__cause__ = a
 
-    render_error(a)
+    reporter.report_error(a)
 
     output = out.getvalue()
     assert "Error:" in output

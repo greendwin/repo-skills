@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
+from cli_error import CliError, CliExit
 
 from repo_skills.config import (
     Baseline,
@@ -18,8 +19,7 @@ from repo_skills.config import (
     load_config_context,
     save_skill_manifest,
 )
-from repo_skills.console import console, fmt_data, fmt_ident
-from repo_skills.errors import AppError, NoopError, render_error
+from repo_skills.console import fmt_data, fmt_ident, reporter
 from repo_skills.git import (
     SyncedRepo,
     ensure_on_branch,
@@ -119,10 +119,10 @@ def update(
 
     if not targets.skills and not targets.attach_candidates:
         if source_names:
-            raise NoopError(
+            raise CliExit(
                 f"[dim]No skills installed from source {fmt_data(source_names)}.[/dim]"
             )
-        raise NoopError("[dim]No skills installed.[/dim]")
+        raise CliExit("[dim]No skills installed.[/dim]")
 
     source_repos = _sync_source_repos(
         ctx.source_registry,
@@ -184,7 +184,7 @@ def _validate_filters(
     for name in skill_names or ():
         if name not in manifest.skills:
             # TODO: we can target untracked skill to try to auto-attach it
-            raise AppError(f"Skill {fmt_ident(name)} is not installed.")
+            raise CliError(f"Skill {fmt_ident(name)} is not installed.")
 
     for name in source_names or ():
         _ = source_registry.get_source_no_skills(name)
@@ -227,21 +227,21 @@ def _sync_source_repos(
         git = resolve_git_repo(registered.repo_root)
         branch = registered.get_branch(git)
 
-        with console.running(
+        with reporter.running(
             f"Pulling {fmt_data(source_name)}", tty_subprocess=not offline
         ):
             try:
                 repo = ensure_on_branch(git, branch, pull=not offline)
             except Exception as ex:
-                console.finish("[red]failed[/red]")
-                render_error(ex)
+                reporter.finish("[red]failed[/red]")
+                reporter.report_error(ex)
                 continue
 
             source_repos[source_name] = repo
             if offline:
-                console.finish("[dim]skipped[/dim]")
+                reporter.finish("[dim]skipped[/dim]")
             else:
-                console.finish("[green]done[/green]")
+                reporter.finish("[green]done[/green]")
 
     return source_repos
 
@@ -263,17 +263,17 @@ def _run_updates(
     source_repos: dict[str, SyncedRepo],
 ) -> None:
     for skill_name, entry in skills.items():
-        with console.running(f"Updating {fmt_data(skill_name)}"):
+        with reporter.running(f"Updating {fmt_data(skill_name)}"):
             repo = source_repos.get(entry.source)
             if repo is None:
-                console.finish(_source_unavailable_label(entry.source))
+                reporter.finish(_source_unavailable_label(entry.source))
                 continue
 
             try:
                 outcome = _update_skill(ctx, entry, skill_name, repo)
             except Exception as ex:
-                console.finish("[red]failed[/red]")
-                render_error(ex)
+                reporter.finish("[red]failed[/red]")
+                reporter.report_error(ex)
                 continue
 
             _print_skill_report(outcome)
@@ -293,7 +293,7 @@ def _update_skill(
     skill = source.skills.get(skill_name)
     if skill is None:
         # TODO: should we mark this skill as detached instead of reporting an error?
-        raise AppError("Skill removed from source")
+        raise CliError("Skill removed from source")
 
     src = source.repo_root / skill.rel_path
     source_hashes = compute_file_hashes(src)
@@ -491,10 +491,10 @@ def _print_skill_report(report: _SkillReport) -> None:
 
     if len(report.provider_statuses) > 1 and len(unique) > 1:
         if transition_label is not None:
-            console.finish(transition_label)
+            reporter.finish(transition_label)
 
         for prov_name, prov_status in report.provider_statuses.items():
-            console.print(f"  {fmt_data(prov_name)}: {_STATUS_LABEL[prov_status]}")
+            reporter.print(f"  {fmt_data(prov_name)}: {_STATUS_LABEL[prov_status]}")
         return
 
     if _Status.SKIPPED in unique and _Status.UPDATED not in unique:
@@ -510,4 +510,4 @@ def _print_skill_report(report: _SkillReport) -> None:
     elif transition_label is not None:
         status = f"{status}, {transition_label}"
 
-    console.finish(status)
+    reporter.finish(status)

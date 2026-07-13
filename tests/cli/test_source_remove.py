@@ -64,7 +64,7 @@ class TestSourceRemove:
             }
         )
 
-        assert_invoke("source", "remove", "alpha", "--force")
+        result = assert_invoke("source", "remove", "alpha", "--force")
 
         updated = load_source_registry()
         assert "alpha" not in updated.sources
@@ -72,6 +72,13 @@ class TestSourceRemove:
         manifest = load_manifest()
         assert "tdd" not in manifest.skills
         assert "review" not in manifest.skills
+
+        # both names render in the single joined "Unregistered … skill(s)" line
+        joined = next(
+            line for line in result.output.splitlines() if "Unregistered" in line
+        )
+        assert "tdd" in joined
+        assert "review" in joined
 
     @pytest.mark.usefixtures("fs")
     def test_force_without_installed_skills(self, git_repo: Path) -> None:

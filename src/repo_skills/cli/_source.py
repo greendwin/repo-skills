@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
-from cli_error import CliError, CliExit
+from cli_error import CliError, CliExit, render_template
 from typer_di import Depends, TyperDI
 
 from repo_skills.config import (
@@ -21,7 +21,7 @@ from repo_skills.config import (
     save_source_config,
     save_source_registry,
 )
-from repo_skills.console import fmt_data, fmt_ident, fmt_path, reporter
+from repo_skills.console import reporter
 from repo_skills.discovery import (
     DetectKind,
     detect_skills_dir,
@@ -110,7 +110,9 @@ def source_init(
 
 def _init_or_config_source(git: GitRepo, requested: _RequestedChanges) -> None:
     if requested.branch is not None and not git.list_branches(requested.branch):
-        raise _repo_error(git, f"Branch {fmt_ident(requested.branch)} not found.")
+        raise _repo_error(
+            git, "Branch [id]{branch}[/id] not found.", branch=requested.branch
+        )
 
     if requested.skills_dirs is not None:
         normalized = _normalize_skills_dirs(git, requested.skills_dirs)
@@ -137,7 +139,7 @@ def _normalize_skills_dirs(git: GitRepo, skills_dirs: Sequence[str]) -> list[str
         resolved = normalize_repo_dir(git.root, skills_dir)
         if resolved is None:
             raise _repo_error(
-                git, f"Skills dir {fmt_data(skills_dir)} escapes the repo."
+                git, "Skills dir [data]{dir}[/data] escapes the repo.", dir=skills_dir
             )
 
         # exact repeat: silent dedup, not a nesting (no Note); compare component-wise
@@ -166,22 +168,25 @@ def _normalize_skills_dirs(git: GitRepo, skills_dirs: Sequence[str]) -> list[str
 
 def _note_nested_skills_dir(repo_root: Path, dropped: Path, container: Path) -> None:
     reporter.print(
-        f"[dim]Note:[/dim] {fmt_path(rel_posix(dropped, repo_root))} "
-        f"[dim]is inside {fmt_path(rel_posix(container, repo_root))}; "
-        f"ignoring the duplicate.[/dim]"
+        "[dim]Note:[/dim] [path]{dropped}[/path] "
+        "[dim]is inside [path]{container}[/path]; "
+        "ignoring the duplicate.[/dim]",
+        dropped=rel_posix(dropped, repo_root),
+        container=rel_posix(container, repo_root),
     )
 
 
-def _repo_error(git: GitRepo, msg: str) -> CliError:
-    return CliError(msg).prop_path("repo", git.root)
+def _repo_error(git: GitRepo, msg: str, /, **args: object) -> CliError:
+    return CliError(msg, **args).prop_path("repo", git.root)
 
 
 def _note_empty_skills_dirs(repo_root: Path, skills_dirs: Sequence[str]) -> None:
     for rel in skills_dirs:
         if not _dir_has_skills(repo_root / rel):
             reporter.print(
-                f"[dim]Note:[/dim] {fmt_path(rel)} "
-                f"[dim]currently has no skills.[/dim]"
+                "[dim]Note:[/dim] [path]{rel}[/path] "
+                "[dim]currently has no skills.[/dim]",
+                rel=rel,
             )
 
 
@@ -213,7 +218,7 @@ def _handle_fresh_init(git: GitRepo, requested: _RequestedChanges) -> None:
     registry.register_source(source_name, git.root)
     save_source_registry(registry)
 
-    reporter.print(f"Initialized source {fmt_ident(source_name)}.")
+    reporter.print("Initialized source [id]{name}[/id].", name=source_name)
 
 
 def _detect_fresh_skills_dir(git: GitRepo) -> str:
@@ -226,7 +231,7 @@ def _detect_fresh_skills_dir(git: GitRepo) -> str:
             git,
             "Skills are spread across the repo root; cannot auto-detect a "
             "skills directory. Re-run with explicit "
-            f"{fmt_data('--skills-dir')} values.",
+            "[data]--skills-dir[/data] values.",
         )
 
     write_text(git.root / DEFAULT_SKILLS_DIR / GIT_KEEP_FILE, "")
@@ -270,20 +275,27 @@ def _handle_reinit(
     registry.register_source(effective_name, git_root)
     save_source_registry(registry)
 
-    source_label = fmt_ident(effective_name)
     if not was_registered:
-        reporter.print(f"Registered source {source_label}.")
+        reporter.print("Registered source [id]{name}[/id].", name=effective_name)
     elif changes:
-        reporter.print(f"Updated source {source_label}.")
+        reporter.print("Updated source [id]{name}[/id].", name=effective_name)
     else:
-        reporter.print(f"Source {source_label} already initialized.")
+        reporter.print(
+            "Source [id]{name}[/id] already initialized.", name=effective_name
+        )
 
     for change in changes:
         reporter.print(change)
 
 
 def _change_line(label: str, old: _ChangeValue, new: _ChangeValue) -> str:
-    return f"  {label}: {fmt_data(old)} → {fmt_data(new)}"
+    # pre-render: reporter.print gets a ready markup string, no format args
+    return render_template(
+        "  {label}: [data]{old}[/data] → [data]{new}[/data]",
+        label=label,
+        old=old,
+        new=new,
+    )
 
 
 def _dirs_change_line(old: Sequence[str], new: Sequence[str]) -> str:
@@ -292,11 +304,15 @@ def _dirs_change_line(old: Sequence[str], new: Sequence[str]) -> str:
 
     # stored order matters: first dir is the active write-back target, so a pure
     # reorder is a real change — don't sort
-    return f"  dirs: {_join_ordered(old)} → {_join_ordered(new)}"
+    return render_template(
+        "  dirs: [data]{old}[/data] → [data]{new}[/data]",
+        old=_join_ordered(old),
+        new=_join_ordered(new),
+    )
 
 
 def _join_ordered(dirs: Sequence[str]) -> str:
-    return ", ".join(fmt_data(d) for d in dirs)
+    return ", ".join(dirs)
 
 
 def _rename_installed_skills(old_name: str, new_name: str) -> None:
@@ -357,7 +373,7 @@ def source_remove(
     source_registry = load_source_registry()
 
     if source_name not in source_registry.sources:
-        raise CliError(f"Source {fmt_ident(source_name)} not found.")
+        raise CliError("Source [id]{name}[/id] not found.", name=source_name)
 
     # removal only needs the repo path; no need to load the source (broken or not)
     repo_root = source_registry.sources[source_name].repo_root
@@ -377,10 +393,19 @@ def source_remove(
             manifest.unregister_skill(skill_name)
         save_skill_manifest(manifest)
 
-        names = ", ".join(fmt_ident(n) for n in sorted(matching))
-        reporter.print(f"Unregistered {fmt_data(len(matching))} skill(s): {names}.")
+        # BUG: comma should not be included to [id]
+        names = ", ".join(sorted(matching))
+        reporter.print(
+            "Unregistered [data]{count}[/data] skill(s): [id]{names}[/id].",
+            count=len(matching),
+            names=names,
+        )
 
     source_registry.unregister_source(source_name)
     save_source_registry(source_registry)
 
-    reporter.print(f"Removed source {fmt_ident(source_name)} at {fmt_path(repo_root)}.")
+    reporter.print(
+        "Removed source [id]{name}[/id] at [path]{path}[/path].",
+        name=source_name,
+        path=repo_root,
+    )

@@ -91,7 +91,7 @@ def load_versioned_config(
 
 def report_broken_config(path: Path) -> None:
     reporter.debug_traceback()
-    reporter.print("[warn]Warning[/warn]: broken config file: {path}", path=path)
+    reporter.warn("broken config file: {path}", path=path)
 
 
 def default_config_path(*parts: str) -> Path:

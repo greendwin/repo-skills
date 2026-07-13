@@ -43,3 +43,5 @@ Fix TODO-documented bugs and issues across the CLI.
 - [x] [s08t37](s08t37-showing-outdated-even-though-its/): Showing 'outdated' even though it's up-to-date
 - [ ] [s08t38](s08t38-unclear-error-on-install-failure.md): Unclear error on install failure
 - [ ] [s08t39](s08t39-audit-path-manipulations-for-windows.md): Audit path manipulations for Windows compatibility
+- [ ] [s08t40](s08t40-standardize-id-styled-name-lists.md): Standardize [id]-styled name lists; fix comma-inside-marker bug
+- [ ] [s08t41](s08t41-relax-clean-repo-check-to.md): Relax clean-repo check to ignore changes outside skill dirs

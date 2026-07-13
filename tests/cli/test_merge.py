@@ -500,21 +500,39 @@ class TestResolveBaseCommit:
         assert_words_in_message(result.output, "no", "base", "commit", "rebase")
         assert_words_in_message(result.output, "merge", "complete")
 
-    def test_search_base_distance_escapes_markup(
-        self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
+    @pytest.mark.parametrize(
+        ("commit_content", "extra_marker"),
+        [
+            # distance branch: content diverges from installed
+            (b"# original-ish", None),
+            # exact-match branch: content matches installed
+            (b"# edited by user", "exact match"),
+        ],
+    )
+    def test_search_base_escapes_markup(
+        self,
+        fs: FakeFilesystem,
+        git_repo: Path,
+        _fake_git: FakeGitRepo,
+        commit_content: bytes,
+        extra_marker: str | None,
     ) -> None:
-        """Distance message must escape rich markup in commit messages."""
+        """Base-search messages must escape rich markup in commit messages."""
         _setup_diverged_skill(fs, git_repo, commit=None)
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111"]
-        _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = b"# original-ish"
+        _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = commit_content
         _fake_git.commit_messages = {"aaa111": "fix [red]broken[/red] thing"}
 
         result = assert_invoke("merge", "tdd", "--offline")
 
+        if extra_marker is not None:
+            assert extra_marker in result.output
         # Markup tags must appear literally, not be interpreted by rich
         assert "[red]" in result.output
         assert "[/red]" in result.output
+        # single-escape depth: no stray backslash-escaped form
+        assert "\\[red]" not in result.output
 
     def test_search_base_with_category_subfolder(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo

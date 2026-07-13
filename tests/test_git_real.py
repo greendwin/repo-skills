@@ -138,8 +138,11 @@ def test_git_error_includes_repo_path(repo: Path) -> None:
     git = RealGitRepo(repo)
     with pytest.raises(CliError) as exc:
         git._run("log", "--bad-flag")
+    rendered = render_error(exc.value.desc)
     # repo path lands in a prop, not str(exc); read the full render
-    assert str(repo) in render_error(exc.value.desc)
+    assert str(repo) in rendered
+    # failing command text must reach the message via `cmd=cmd` wiring
+    assert "log --bad-flag" in rendered
 
 
 def test_git_command_error_keeps_raw_stderr_for_control_flow() -> None:
@@ -153,6 +156,14 @@ def test_git_command_error_keeps_raw_stderr_for_control_flow() -> None:
     # detail mangles the raw brackets (`[` -> `\[`) and wraps them in markup
     assert "\\[worktree]" in err.desc.detail
     assert "\\[worktree]" not in err.stderr
+
+
+def test_git_command_error_forwards_template_args_escaped() -> None:
+    # dynamic template args must reach cli-error's render_template and be escaped
+    err = GitCommandError("Git command failed: [cmd]{cmd}[/cmd]", "", cmd="git log [x]")
+
+    assert "git log [x]" in str(err)  # plain, tags stripped
+    assert "\\[x]" in err.desc.message  # bracket escaped in markup
 
 
 def test_get_skill_commit(repo: Path) -> None:

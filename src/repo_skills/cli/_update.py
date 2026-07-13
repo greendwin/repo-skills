@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
-from cli_error import CliError, CliExit
+from cli_error import CliError, CliExit, render_template
 
 from repo_skills.config import (
     Baseline,
@@ -19,7 +19,7 @@ from repo_skills.config import (
     load_config_context,
     save_skill_manifest,
 )
-from repo_skills.console import fmt_data, fmt_ident, reporter
+from repo_skills.console import reporter
 from repo_skills.git import (
     SyncedRepo,
     ensure_on_branch,
@@ -81,8 +81,10 @@ _UNTRACKED = "[yellow]untracked[/yellow] [dim](need merge)[/dim]"
 
 
 def _source_unavailable_label(source: str) -> str:
-    return (
-        f"[yellow]skipped[/yellow] [dim](source {fmt_ident(source)} unavailable)[/dim]"
+    # pre-render: reporter.finish takes a ready markup string, not a template
+    return render_template(
+        "[yellow]skipped[/yellow] [dim](source [id]{source}[/id] unavailable)[/dim]",
+        source=source,
     )
 
 
@@ -120,7 +122,8 @@ def update(
     if not targets.skills and not targets.attach_candidates:
         if source_names:
             raise CliExit(
-                f"[dim]No skills installed from source {fmt_data(source_names)}.[/dim]"
+                "[dim]No skills installed from source [data]{sources}[/data].[/dim]",
+                sources=", ".join(sorted(source_names)),
             )
         raise CliExit("[dim]No skills installed.[/dim]")
 
@@ -184,7 +187,7 @@ def _validate_filters(
     for name in skill_names or ():
         if name not in manifest.skills:
             # TODO: we can target untracked skill to try to auto-attach it
-            raise CliError(f"Skill {fmt_ident(name)} is not installed.")
+            raise CliError("Skill [id]{name}[/id] is not installed.", name=name)
 
     for name in source_names or ():
         _ = source_registry.get_source_no_skills(name)
@@ -228,7 +231,9 @@ def _sync_source_repos(
         branch = registered.get_branch(git)
 
         with reporter.running(
-            f"Pulling {fmt_data(source_name)}", tty_subprocess=not offline
+            "Pulling [data]{name}[/data]",
+            name=source_name,
+            tty_subprocess=not offline,
         ):
             try:
                 repo = ensure_on_branch(git, branch, pull=not offline)
@@ -263,7 +268,7 @@ def _run_updates(
     source_repos: dict[str, SyncedRepo],
 ) -> None:
     for skill_name, entry in skills.items():
-        with reporter.running(f"Updating {fmt_data(skill_name)}"):
+        with reporter.running("Updating [data]{name}[/data]", name=skill_name):
             repo = source_repos.get(entry.source)
             if repo is None:
                 reporter.finish(_source_unavailable_label(entry.source))
@@ -494,7 +499,11 @@ def _print_skill_report(report: _SkillReport) -> None:
             reporter.finish(transition_label)
 
         for prov_name, prov_status in report.provider_statuses.items():
-            reporter.print(f"  {fmt_data(prov_name)}: {_STATUS_LABEL[prov_status]}")
+            # TODO: we must be able to do this without concatenation
+            reporter.print(
+                render_template("  [data]{prov}[/data]: ", prov=prov_name)
+                + _STATUS_LABEL[prov_status]
+            )
         return
 
     if _Status.SKIPPED in unique and _Status.UPDATED not in unique:

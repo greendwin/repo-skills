@@ -3,10 +3,8 @@ from __future__ import annotations
 import os
 from collections.abc import Generator
 from contextlib import contextmanager
-from pathlib import Path
 
-from cli_error import CliReporter, make_console
-from rich.markup import escape
+from cli_error import CliReporter, make_console, render_template
 
 
 class Reporter(CliReporter):
@@ -32,8 +30,16 @@ class Reporter(CliReporter):
         self._finish_eoln()
         super().print(template, end=end, **args)
 
+    def warn(self, template: str, /, **args: object) -> None:
+        self.print(render_template("[warn]Warning[/warn]: " + template, **args))
+
+    # TODO: lets make sure that we support py3.10 and test it
     @contextmanager
-    def running(self, prefix: str, *, tty_subprocess: bool = False) -> Generator[None]:
+    def running(
+        self, prefix: str, /, *, tty_subprocess: bool = False, **args: object
+    ) -> Generator[None]:
+        prefix = render_template(prefix, **args)
+
         if self._active_prefix is not None:
             raise AssertionError(
                 f"running({prefix!r}) cannot nest inside"
@@ -58,7 +64,9 @@ class Reporter(CliReporter):
         finally:
             self._active_prefix = None
 
-    def finish(self, suffix: str) -> None:
+    def finish(self, suffix: str, /, **args: object) -> None:
+        suffix = render_template(suffix, **args)
+
         if self._pending_eoln:
             super().print(suffix)
             self._pending_eoln = False
@@ -71,25 +79,6 @@ class Reporter(CliReporter):
         if self._pending_eoln:
             super().print("")
             self._pending_eoln = False
-
-
-def fmt_ident(text: str) -> str:
-    return f"[green]{escape(text)}[/green]"
-
-
-def fmt_path(path: Path | str) -> str:
-    return f"[dim]{escape(str(path))}[/dim]"
-
-
-def fmt_data(text: str | int | Path | list[str]) -> str:
-    if isinstance(text, list):
-        return ", ".join(fmt_data(p) for p in sorted(text))
-
-    return f"[cyan]{escape(str(text))}[/cyan]"
-
-
-def fmt_command(text: str) -> str:
-    return f"[blue]{escape(text)}[/blue]"
 
 
 # global instance

@@ -21,7 +21,7 @@ from repo_skills.config import (
     compute_file_hashes,
     load_config_context,
 )
-from repo_skills.console import fmt_data, fmt_ident, reporter
+from repo_skills.console import reporter
 from repo_skills.git import ensure_on_branch
 
 from ._app import app
@@ -153,10 +153,13 @@ def _scan_sources(
         except CliError:
             reporter.debug_traceback()
 
-            reporter.print(
-                f"[yellow]Warning[/yellow]: {fmt_ident(source_name)} repo is dirty\n"
-                f"Showing skills from {fmt_data(git.current_branch())}"
-                f" instead of {fmt_data(target_branch)}"
+            reporter.warn(
+                "[id]{source}[/id] repo is dirty\n"
+                "Showing skills from [data]{current}[/data]"
+                " instead of [data]{target}[/data]",
+                source=source_name,
+                current=git.current_branch(),
+                target=target_branch,
             )
 
         # load skills on correct branch
@@ -289,10 +292,11 @@ def _render_source_section(view: _StatusView, source_name: str) -> None:
     # the scan's result instead of re-loading, which would re-print the warning
     loaded = source_name in view.loaded_source_names
     if loaded:
-        reporter.print(f"[yellow]Source[/yellow] {fmt_ident(source_name)}")
+        reporter.print("[yellow]Source[/yellow] [id]{source}[/id]", source=source_name)
     else:
         reporter.print(
-            f"[yellow]Source[/yellow] {fmt_ident(source_name)}  [red](broken)[/red]"
+            "[yellow]Source[/yellow] [id]{source}[/id]  [red](broken)[/red]",
+            source=source_name,
         )
 
     installed = view.installed_by_source.get(source_name, [])

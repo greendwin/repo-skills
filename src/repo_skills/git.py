@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from cli_error import CliError
 
@@ -14,8 +14,8 @@ class SyncedRepo:
 
 
 class GitCommandError(CliError):
-    def __init__(self, message: str, stderr: str) -> None:
-        super().__init__(message)
+    def __init__(self, message: str, stderr: str, /, **args: Any) -> None:
+        super().__init__(message, **args)
         # raw, unescaped git stderr for control-flow matching (message/detail
         # are markup-escaped, so substring checks there are fragile)
         self.stderr = stderr

@@ -1,7 +1,7 @@
 ---
 id: s04t1003
 slug: repo-skills-fmt-absorption-retire
-status: pending
+status: done
 ---
 
 # Repo_skills fmt-absorption: retire fmt_* for cli-error roles

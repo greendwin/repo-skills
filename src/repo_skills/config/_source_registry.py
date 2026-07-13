@@ -5,7 +5,6 @@ from pathlib import Path
 from cli_error import CliError
 from pydantic import BaseModel
 
-from repo_skills.console import fmt_ident
 from repo_skills.utils import ConfigBrokenError, load_config, save_config
 
 from ._source import Source, load_source
@@ -56,7 +55,7 @@ class SourceRegistry:
     def _get_entry(self, name: str) -> SourceEntry:
         entry = self._entries.get(name)
         if entry is None:
-            raise CliError(f"Source {fmt_ident(name)} not found.")
+            raise CliError("Source [id]{name}[/id] not found.", name=name)
 
         return entry
 

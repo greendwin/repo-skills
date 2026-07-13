@@ -7,7 +7,6 @@ from typing import Annotated, NoReturn, Optional
 
 import typer
 from cli_error import CliError, CliExit
-from rich.markup import escape
 
 from repo_skills.config import (
     Baseline,
@@ -25,7 +24,7 @@ from repo_skills.config import (
     read_skill_description,
     save_skill_manifest,
 )
-from repo_skills.console import fmt_command, fmt_data, fmt_ident, reporter
+from repo_skills.console import reporter
 from repo_skills.discovery import path_within
 from repo_skills.git import FileNotInCommitError, GitRepo, ensure_on_branch
 from repo_skills.utils import hash_content, normalize_line_endings, overwrite_dir
@@ -89,8 +88,7 @@ def merge(
 ) -> None:
     if abort and continue_merge:
         raise CliError(
-            f"Cannot use {fmt_command('--abort')} and"
-            f" {fmt_command('--continue')} together."
+            "Cannot use [cmd]--abort[/cmd] and [cmd]--continue[/cmd] together."
         )
 
     ctx = load_config_context()
@@ -105,7 +103,7 @@ def merge(
 
     if skill_name is None:
         raise CliError("Skill name is required.").hint(
-            f"Use {fmt_command('--continue')} to finalize a merge in progress."
+            "Use [cmd]--continue[/cmd] to finalize a merge in progress."
         )
 
     _merge_start(
@@ -203,9 +201,11 @@ def _merge_start(
 
     branch_name = f"skill-merge/{provider.name}/{skill_name}"
     if git.list_branches(branch_name):
-        raise CliError(f"Merge already in progress for {fmt_ident(skill_name)}.").hint(
-            f"Run {fmt_command('skills merge --continue')} to finish active merge "
-            f"or {fmt_command('skills merge --abort')} to start over."
+        raise CliError(
+            "Merge already in progress for [id]{skill}[/id].", skill=skill_name
+        ).hint(
+            "Run [cmd]skills merge --continue[/cmd] to finish active merge "
+            "or [cmd]skills merge --abort[/cmd] to start over."
         )
 
     installed_path = provider.install_path / skill_name
@@ -242,7 +242,7 @@ def _merge_start(
     if no_commit:
         reporter.print(
             "Files copied to source repo. Review, commit, and run"
-            f" {fmt_command('skills merge --continue')}."
+            " [cmd]skills merge --continue[/cmd]."
         )
         return
 
@@ -260,13 +260,11 @@ def _merge_start(
 
     if not clean:
         if use_merge:
-            reporter.print("[yellow]Warning:[/yellow] Merge has conflicts.\n")
+            reporter.warn("Merge has conflicts.\n")
         else:
-            reporter.print("[yellow]Warning:[/yellow] Rebase has conflicts.\n")
+            reporter.warn("Rebase has conflicts.\n")
 
-        reporter.print(
-            f"Resolve them, then run " f"{fmt_command('skills merge --continue')}."
-        )
+        reporter.print("Resolve them, then run [cmd]skills merge --continue[/cmd].")
         return
 
     _finalize(
@@ -296,12 +294,13 @@ def _finalyze_in_sync_skill(
 
     latest = git.get_skill_commit(skill.rel_path)
     if base_commit == latest:
-        reporter.print(f"{fmt_ident(skill.name)} is already up to date.")
+        reporter.print("[id]{name}[/id] is already up to date.", name=skill.name)
         return
 
     reporter.print(
-        f"{fmt_ident(skill.name)} matches a previous version.\n"
-        f"Run {fmt_command('skills update')} to pull the latest changes."
+        "[id]{name}[/id] matches a previous version.\n"
+        "Run [cmd]skills update[/cmd] to pull the latest changes.",
+        name=skill.name,
     )
 
 
@@ -314,11 +313,14 @@ def _raise_in_sync(
     reattached: bool,
 ) -> NoReturn:
     if not reattached:
-        raise CliExit(f"{fmt_ident(skill.name)} is already synced. Nothing to merge.")
+        raise CliExit(
+            "[id]{name}[/id] is already synced. Nothing to merge.", name=skill.name
+        )
 
     _reattach_installed_skill(ctx.manifest, source, skill, git)
     raise CliExit(
-        f"{fmt_ident(skill.name)} is now tracked and in sync. Nothing to merge."
+        "[id]{name}[/id] is now tracked and in sync. Nothing to merge.",
+        name=skill.name,
     )
 
 
@@ -361,11 +363,9 @@ def _merge_orphan(
     active_dir = source.config.active_dir
     if active_dir is None:
         raise CliError(
-            f"Source {fmt_ident(source.name)} has no skills directory configured."
-        ).hint(
-            f"Run {fmt_command('skills source config --skills-dir <dir>')} "
-            "to set one."
-        )
+            "Source [id]{source}[/id] has no skills directory configured.",
+            source=source.name,
+        ).hint("Run [cmd]skills source config --skills-dir <dir>[/cmd] to set one.")
 
     skill_rel_path = f"{active_dir}/{skill_name}"
     skill_dst = source.repo_root / skill_rel_path
@@ -390,7 +390,7 @@ def _merge_orphan(
     )
     save_skill_manifest(manifest)
 
-    reporter.print(f"Merge complete for {fmt_ident(skill_name)}.")
+    reporter.print("Merge complete for [id]{skill}[/id].", skill=skill_name)
 
 
 def _resolve_diverged_provider(
@@ -417,12 +417,13 @@ def _resolve_diverged_provider(
         return None
 
     if len(diverged) > 1:
-        names = ", ".join(
-            fmt_ident(p.name) for p in sorted(diverged, key=lambda x: x.name)
-        )
+        # BUG: comma should not be inside [id] marker
+        names = ", ".join(p.name for p in sorted(diverged, key=lambda x: x.name))
         raise CliError(
-            "Multiple providers have modified" f" {fmt_ident(skill_name)} ({names})."
-        ).hint(f"Use {fmt_command('--from')} to specify.")
+            "Multiple providers have modified [id]{skill}[/id] ([id]{names}[/id]).",
+            skill=skill_name,
+            names=names,
+        ).hint("Use [cmd]--from[/cmd] to specify.")
 
     return diverged[0]
 
@@ -450,10 +451,11 @@ def _resolve_base_commit(
                 commit=installed.baseline.commit, exact_match=False
             )
 
-        reporter.print(
-            f"[yellow]Warning:[/yellow] Stored commit"
-            f" {fmt_ident(installed.baseline.commit[:8])} is dangling"
-            " — searching for base commit."
+        reporter.warn(
+            "Stored commit"
+            " [id]{commit}[/id] is dangling"
+            " — searching for base commit.",
+            commit=installed.baseline.commit[:8],
         )
 
     r = _find_base_commit(git, skill.rel_path, installed_path)
@@ -464,14 +466,19 @@ def _resolve_base_commit(
 
     if r.distance == 0:
         reporter.print(
-            f"Base commit: {fmt_ident(r.commit[:8])} [dim](exact match)[/dim]\n"
-            f"Message: {fmt_data(escape(r.message))}"
+            "Base commit: [id]{commit}[/id] [dim](exact match)[/dim]\n"
+            "Message: [data]{message}[/data]",
+            commit=r.commit[:8],
+            message=r.message,
         )
         return _ResolveBaseResult(commit=r.commit, exact_match=True)
 
     reporter.print(
-        f"Base commit: {fmt_ident(r.commit[:8])} [dim](distance: {r.distance})[/dim]\n"
-        f"Message: {fmt_data(escape(r.message))}"
+        "Base commit: [id]{commit}[/id] [dim](distance: {distance})[/dim]\n"
+        "Message: [data]{message}[/data]",
+        commit=r.commit[:8],
+        distance=r.distance,
+        message=r.message,
     )
     return _ResolveBaseResult(commit=r.commit, exact_match=False)
 
@@ -482,11 +489,14 @@ def _check_reachability(git: GitRepo, commit: str, target_branch: str) -> bool:
 
     if git.commit_exists_in_any_branch(commit):
         raise CliError(
-            f"Stored commit {fmt_ident(commit)} exists but is not on"
-            f" branch {fmt_ident(target_branch)}."
+            "Stored commit [id]{commit}[/id] exists but is not on"
+            " branch [id]{branch}[/id].",
+            commit=commit,
+            branch=target_branch,
         ).hint(
-            f"Use {fmt_command('--search-base')} to search for a base commit"
-            f" on {fmt_ident(target_branch)}."
+            "Use [cmd]--search-base[/cmd] to search for a base commit"
+            " on [id]{branch}[/id].",
+            branch=target_branch,
         )
 
     return False
@@ -653,11 +663,12 @@ def _finalize(
 
     if is_equal:
         reporter.print(
-            f"Nothing to merge for {fmt_ident(skill_name)} — already up to date."
+            "Nothing to merge for [id]{skill}[/id] — already up to date.",
+            skill=skill_name,
         )
         return
 
-    reporter.print(f"Merge complete for {fmt_ident(skill_name)}.")
+    reporter.print("Merge complete for [id]{skill}[/id].", skill=skill_name)
 
 
 def _merge_abort(ctx: ConfigContext) -> None:
@@ -679,7 +690,7 @@ def _merge_abort(ctx: ConfigContext) -> None:
 
     git.delete_branch(branch)
 
-    reporter.print(f"Merge aborted for {fmt_ident(skill_name)}.")
+    reporter.print("Merge aborted for [id]{skill}[/id].", skill=skill_name)
 
 
 def _detect_merge_repo(ctx: ConfigContext) -> GitRepo:
@@ -701,14 +712,15 @@ def _detect_merge_repo(ctx: ConfigContext) -> GitRepo:
 
     if not candidates:
         raise CliError("No merge branch found in any source repo.").hint(
-            f"Run {fmt_command('skills merge')} first."
+            "Run [cmd]skills merge[/cmd] first."
         )
 
     if len(candidates) > 1:
-        names = ", ".join(fmt_ident(str(g.root)) for g in candidates)
-        raise CliError(f"Multiple source repos have merge branches ({names}).").hint(
-            "Run from within the target source repo."
-        )
+        names = ", ".join(str(g.root) for g in candidates)
+        raise CliError(
+            "Multiple source repos have merge branches ([id]{names}[/id]).",
+            names=names,
+        ).hint("Run from within the target source repo.")
 
     return candidates[0]
 
@@ -729,20 +741,18 @@ def _detect_merge_branch(git: GitRepo) -> str:
         return branches[0]
 
     if len(branches) > 1:
-        names = ", ".join(fmt_ident(n) for n in sorted(branches))
-        raise CliError(f"Multiple merge branches found ({names}).").hint(
-            "Checkout the one to continue."
-        )
+        names = ", ".join(sorted(branches))
+        raise CliError(
+            "Multiple merge branches found ([id]{names}[/id]).", names=names
+        ).hint("Checkout the one to continue.")
 
-    raise CliError("No merge branch found.").hint(
-        f"Run {fmt_command('skills merge')} first."
-    )
+    raise CliError("No merge branch found.").hint("Run [cmd]skills merge[/cmd] first.")
 
 
 def _parse_merge_branch(branch: str) -> tuple[str, str]:
     parts = branch.removeprefix(MERGE_BRANCH_PREFIX).split("/", 1)
     if len(parts) != 2:
-        raise CliError(f"Invalid merge branch: {fmt_ident(branch)}")
+        raise CliError("Invalid merge branch: [id]{branch}[/id]", branch=branch)
 
     return parts[0], parts[1]
 

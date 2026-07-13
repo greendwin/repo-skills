@@ -11,7 +11,6 @@ from repo_skills.config import (
     SourceRegistry,
     SourceSkill,
 )
-from repo_skills.console import fmt_command, fmt_ident
 
 
 @dataclass
@@ -28,8 +27,9 @@ def find_skill_in_provider(
         skill_path = provider.install_path / skill_name
         if not skill_path.is_dir():
             raise CliError(
-                f"Skill {fmt_ident(skill_name)} is not installed "
-                f"in {fmt_ident(provider.name)}."
+                "Skill [id]{skill}[/id] is not installed in [id]{provider}[/id].",
+                skill=skill_name,
+                provider=provider.name,
             )
 
         return provider
@@ -41,15 +41,16 @@ def find_skill_in_provider(
             matches.append(prov)
 
     if len(matches) > 1:
-        names = ", ".join(
-            fmt_ident(p.name) for p in sorted(matches, key=lambda x: x.name)
-        )
+        # BUG: comma should not be included to [id]
+        names = ", ".join(p.name for p in sorted(matches, key=lambda x: x.name))
         raise CliError(
-            f"Multiple providers have {fmt_ident(skill_name)} ({names})."
-        ).hint(f"Use {fmt_command('--from')} to specify.")
+            "Multiple providers have [id]{skill}[/id] ([id]{names}[/id]).",
+            skill=skill_name,
+            names=names,
+        ).hint("Use [cmd]--from[/cmd] to specify.")
 
     if not matches:
-        raise CliError(f"Skill {fmt_ident(skill_name)} is not installed.")
+        raise CliError("Skill [id]{skill}[/id] is not installed.", skill=skill_name)
 
     return matches[0]
 
@@ -81,12 +82,12 @@ def resolve_untracked(
             matches.append((source, skill))
 
     if len(matches) > 1:
-        names = ", ".join(
-            fmt_ident(s.name) for s, _ in sorted(matches, key=lambda x: x[0].name)
-        )
+        names = ", ".join(s.name for s, _ in sorted(matches, key=lambda x: x[0].name))
         raise CliError(
-            f"Multiple sources have {fmt_ident(skill_name)} ({names})."
-        ).hint(f"Use {fmt_command('--source')} to specify.")
+            "Multiple sources have [id]{skill}[/id] ([id]{names}[/id]).",
+            skill=skill_name,
+            names=names,
+        ).hint("Use [cmd]--source[/cmd] to specify.")
 
     if not matches:
         return None
@@ -100,12 +101,10 @@ def resolve_orphan_source(source_registry: SourceRegistry) -> Source:
         raise CliError("No sources registered.")
 
     if len(source_registry.sources) > 1:
-        names = ", ".join(
-            fmt_ident(name) for name in sorted(source_registry.sources.keys())
-        )
-        raise CliError(f"Multiple sources registered ({names}).").hint(
-            f"Use {fmt_command('--source')} to specify."
-        )
+        names = ", ".join(sorted(source_registry.sources.keys()))
+        raise CliError(
+            "Multiple sources registered ([id]{names}[/id]).", names=names
+        ).hint("Use [cmd]--source[/cmd] to specify.")
 
     source_name = list(source_registry.sources)[0]
     return source_registry.get_source_no_skills(source_name)

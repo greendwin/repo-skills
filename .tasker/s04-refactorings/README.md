@@ -17,4 +17,6 @@ status: pending
 - [ ] [s04t07](s04t07-support-lists-in-fmtdata-and.md): Support lists in fmt_data and fmt_ident console helpers
 - [ ] [s04t08](s04t08-evaluate-skillsetup-builder-roi-in.md): Evaluate SkillSetup builder ROI in test helpers
 - [ ] [s04t09](s04t09-rework-statuspy-internals-to-typed.md): Rework `_status.py` internals to typed structures
-- [ ] [s04t10](s04t10-rework-error-reporting-to-cli/): Rework error reporting to 'cli-error' lib
+- [x] [s04t10](s04t10-rework-error-reporting-to-cli/): Rework error reporting to 'cli-error' lib
+- [ ] [s04t11](s04t11-verify-and-test-python-3.md): Verify and test Python 3.10 support
+- [ ] [s04t12](s04t12-cli-code-quality-nits-per.md): CLI code-quality nits (per-provider status, test config, multi-dir line)

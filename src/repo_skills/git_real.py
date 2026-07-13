@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from repo_skills.console import fmt_command, reporter
+from repo_skills.console import reporter
 from repo_skills.git import (
     CommitVerificationError,
     FileNotInCommitError,
@@ -32,9 +32,9 @@ def _git_error(args: tuple[str, ...], output: str, repo_path: Path) -> GitComman
     except subprocess.CalledProcessError as exc:
         reporter.debug_output("", (exc.stderr or "").strip())
 
-    err = GitCommandError(f"Git command failed: {fmt_command(cmd)}", output).prop_path(
-        "repo", repo_path
-    )
+    err = GitCommandError(
+        "Git command failed: [cmd]{cmd}[/cmd]", output, cmd=cmd
+    ).prop_path("repo", repo_path)
     if branch:
         err.prop_id("branch", branch)
 

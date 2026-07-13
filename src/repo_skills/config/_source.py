@@ -6,7 +6,7 @@ from typing import Any
 
 from cli_error import CliError
 
-from repo_skills.console import fmt_data, fmt_ident, reporter
+from repo_skills.console import reporter
 from repo_skills.git import GitRepo
 from repo_skills.utils import rel_posix, save_config
 
@@ -27,7 +27,8 @@ CURRENT_VERSION = 1
 class SourceBrokenError(CliError):
     def __init__(self, repo_root: Path) -> None:
         super().__init__(
-            f"Source {fmt_ident(repo_root.name)} either broken or uninitialized."
+            "Source [id]{name}[/id] either broken or uninitialized.",
+            name=repo_root.name,
         )
         self.prop_path("repo", repo_root)
 
@@ -66,8 +67,9 @@ class Source:
         skill = self.skills.get(name)
         if skill is None:
             raise CliError(
-                f"Skill {fmt_ident(name)} does not exist "
-                f"in source {fmt_ident(self.name)}"
+                "Skill [id]{name}[/id] does not exist in source [id]{source}[/id]",
+                name=name,
+                source=self.name,
             ).prop_path("repo", self.repo_root)
 
         return skill
@@ -144,9 +146,10 @@ def _collect_source_skills(
 
 def _warn_collision(name: str, rel_paths: Sequence[str]) -> None:
     # one path per line in discovery order so the user can locate the dups
-    reporter.print(
-        f"[warn]Warning[/warn]: Skill {fmt_ident(name)} found in "
-        f"multiple locations; excluding it from the source:"
+    reporter.warn(
+        "Skill [id]{name}[/id] found in "
+        "multiple locations; excluding it from the source:",
+        name=name,
     )
     for path in rel_paths:
-        reporter.print(f"  - {fmt_data(path)}")
+        reporter.print("  - [data]{path}[/data]", path=path)

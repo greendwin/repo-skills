@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from cli_error import CliError, render_error
+from cli_error import CliError, render_error, render_template
 
 from repo_skills.config import (
     Baseline,
@@ -14,7 +14,7 @@ from repo_skills.config import (
     SourceRegistry,
     compute_file_hashes,
 )
-from repo_skills.console import fmt_data, fmt_ident, reporter
+from repo_skills.console import reporter
 from repo_skills.git import (
     CommitVerificationError,
     SkillCommitNotFoundError,
@@ -81,9 +81,16 @@ def eligible_attach_sources(
 
             # full descriptor, not str(ex): keep the repo/path prop that
             # locates the broken source (str(CliError) is the message only)
+            # render_error output is pre-rendered markup (may contain braces);
+            # concat after templating the escaped source, not as a format arg
+
+            # TODO: we should be able to use `reporter.warn` here
             reporter.print(
-                f"[yellow]Warning[/yellow]: skipping broken source "
-                f"{fmt_ident(source_name)}: {render_error(ex.desc)}"
+                render_template(
+                    "[warn]Warning[/warn]: skipping broken source [id]{source}[/id]: ",
+                    source=source_name,
+                )
+                + render_error(ex.desc)
             )
 
     return sources
@@ -146,9 +153,10 @@ def _attach_skill(
 
     if len(matches) > 1:
         reporter.print(
-            f"[yellow]Skipped[/yellow] skill {fmt_data(candidate.skill_name)}: "
-            f"matched multiple sources "
-            f"{fmt_data(sorted(m.source_name for m in matches))}"
+            "[yellow]Skipped[/yellow] skill [data]{skill}[/data]: "
+            "matched multiple sources [data]{sources}[/data]",
+            skill=candidate.skill_name,
+            sources=", ".join(sorted(m.source_name for m in matches)),
         )
         return None
 
@@ -167,8 +175,9 @@ def _attach_skill(
         return None
 
     reporter.print(
-        f"Attached skill {fmt_ident(candidate.skill_name)} "
-        f"(matched source {fmt_data(match.source_name)})"
+        "Attached skill [id]{skill}[/id] (matched source [data]{source}[/data])",
+        skill=candidate.skill_name,
+        source=match.source_name,
     )
     return InstalledSkill(
         source=match.source_name,

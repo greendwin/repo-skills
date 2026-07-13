@@ -7,7 +7,6 @@ from pathlib import Path
 from cli_error import CliError
 from pydantic import BaseModel
 
-from repo_skills.console import fmt_ident
 from repo_skills.utils import save_config
 
 from ._utils import (
@@ -64,7 +63,7 @@ class ProviderRegistry:
     def require(self, name: str) -> Provider:
         provider = self._entries.get(name)
         if provider is None:
-            raise CliError(f"Provider {fmt_ident(name)} not found.")
+            raise CliError("Provider [id]{name}[/id] not found.", name=name)
         return provider
 
 

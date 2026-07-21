@@ -59,7 +59,7 @@ def _fake_import_time_paths(request: pytest.FixtureRequest) -> Generator[None]:
     for module in list(sys.modules.values()):
         if not getattr(module, "__name__", "").startswith("tests"):
             continue
-       
+
         members: dict[str, Any] = getattr(module, "__dict__", {})
         for name, value in list(members.items()):
             if _is_stale_real_path(value):

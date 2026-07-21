@@ -53,7 +53,6 @@ class ErrorResult:
 
 SOURCE_REPO_ROOT = Path("/repos/my-project")
 SOURCE_CONFIG_DIR = Path("/home/user/.config/repo-skills")
-REPO_SKILLS_DIR = Path("/repo/skills")
 INSTALL_DIR = Path("/home/user/.claude/skills")
 MANIFEST_PATH = INSTALL_DIR / ".skills-manifest.json"
 SKILLS_DIR = SOURCE_REPO_ROOT / "skills"
@@ -61,7 +60,7 @@ SKILLS_DIR = SOURCE_REPO_ROOT / "skills"
 
 @dataclass
 class FakeGitRepo:
-    root: Path = Path("/repos/my-project")
+    root: Path = field(default_factory=lambda: Path(SOURCE_REPO_ROOT))
     main_branch: str = "main"
     branch: str = "main"
     clean: bool = True
@@ -324,8 +323,8 @@ def _skill_md(name: str, description: str | None) -> str:
 def create_repo_skill(
     fs: FakeFilesystem,
     name: str,
+    root: Path,
     description: str | None = None,
-    root: Path = REPO_SKILLS_DIR,
 ) -> Path:
     skill_dir = root / name
     fs.create_file(skill_dir / "SKILL.md", contents=_skill_md(name, description))
@@ -347,7 +346,7 @@ def write_broken_source(
     fs: FakeFilesystem,
     *,
     name: str = "broken-project",
-    root: Path = Path("/repos/broken-project"),
+    root: Path | None = None,
     registry: SourceRegistry | None = None,
 ) -> Path:
     """Create a broken source at ``root`` and register it.
@@ -357,6 +356,7 @@ def write_broken_source(
     ``registry`` to append to it (and save it) so multi-source tests can register
     several sources; otherwise a fresh single-source registry is saved.
     """
+    root = Path("/repos/broken-project") if root is None else root
     fs.create_dir(root / ".git")
     fs.create_file(
         root / ".repo-skills" / "source.json",
@@ -430,8 +430,9 @@ def install_skill(
     name: str,
     content: str = "# skill",
     *,
-    install_dir: Path = INSTALL_DIR,
+    install_dir: Path | None = None,
 ) -> dict[str, str]:
+    install_dir = Path(INSTALL_DIR) if install_dir is None else install_dir
     skill_dir = install_dir / name
     fs.create_file(skill_dir / "SKILL.md", contents=content)
     return compute_file_hashes(skill_dir)
@@ -442,8 +443,9 @@ def create_source_skill(
     name: str,
     content: str = "# skill",
     *,
-    root: Path = SKILLS_DIR,
+    root: Path | None = None,
 ) -> None:
+    root = Path(SKILLS_DIR) if root is None else root
     fs.create_file(root / name / "SKILL.md", contents=content)
 
 

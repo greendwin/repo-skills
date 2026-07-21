@@ -33,7 +33,6 @@ class Reporter(CliReporter):
     def warn(self, template: str, /, **args: object) -> None:
         self.print(render_template("[warn]Warning[/warn]: " + template, **args))
 
-    # TODO: lets make sure that we support py3.10 and test it
     @contextmanager
     def running(
         self, prefix: str, /, *, tty_subprocess: bool = False, **args: object

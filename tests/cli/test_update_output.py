@@ -69,7 +69,7 @@ class TestUpdatePerProviderOutput:
             installed_content="# tdd v1",
             latest_commit="c-tdd",
         ).build()
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# user edit")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# user edit")
         cursor_dir = Path("/home/user/.cursor/skills")
         register_provider("cursor", str(cursor_dir))
         install_skill(fs, "tdd", content="# user edit", install_dir=cursor_dir)

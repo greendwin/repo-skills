@@ -64,11 +64,11 @@ class TestUpdateDetached:
                 commit="abc123",
                 detached=True,
                 source_name="other-project",
-                source_root=OTHER_REPO_ROOT,
+                source_root=Path(OTHER_REPO_ROOT),
             )
             .build()
         )
-        fake_git_manager.make(OTHER_REPO_ROOT).branch_commits[
+        fake_git_manager.make(Path(OTHER_REPO_ROOT)).branch_commits[
             ("skills/review", "main")
         ] = "newcommit"
 

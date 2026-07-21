@@ -39,7 +39,7 @@ class TestUpdateNamedTarget:
 
         assert_words_in_message(result.output, "Updating tdd", "updated")
         assert "Updating review" not in result.output
-        assert (INSTALL_DIR / "review" / "SKILL.md").read_text() == "# review v1"
+        assert (Path(INSTALL_DIR) / "review" / "SKILL.md").read_text() == "# review v1"
 
 
 class TestUpdateSourceFilter:
@@ -59,7 +59,7 @@ class TestUpdateSourceFilter:
                 source_content="# review v2",
                 installed_content="# review v1",
                 source_name="other-project",
-                source_root=OTHER_REPO_ROOT,
+                source_root=Path(OTHER_REPO_ROOT),
                 latest_commit="c-review",
             )
             .build()
@@ -69,7 +69,7 @@ class TestUpdateSourceFilter:
 
         assert_words_in_message(result.output, "Updating tdd", "updated")
         assert "Updating review" not in result.output
-        assert (INSTALL_DIR / "review" / "SKILL.md").read_text() == "# review v1"
+        assert (Path(INSTALL_DIR) / "review" / "SKILL.md").read_text() == "# review v1"
 
     def test_unknown_source_errors(self, fs: FakeFilesystem, git_repo: Path) -> None:
         SkillSetup(fs, git_repo).add_skill("tdd", commit="abc").build()
@@ -97,7 +97,7 @@ class TestUpdateSourceFilter:
                 source_content="# review v2",
                 installed_content="# review v1",
                 source_name="other-project",
-                source_root=OTHER_REPO_ROOT,
+                source_root=Path(OTHER_REPO_ROOT),
                 latest_commit="c-review",
             )
             .build()
@@ -131,7 +131,7 @@ class TestUpdateSourceFilter:
                 source_content="# review v2",
                 installed_content="# review v1",
                 source_name="other-project",
-                source_root=OTHER_REPO_ROOT,
+                source_root=Path(OTHER_REPO_ROOT),
                 latest_commit="c-review",
             )
             .build()
@@ -149,7 +149,7 @@ class TestUpdateSourceFilter:
     ) -> None:
         (
             SkillSetup(fs, git_repo)
-            .add_source("other-project", OTHER_REPO_ROOT)
+            .add_source("other-project", Path(OTHER_REPO_ROOT))
             .add_skill(
                 "tdd",
                 source_content="# tdd v1",
@@ -169,7 +169,7 @@ class TestUpdateSourceFilter:
     ) -> None:
         (
             SkillSetup(fs, git_repo)
-            .add_source("other-project", OTHER_REPO_ROOT)
+            .add_source("other-project", Path(OTHER_REPO_ROOT))
             .add_skill(
                 "tdd",
                 source_content="# tdd v1",
@@ -180,7 +180,7 @@ class TestUpdateSourceFilter:
 
         assert_invoke("update", "--source", "other-project")
 
-        assert fake_git_manager.make(OTHER_REPO_ROOT).pulled is False
+        assert fake_git_manager.make(Path(OTHER_REPO_ROOT)).pulled is False
 
     def test_short_flag_narrows_to_that_source(
         self, fs: FakeFilesystem, git_repo: Path
@@ -198,7 +198,7 @@ class TestUpdateSourceFilter:
                 source_content="# review v2",
                 installed_content="# review v1",
                 source_name="other-project",
-                source_root=OTHER_REPO_ROOT,
+                source_root=Path(OTHER_REPO_ROOT),
                 latest_commit="c-review",
             )
             .build()
@@ -208,7 +208,7 @@ class TestUpdateSourceFilter:
 
         assert_words_in_message(result.output, "Updating review", "updated")
         assert "Updating tdd" not in result.output
-        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v1"
+        assert (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text() == "# tdd v1"
 
     def test_multiple_sources_select_their_skills(
         self, fs: FakeFilesystem, git_repo: Path
@@ -226,7 +226,7 @@ class TestUpdateSourceFilter:
                 source_content="# review v2",
                 installed_content="# review v1",
                 source_name="other-project",
-                source_root=OTHER_REPO_ROOT,
+                source_root=Path(OTHER_REPO_ROOT),
                 latest_commit="c-review",
             )
             .build()
@@ -272,7 +272,7 @@ class TestUpdateMultipleNames:
         assert_words_in_message(result.output, "Updating tdd", "updated")
         assert_words_in_message(result.output, "Updating review", "updated")
         assert "Updating ship" not in result.output
-        assert (INSTALL_DIR / "ship" / "SKILL.md").read_text() == "# ship v1"
+        assert (Path(INSTALL_DIR) / "ship" / "SKILL.md").read_text() == "# ship v1"
 
     def test_unknown_among_named_skills_errors(
         self, fs: FakeFilesystem, git_repo: Path

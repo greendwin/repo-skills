@@ -77,7 +77,7 @@ class TestSourceInitFreshRepo:
 
         registry = load_source_registry()
         assert "my-project" in registry.sources
-        assert registry.sources["my-project"].repo_root == Path(str(SOURCE_REPO_ROOT))
+        assert registry.sources["my-project"].repo_root == Path(SOURCE_REPO_ROOT)
 
         assert_words_in_message(result.output, "initialized", "source", "my-project")
 
@@ -215,7 +215,7 @@ class TestSourceInitIdempotent:
 
         registry = load_source_registry()
         assert "my-project" in registry.sources
-        assert registry.sources["my-project"].repo_root == Path(str(SOURCE_REPO_ROOT))
+        assert registry.sources["my-project"].repo_root == Path(SOURCE_REPO_ROOT)
 
     def test_re_register_with_branch_change(self, _fake_git: FakeGitRepo) -> None:
         assert_invoke("source", "init")
@@ -243,7 +243,7 @@ class TestSourceInitRename:
         assert "old-name" in result.output
         assert "new-name" in result.output
 
-        loaded = load_source_config(SOURCE_REPO_ROOT)
+        loaded = load_source_config(Path(SOURCE_REPO_ROOT))
         assert loaded.state is ConfigState.OK
         source_cfg = loaded.cfg
         assert source_cfg.name == "new-name"
@@ -251,7 +251,7 @@ class TestSourceInitRename:
         registry = load_source_registry()
         assert "new-name" in registry.sources
         assert "old-name" not in registry.sources
-        assert registry.sources["new-name"].repo_root == Path(str(SOURCE_REPO_ROOT))
+        assert registry.sources["new-name"].repo_root == Path(SOURCE_REPO_ROOT)
 
     def test_rename_with_branch_change_shows_both(self, _fake_git: FakeGitRepo) -> None:
         assert_invoke("source", "init", "--name", "old-name")
@@ -303,7 +303,7 @@ class TestTopLevelInit:
 
         registry = load_source_registry()
         assert "my-project" in registry.sources
-        assert registry.sources["my-project"].repo_root == Path(str(SOURCE_REPO_ROOT))
+        assert registry.sources["my-project"].repo_root == Path(SOURCE_REPO_ROOT)
 
         assert_words_in_message(result.output, "initialized", "source", "my-project")
 

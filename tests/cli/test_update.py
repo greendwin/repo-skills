@@ -43,7 +43,7 @@ class TestUpdateSynced:
         result = assert_invoke("update", "--offline")
 
         assert_words_in_message(result.output, "tdd", "updated")
-        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v2"
+        assert (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text() == "# tdd v2"
 
         manifest = load_manifest()
         assert manifest.skills["tdd"].baseline is not None
@@ -116,7 +116,7 @@ class TestUpdateAdvancesBaseline:
         assert manifest.skills["tdd"].baseline.commit == "old"
         assert manifest.skills["tdd"].baseline.files == hashes["tdd"]
         # resolution fails before any copy: install dir keeps the original
-        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v1"
+        assert (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text() == "# tdd v1"
 
     def test_skipped_skill_leaves_baseline_untouched(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -195,7 +195,7 @@ class TestUpdateAdvancesBaseline:
         assert manifest.skills["tdd"].baseline.files == hashes["tdd"]
         assert manifest.skills["tdd"].detached is False
         # source working tree (dirty) must not be copied into the install dir
-        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v1"
+        assert (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text() == "# tdd v1"
 
     def test_empty_provider_registry_leaves_baseline_untouched(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -258,12 +258,12 @@ class TestUpdateSkipsModified:
         SkillSetup(fs, git_repo).add_skill(
             "tdd", source_content="# tdd v2", installed_content="# tdd v1"
         ).build()
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# user edit")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# user edit")
 
         result = assert_invoke("update", "--offline")
 
         assert_words_in_message(result.output, "tdd", "skipped")
-        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# user edit"
+        assert (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text() == "# user edit"
 
 
 class TestUpdateSkipsNoBaseline:
@@ -280,7 +280,7 @@ class TestUpdateSkipsNoBaseline:
         result = assert_invoke("update", "--offline")
 
         assert_words_in_message(result.output, "tdd", "skipped")
-        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v1"
+        assert (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text() == "# tdd v1"
 
 
 class TestUpdateUpToDate:
@@ -397,7 +397,7 @@ class TestUpdatePull:
     ) -> None:
         (
             SkillSetup(fs, git_repo)
-            .add_source("other-project", OTHER_REPO_ROOT)
+            .add_source("other-project", Path(OTHER_REPO_ROOT))
             .add_skill("tdd", commit="abc")
             .build()
         )
@@ -418,7 +418,7 @@ class TestUpdatePull:
                 source_content="# review v2",
                 installed_content="# review v1",
                 source_name="other-project",
-                source_root=OTHER_REPO_ROOT,
+                source_root=Path(OTHER_REPO_ROOT),
             )
             .build()
         )
@@ -433,7 +433,7 @@ class TestUpdatePull:
     ) -> None:
         (
             SkillSetup(fs, git_repo)
-            .add_source("other-project", OTHER_REPO_ROOT)
+            .add_source("other-project", Path(OTHER_REPO_ROOT))
             .add_skill("tdd", commit="abc")
             .build()
         )
@@ -441,7 +441,7 @@ class TestUpdatePull:
         assert_invoke("update")
 
         assert fake_git_manager.make(git_repo).pulled is True
-        assert fake_git_manager.make(OTHER_REPO_ROOT).pulled is False
+        assert fake_git_manager.make(Path(OTHER_REPO_ROOT)).pulled is False
 
     def test_source_flag_pulls_only_selected_source_repo(
         self, fs: FakeFilesystem, git_repo: Path, fake_git_manager: FakeGitRepoManager
@@ -454,7 +454,7 @@ class TestUpdatePull:
                 source_content="# review v2",
                 installed_content="# review v1",
                 source_name="other-project",
-                source_root=OTHER_REPO_ROOT,
+                source_root=Path(OTHER_REPO_ROOT),
             )
             .build()
         )
@@ -462,7 +462,7 @@ class TestUpdatePull:
         assert_invoke("update", "--source", "my-project")
 
         assert fake_git_manager.make(git_repo).pulled is True
-        assert fake_git_manager.make(OTHER_REPO_ROOT).pulled is False
+        assert fake_git_manager.make(Path(OTHER_REPO_ROOT)).pulled is False
 
 
 class TestUpdateValidation:
@@ -533,7 +533,7 @@ class TestUpdateValidation:
         )
 
         # source failed to sync: install dir and baseline stay untouched
-        installed = (INSTALL_DIR / "tdd" / "SKILL.md").read_text()
+        installed = (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text()
         assert installed == "# tdd v1"
         manifest = load_manifest()
         assert manifest.skills["tdd"].baseline is not None

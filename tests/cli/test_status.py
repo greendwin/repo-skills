@@ -41,7 +41,7 @@ def install_two_sources(fs: FakeFilesystem, git_repo: Path) -> None:
     ).add_skill(
         "review",
         source_name="other-project",
-        source_root=OTHER_REPO_ROOT,
+        source_root=Path(OTHER_REPO_ROOT),
         commit="def",
     ).build()
 
@@ -95,7 +95,7 @@ class TestStatusModified:
                 )
             }
         )
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# edited by user")
 
         result = assert_invoke("status")
 
@@ -168,7 +168,7 @@ class TestStatusBlankLineSeparation:
                 )
             }
         )
-        fs.create_file(INSTALL_DIR / "mystery" / "SKILL.md", contents="# mystery")
+        fs.create_file(Path(INSTALL_DIR) / "mystery" / "SKILL.md", contents="# mystery")
 
         result = assert_invoke("status")
 
@@ -179,7 +179,7 @@ class TestStatusBlankLineSeparation:
     def test_no_leading_blank_when_only_untracked(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        fs.create_file(INSTALL_DIR / "mystery" / "SKILL.md", contents="# mystery")
+        fs.create_file(Path(INSTALL_DIR) / "mystery" / "SKILL.md", contents="# mystery")
 
         result = assert_invoke("status")
 
@@ -190,7 +190,7 @@ class TestStatusBlankLineSeparation:
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         install_two_sources(fs, git_repo)
-        fs.create_file(INSTALL_DIR / "mystery" / "SKILL.md", contents="# mystery")
+        fs.create_file(Path(INSTALL_DIR) / "mystery" / "SKILL.md", contents="# mystery")
 
         result = assert_invoke("status")
 
@@ -306,8 +306,9 @@ class TestStatusMultiProvider:
 
 
 def _create_source_skill(
-    fs: FakeFilesystem, name: str, git_root: Path = SOURCE_REPO_ROOT
+    fs: FakeFilesystem, name: str, git_root: Path | None = None
 ) -> None:
+    git_root = Path(SOURCE_REPO_ROOT) if git_root is None else git_root
     loaded = load_source_config(git_root)
     assert loaded.state is ConfigState.OK
     source_cfg = loaded.cfg
@@ -316,8 +317,9 @@ def _create_source_skill(
 
 
 def _init_source_config(
-    fs: FakeFilesystem, git_root: Path = SOURCE_REPO_ROOT, skills_dir: str = "skills"
+    fs: FakeFilesystem, git_root: Path | None = None, skills_dir: str = "skills"
 ) -> None:
+    git_root = Path(SOURCE_REPO_ROOT) if git_root is None else git_root
     cfg = SourceConfig(name=git_root.name, skills_dirs=[skills_dir])
     save_source_config(cfg, git_root)
 
@@ -507,7 +509,7 @@ class TestStatusZeroSkillSource:
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
         register_source(git_repo)
-        fs.create_file(INSTALL_DIR / "mystery" / "SKILL.md", contents="# mystery")
+        fs.create_file(Path(INSTALL_DIR) / "mystery" / "SKILL.md", contents="# mystery")
 
         result = assert_invoke("status")
 
@@ -527,7 +529,7 @@ class TestStatusZeroSkillSource:
         # populated source sorts before the empty one, so the placeholder must
         # land under the second (empty) header, not the first
         populated_repo = git_repo
-        empty_repo = OTHER_REPO_ROOT
+        empty_repo = Path(OTHER_REPO_ROOT)
         fs.create_dir(empty_repo / ".git")
         registry = SourceRegistry()
         registry.register_source("aaa-project", populated_repo)
@@ -564,7 +566,7 @@ class TestStatusZeroSkillSource:
     def test_zero_skill_source_preserves_section_spacing(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        other_repo = OTHER_REPO_ROOT
+        other_repo = Path(OTHER_REPO_ROOT)
         fs.create_dir(other_repo / ".git")
         registry = SourceRegistry()
         registry.register_source("my-project", git_repo)
@@ -680,7 +682,7 @@ class TestStatusOrphan:
     ) -> None:
         register_source(git_repo)
         _init_source_config(fs, git_repo)
-        fs.create_file(INSTALL_DIR / "mystery" / "SKILL.md", contents="# mystery")
+        fs.create_file(Path(INSTALL_DIR) / "mystery" / "SKILL.md", contents="# mystery")
 
         result = assert_invoke("status")
 
@@ -694,7 +696,9 @@ class TestStatusUntrackedHint:
         register_source(git_repo)
         _init_source_config(fs, git_repo)
         _create_source_skill(fs, "review", git_repo)
-        fs.create_file(INSTALL_DIR / "review" / "SKILL.md", contents="# review local")
+        fs.create_file(
+            Path(INSTALL_DIR) / "review" / "SKILL.md", contents="# review local"
+        )
 
         result = assert_invoke("status")
 
@@ -719,7 +723,9 @@ class TestStatusUntrackedHint:
         register_source(git_repo)
         _init_source_config(fs, git_repo)
         _create_source_skill(fs, "review", git_repo)
-        fs.create_file(INSTALL_DIR / "review" / "SKILL.md", contents="# review local")
+        fs.create_file(
+            Path(INSTALL_DIR) / "review" / "SKILL.md", contents="# review local"
+        )
 
         cursor_dir = Path("/home/user/.cursor/skills")
         fs.create_file(cursor_dir / "review" / "SKILL.md", contents="# review cursor")
@@ -738,7 +744,9 @@ class TestStatusMergeable:
         register_source(git_repo)
         _init_source_config(fs, git_repo)
         _create_source_skill(fs, "review", git_repo)
-        fs.create_file(INSTALL_DIR / "review" / "SKILL.md", contents="# review local")
+        fs.create_file(
+            Path(INSTALL_DIR) / "review" / "SKILL.md", contents="# review local"
+        )
 
         result = assert_invoke("status")
 
@@ -752,7 +760,9 @@ class TestStatusUntrackedOrdering:
         register_source(git_repo)
         _init_source_config(fs, git_repo)
         _create_source_skill(fs, "review", git_repo)
-        fs.create_file(INSTALL_DIR / "review" / "SKILL.md", contents="# review local")
+        fs.create_file(
+            Path(INSTALL_DIR) / "review" / "SKILL.md", contents="# review local"
+        )
 
         result = assert_invoke("status")
 
@@ -767,8 +777,12 @@ class TestStatusUntrackedOrdering:
     ) -> None:
         register_source(git_repo)
         _init_source_config(fs, git_repo)
-        fs.create_file(INSTALL_DIR / "zeta-orphan" / "SKILL.md", contents="# zeta")
-        fs.create_file(INSTALL_DIR / "alpha-orphan" / "SKILL.md", contents="# alpha")
+        fs.create_file(
+            Path(INSTALL_DIR) / "zeta-orphan" / "SKILL.md", contents="# zeta"
+        )
+        fs.create_file(
+            Path(INSTALL_DIR) / "alpha-orphan" / "SKILL.md", contents="# alpha"
+        )
 
         result = assert_invoke("status")
 
@@ -793,7 +807,7 @@ class TestStatusOrphanMultiProvider:
     ) -> None:
         register_source(git_repo)
         _init_source_config(fs, git_repo)
-        fs.create_file(INSTALL_DIR / "mystery" / "SKILL.md", contents="# mystery")
+        fs.create_file(Path(INSTALL_DIR) / "mystery" / "SKILL.md", contents="# mystery")
 
         cursor_dir = Path("/home/user/.cursor/skills")
         fs.create_file(cursor_dir / "mystery" / "SKILL.md", contents="# mystery cursor")
@@ -1077,7 +1091,7 @@ class TestStatusOutdated:
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
     ) -> None:
         _setup_installed_skill(fs, git_repo)
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# edited")
         _fake_git.branch_commits = {("skills/tdd", "main"): "new456"}
 
         result = assert_invoke("status")

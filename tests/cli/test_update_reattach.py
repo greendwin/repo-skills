@@ -42,7 +42,7 @@ class TestUpdateSafeReattach:
         assert manifest.skills["tdd"].baseline.commit == "latest"
         assert_words_in_message(result.output, "tdd", "recovered")
         # install overwritten to the latest source content
-        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v2"
+        assert (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text() == "# tdd v2"
 
         status = assert_invoke("status")
         assert "detached" not in status.output.lower()
@@ -70,7 +70,7 @@ class TestUpdateSafeReattach:
         assert_words_in_message(result.output, "tdd", "untracked")
         assert "recovered" not in result.output.lower()
         # install left byte-untouched
-        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd edited"
+        assert (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text() == "# tdd edited"
 
     def test_absent_second_provider_does_not_poison_reattach(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -98,7 +98,7 @@ class TestUpdateSafeReattach:
         assert manifest.skills["tdd"].baseline.commit == "latest"
         assert_words_in_message(result.output, "tdd", "recovered")
         # both providers overwritten to the latest source content
-        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd v2"
+        assert (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text() == "# tdd v2"
         assert Path("/home/user/.other/skills/tdd/SKILL.md").read_text() == "# tdd v2"
 
     def test_no_existing_install_dirs_skip_reattach(
@@ -113,9 +113,9 @@ class TestUpdateSafeReattach:
             installed_content="# tdd v1",
         ).build()
         # remove the installed copy so no provider dir exists on disk
-        overwrite = INSTALL_DIR / "tdd" / "SKILL.md"
+        overwrite = Path(INSTALL_DIR) / "tdd" / "SKILL.md"
         overwrite.unlink()
-        (INSTALL_DIR / "tdd").rmdir()
+        (Path(INSTALL_DIR) / "tdd").rmdir()
         _fake_git.commit_logs["skills/tdd"] = ["older"]
         _fake_git.files_at_commit[("older", "skills/tdd/SKILL.md")] = b"# tdd v1"
 
@@ -150,7 +150,7 @@ class TestUpdateSafeReattach:
         assert manifest.skills["tdd"].baseline is not None
         assert manifest.skills["tdd"].baseline.commit == "latest"
         assert_words_in_message(result.output, "tdd", "recovered")
-        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd latest"
+        assert (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text() == "# tdd latest"
 
         status = assert_invoke("status")
         assert "detached" not in status.output.lower()
@@ -188,7 +188,7 @@ class TestUpdateSafeReattach:
         assert_words_in_message(result.output, "untracked")
         assert "failed" not in result.output.lower()
         # both on-disk copies left byte-unchanged: divergence guard skipped them
-        assert (INSTALL_DIR / "tdd" / "SKILL.md").read_text() == "# tdd edited"
+        assert (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text() == "# tdd edited"
         assert (
             Path("/home/user/.other/skills/tdd/SKILL.md").read_text()
             == "# tdd DIFFERENT"

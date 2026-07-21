@@ -31,7 +31,7 @@ class TestUninstall:
 
         assert_invoke("uninstall", "tdd")
 
-        assert not (INSTALL_DIR / "tdd").exists()
+        assert not (Path(INSTALL_DIR) / "tdd").exists()
 
     def test_removes_manifest_entry(self, fs: FakeFilesystem) -> None:
         create_installed_skill(fs, "tdd")
@@ -54,7 +54,7 @@ class TestUninstall:
 
         assert_invoke("uninstall", "tdd")
 
-        assert not (INSTALL_DIR / "tdd").exists()
+        assert not (Path(INSTALL_DIR) / "tdd").exists()
         assert not (cursor_dir / "tdd").exists()
 
     @pytest.mark.usefixtures("fs")
@@ -74,8 +74,8 @@ class TestUninstallMultiple:
 
         assert_invoke("uninstall", "tdd", "review")
 
-        assert not (INSTALL_DIR / "tdd").exists()
-        assert not (INSTALL_DIR / "review").exists()
+        assert not (Path(INSTALL_DIR) / "tdd").exists()
+        assert not (Path(INSTALL_DIR) / "review").exists()
         manifest = load_manifest()
         assert "tdd" not in manifest.skills
         assert "review" not in manifest.skills
@@ -87,4 +87,4 @@ class TestUninstallMultiple:
         result = assert_invoke("uninstall", "tdd", "missing", expect_error=True)
 
         assert_words_in_message(result.message, "missing", "not installed")
-        assert not (INSTALL_DIR / "tdd").exists()
+        assert not (Path(INSTALL_DIR) / "tdd").exists()

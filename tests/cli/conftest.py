@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 
 import pytest
@@ -23,13 +23,16 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture()
 def git_repo(fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch) -> Path:
-    fs.create_dir(SOURCE_REPO_ROOT / ".git")
-    monkeypatch.chdir(SOURCE_REPO_ROOT)
-    return SOURCE_REPO_ROOT
+    fs.create_dir(Path(SOURCE_REPO_ROOT) / ".git")
+    monkeypatch.chdir(Path(SOURCE_REPO_ROOT))
+    return Path(SOURCE_REPO_ROOT)
 
 
 @pytest.fixture()
-def fake_git_manager(monkeypatch: pytest.MonkeyPatch) -> Generator[FakeGitRepoManager]:
+def fake_git_manager(
+    fs: FakeFilesystem, monkeypatch: pytest.MonkeyPatch
+) -> Generator[FakeGitRepoManager]:
+    # note: import `fs` so FakeGitRepo()'s default_factory builds its root under fake fs
     mng = FakeGitRepoManager()
     monkeypatch.setattr(deps_mod, "_git_repo_factory", mng.make)
     try:
@@ -38,9 +41,19 @@ def fake_git_manager(monkeypatch: pytest.MonkeyPatch) -> Generator[FakeGitRepoMa
         mng.uninstall_all()
 
 
+@pytest.fixture()
+def _fake_git_factory() -> Callable[[], FakeGitRepo]:
+    # default seed; modules/classes override to seed commits/ancestors. Returns a
+    # factory (not an instance) so `_fake_git` can build it AFTER fs activation.
+    return FakeGitRepo
+
+
 @pytest.fixture(autouse=True)
-def _fake_git(fake_git_manager: FakeGitRepoManager) -> Generator[FakeGitRepo]:
-    fake = FakeGitRepo()
+def _fake_git(
+    fake_git_manager: FakeGitRepoManager,
+    _fake_git_factory: Callable[[], FakeGitRepo],
+) -> Generator[FakeGitRepo]:
+    fake = _fake_git_factory()
     fake_git_manager.install(fake)
     yield fake
 

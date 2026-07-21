@@ -1,7 +1,7 @@
 ---
 id: s04t1102
 slug: flip-path-constants-to-str
-status: pending
+status: done
 ---
 
 # Flip Path constants to str and delete the runtime shim

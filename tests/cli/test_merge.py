@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -32,10 +32,10 @@ from repo_skills.utils import normalize_line_endings
 from tests.cli.helper import (
     BROKEN_CONFIG_JSON,
     INSTALL_DIR,
+    OTHER_REPO_ROOT,
     SKILLS_DIR,
     SOURCE_REPO_ROOT,
     FakeGitRepo,
-    FakeGitRepoManager,
     assert_invoke,
     assert_words_in_message,
     create_source_skill,
@@ -48,18 +48,15 @@ from tests.cli.helper import (
 )
 
 COMMIT = "abc1234"
-CURSOR_DIR = Path("/home/user/.cursor/skills")
-OTHER_REPO_ROOT = Path("/repos/other-project")
+CURSOR_DIR = "/home/user/.cursor/skills"
 
 
-@pytest.fixture(autouse=True)
-def _fake_git(fake_git_manager: FakeGitRepoManager) -> Generator[FakeGitRepo]:
-    fake = FakeGitRepo(
+@pytest.fixture()
+def _fake_git_factory() -> Callable[[], FakeGitRepo]:
+    return lambda: FakeGitRepo(
         commits={"skills/tdd": COMMIT},
         ancestors={(COMMIT, "main"): True},
     )
-    fake_git_manager.install(fake)
-    yield fake
 
 
 def _setup_diverged_skill(
@@ -80,7 +77,7 @@ def _setup_diverged_skill(
             )
         }
     )
-    (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+    (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# edited by user")
 
 
 class TestMergeStart:
@@ -100,7 +97,7 @@ class TestMergeStart:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
-        install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
+        install_skill(fs, "tdd", content="# original", install_dir=Path(CURSOR_DIR))
         save_manifest(
             {
                 "tdd": InstalledSkill(
@@ -108,9 +105,9 @@ class TestMergeStart:
                 )
             }
         )
-        register_provider("cursor", str(CURSOR_DIR))
+        register_provider("cursor", CURSOR_DIR)
 
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited in claude")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# edited in claude")
 
         result = assert_invoke("merge", "tdd", "--offline")
 
@@ -127,12 +124,12 @@ class TestMergeStart:
         assert _fake_git.ff_targets == []
         assert _fake_git.branch == "main"
         assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
-        installed = (INSTALL_DIR / "tdd" / "SKILL.md").read_text()
+        installed = (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text()
         assert installed == "# edited by user"
         manifest = load_manifest()
         assert manifest.skills["tdd"].baseline is not None
         assert manifest.skills["tdd"].baseline.files == compute_file_hashes(
-            INSTALL_DIR / "tdd"
+            Path(INSTALL_DIR) / "tdd"
         )
         assert_words_in_message(result.output, "merge", "complete")
 
@@ -156,7 +153,7 @@ class TestMergeProviderResolution:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
-        install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
+        install_skill(fs, "tdd", content="# original", install_dir=Path(CURSOR_DIR))
         save_manifest(
             {
                 "tdd": InstalledSkill(
@@ -164,10 +161,10 @@ class TestMergeProviderResolution:
                 )
             }
         )
-        register_provider("cursor", str(CURSOR_DIR))
+        register_provider("cursor", CURSOR_DIR)
 
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited in claude")
-        (CURSOR_DIR / "tdd" / "SKILL.md").write_text("# edited in cursor")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# edited in claude")
+        (Path(CURSOR_DIR) / "tdd" / "SKILL.md").write_text("# edited in cursor")
 
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
@@ -179,7 +176,7 @@ class TestMergeProviderResolution:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
         hashes = install_skill(fs, "tdd", content="# original")
-        install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
+        install_skill(fs, "tdd", content="# original", install_dir=Path(CURSOR_DIR))
         save_manifest(
             {
                 "tdd": InstalledSkill(
@@ -187,10 +184,10 @@ class TestMergeProviderResolution:
                 )
             }
         )
-        register_provider("cursor", str(CURSOR_DIR))
+        register_provider("cursor", CURSOR_DIR)
 
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited in claude")
-        (CURSOR_DIR / "tdd" / "SKILL.md").write_text("# edited in cursor")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# edited in claude")
+        (Path(CURSOR_DIR) / "tdd" / "SKILL.md").write_text("# edited in cursor")
 
         result = assert_invoke("merge", "tdd", "--from", "cursor", "--offline")
 
@@ -221,8 +218,8 @@ class TestMergeProviderResolution:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original")
-        install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
-        register_provider("cursor", str(CURSOR_DIR))
+        install_skill(fs, "tdd", content="# original", install_dir=Path(CURSOR_DIR))
+        register_provider("cursor", CURSOR_DIR)
 
         result = assert_invoke("merge", "tdd", "--offline", expect_error=True)
 
@@ -234,9 +231,9 @@ class TestMergeProviderResolution:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original")
-        install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
-        register_provider("cursor", str(CURSOR_DIR))
-        (CURSOR_DIR / "tdd" / "SKILL.md").write_text("# edited in cursor")
+        install_skill(fs, "tdd", content="# original", install_dir=Path(CURSOR_DIR))
+        register_provider("cursor", CURSOR_DIR)
+        (Path(CURSOR_DIR) / "tdd" / "SKILL.md").write_text("# edited in cursor")
 
         result = assert_invoke("merge", "tdd", "--offline", "--from", "cursor")
 
@@ -284,9 +281,11 @@ class TestBaseCommitSearch:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original")
-        fs.create_file(INSTALL_DIR / "tdd" / "extra.md", contents="line1\nline2\nline3")
+        fs.create_file(
+            Path(INSTALL_DIR) / "tdd" / "extra.md", contents="line1\nline2\nline3"
+        )
         save_manifest({"tdd": InstalledSkill(source="my-project", baseline=None)})
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# edited by user")
 
         _fake_git.commit_logs["skills/tdd"] = ["aaa111", "bbb222"]
         _fake_git.files_at_commit[("aaa111", "skills/tdd/SKILL.md")] = b"# original"
@@ -540,11 +539,11 @@ class TestResolveBaseCommit:
         """Base-commit search works when skill is under a category subfolder."""
         register_source(git_repo)
         create_source_skill(
-            fs, "tdd", content="# original", root=SKILLS_DIR / "testing"
+            fs, "tdd", content="# original", root=Path(SKILLS_DIR) / "testing"
         )
         install_skill(fs, "tdd", content="# original")
         save_manifest({"tdd": InstalledSkill(source="my-project", baseline=None)})
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# edited by user")
 
         _fake_git.commit_logs["skills/testing/tdd"] = ["cat111"]
         _fake_git.files_at_commit[("cat111", "skills/testing/tdd/SKILL.md")] = (
@@ -567,7 +566,7 @@ class TestMergeUntracked:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original")
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# edited by user")
 
         result = assert_invoke("merge", "tdd", "--offline")
 
@@ -593,7 +592,7 @@ class TestMergeUntracked:
         assert entry.source == "my-project"
         assert entry.baseline is not None
         assert entry.baseline.commit == "source-commit-abc"
-        assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "tdd")
+        assert entry.baseline.files == compute_file_hashes(Path(INSTALL_DIR) / "tdd")
 
     def test_diverged_mergeable_has_correct_manifest_after_merge(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -601,7 +600,7 @@ class TestMergeUntracked:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original")
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# edited by user")
         _fake_git.commits["skills/tdd"] = "merged-commit-xyz"
 
         assert_invoke("merge", "tdd", "--offline")
@@ -611,7 +610,7 @@ class TestMergeUntracked:
         assert entry.source == "my-project"
         assert entry.baseline is not None
         assert entry.baseline.commit == "merged-commit-xyz"
-        assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "tdd")
+        assert entry.baseline.files == compute_file_hashes(Path(INSTALL_DIR) / "tdd")
         assert not entry.detached
 
     def test_diverged_mergeable_copies_to_source(
@@ -620,7 +619,7 @@ class TestMergeUntracked:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
         install_skill(fs, "tdd", content="# original")
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# edited by user")
 
         assert_invoke("merge", "tdd", "--offline")
 
@@ -696,7 +695,9 @@ class TestMergeUntracked:
     ) -> None:
         register_source(git_repo)
         create_source_skill(fs, "tdd", content="# original")
-        hashes = install_skill(fs, "tdd", content="# original", install_dir=CURSOR_DIR)
+        hashes = install_skill(
+            fs, "tdd", content="# original", install_dir=Path(CURSOR_DIR)
+        )
         save_manifest(
             {
                 "tdd": InstalledSkill(
@@ -706,7 +707,7 @@ class TestMergeUntracked:
                 )
             }
         )
-        register_provider("cursor", str(CURSOR_DIR))
+        register_provider("cursor", CURSOR_DIR)
         _fake_git.commits["skills/tdd"] = "reattached-commit"
 
         result = assert_invoke("merge", "tdd", "--from", "cursor", "--offline")
@@ -735,7 +736,7 @@ class TestMergeUntracked:
     def test_untracked_errors_when_multiple_sources_without_flag(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        other_repo = OTHER_REPO_ROOT
+        other_repo = Path(OTHER_REPO_ROOT)
         register_two_sources(fs, git_repo, other_repo)
         create_source_skill(fs, "tdd", content="# original")
         create_source_skill(fs, "tdd", content="# original", root=other_repo / "skills")
@@ -760,12 +761,12 @@ class TestMergeUntracked:
     def test_untracked_selects_source_with_flag(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        other_repo = OTHER_REPO_ROOT
+        other_repo = Path(OTHER_REPO_ROOT)
         register_two_sources(fs, git_repo, other_repo)
         create_source_skill(fs, "tdd", content="# original")
         create_source_skill(fs, "tdd", content="# original", root=other_repo / "skills")
         install_skill(fs, "tdd", content="# original")
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# edited by user")
 
         result = assert_invoke("merge", "tdd", "--offline", "--source", "my-project")
 
@@ -774,12 +775,12 @@ class TestMergeUntracked:
     def test_untracked_selects_source_with_short_flag(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        other_repo = OTHER_REPO_ROOT
+        other_repo = Path(OTHER_REPO_ROOT)
         register_two_sources(fs, git_repo, other_repo)
         create_source_skill(fs, "tdd", content="# original")
         create_source_skill(fs, "tdd", content="# original", root=other_repo / "skills")
         install_skill(fs, "tdd", content="# original")
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# edited by user")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# edited by user")
 
         result = assert_invoke("merge", "tdd", "--offline", "-s", "my-project")
 
@@ -805,7 +806,7 @@ class TestMergeOrphan:
     def test_errors_when_multiple_sources_without_flag(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        other_repo = OTHER_REPO_ROOT
+        other_repo = Path(OTHER_REPO_ROOT)
         register_two_sources(fs, git_repo, other_repo)
         install_skill(fs, "my-new-skill", content="# brand new")
 
@@ -816,7 +817,7 @@ class TestMergeOrphan:
     def test_source_flag_selects_target(
         self, fs: FakeFilesystem, git_repo: Path
     ) -> None:
-        other_repo = OTHER_REPO_ROOT
+        other_repo = Path(OTHER_REPO_ROOT)
         register_two_sources(fs, git_repo, other_repo)
         install_skill(fs, "my-new-skill", content="# brand new")
 
@@ -905,7 +906,9 @@ class TestMergeOrphan:
         entry = manifest.skills["my-new-skill"]
         assert entry.baseline is not None
         assert entry.baseline.commit == "orphan-commit-123"
-        assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "my-new-skill")
+        assert entry.baseline.files == compute_file_hashes(
+            Path(INSTALL_DIR) / "my-new-skill"
+        )
 
     def test_orphan_lands_in_active_dir_with_multiple_skills_dirs(
         self, fs: FakeFilesystem, git_repo: Path, _fake_git: FakeGitRepo
@@ -939,8 +942,10 @@ class TestMergeOrphan:
     ) -> None:
         register_source(git_repo)
         install_skill(fs, "my-new-skill", content="# brand new")
-        install_skill(fs, "my-new-skill", content="# brand new", install_dir=CURSOR_DIR)
-        register_provider("cursor", str(CURSOR_DIR))
+        install_skill(
+            fs, "my-new-skill", content="# brand new", install_dir=Path(CURSOR_DIR)
+        )
+        register_provider("cursor", CURSOR_DIR)
 
         result = assert_invoke("merge", "my-new-skill", "--offline", expect_error=True)
 
@@ -952,9 +957,9 @@ class TestMergeOrphan:
         register_source(git_repo)
         install_skill(fs, "my-new-skill", content="# from claude")
         install_skill(
-            fs, "my-new-skill", content="# from cursor", install_dir=CURSOR_DIR
+            fs, "my-new-skill", content="# from cursor", install_dir=Path(CURSOR_DIR)
         )
-        register_provider("cursor", str(CURSOR_DIR))
+        register_provider("cursor", CURSOR_DIR)
 
         result = assert_invoke("merge", "my-new-skill", "--offline", "--from", "cursor")
 
@@ -1115,12 +1120,12 @@ class TestMergeContinue:
         assert _fake_git.ff_targets == ["skill-merge/claude/tdd"]
         assert _fake_git.branch == "main"
         assert "skill-merge/claude/tdd" in _fake_git.deleted_branches
-        installed = (INSTALL_DIR / "tdd" / "SKILL.md").read_text()
+        installed = (Path(INSTALL_DIR) / "tdd" / "SKILL.md").read_text()
         assert installed == "# merged"
         manifest = load_manifest()
         assert manifest.skills["tdd"].baseline is not None
         assert manifest.skills["tdd"].baseline.files == compute_file_hashes(
-            INSTALL_DIR / "tdd"
+            Path(INSTALL_DIR) / "tdd"
         )
         assert_words_in_message(result.output, "merge", "complete")
 
@@ -1402,28 +1407,32 @@ class TestDetectMergeRepo:
         fs: FakeFilesystem,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        fs.create_dir(SOURCE_REPO_ROOT / ".git")
-        fs.create_dir(OTHER_REPO_ROOT / ".git")
+        fs.create_dir(Path(SOURCE_REPO_ROOT) / ".git")
+        fs.create_dir(Path(OTHER_REPO_ROOT) / ".git")
 
         cwd_git = FakeGitRepo(
-            root=OTHER_REPO_ROOT,
+            root=Path(OTHER_REPO_ROOT),
             branch="skill-merge/claude/review",
             commits={"skills/review": "merged-commit"},
         )
-        other_git = FakeGitRepo(root=SOURCE_REPO_ROOT)
-        _install_multi_git({OTHER_REPO_ROOT: cwd_git, SOURCE_REPO_ROOT: other_git})
+        other_git = FakeGitRepo(root=Path(SOURCE_REPO_ROOT))
+        _install_multi_git(
+            {Path(OTHER_REPO_ROOT): cwd_git, Path(SOURCE_REPO_ROOT): other_git}
+        )
 
-        monkeypatch.chdir(OTHER_REPO_ROOT)
+        monkeypatch.chdir(Path(OTHER_REPO_ROOT))
 
         registry = SourceRegistry()
-        registry.register_source("my-project", SOURCE_REPO_ROOT)
-        registry.register_source("other-project", OTHER_REPO_ROOT)
+        registry.register_source("my-project", Path(SOURCE_REPO_ROOT))
+        registry.register_source("other-project", Path(OTHER_REPO_ROOT))
         save_source_registry(registry)
         save_source_config(
-            SourceConfig(name="my-project", skills_dirs=["skills"]), SOURCE_REPO_ROOT
+            SourceConfig(name="my-project", skills_dirs=["skills"]),
+            Path(SOURCE_REPO_ROOT),
         )
         save_source_config(
-            SourceConfig(name="other-project", skills_dirs=["skills"]), OTHER_REPO_ROOT
+            SourceConfig(name="other-project", skills_dirs=["skills"]),
+            Path(OTHER_REPO_ROOT),
         )
 
         hashes = install_skill(fs, "tdd", content="# original")
@@ -1435,7 +1444,7 @@ class TestDetectMergeRepo:
             }
         )
         create_source_skill(
-            fs, "review", content="# merged", root=OTHER_REPO_ROOT / "skills"
+            fs, "review", content="# merged", root=Path(OTHER_REPO_ROOT) / "skills"
         )
         hashes_review = install_skill(fs, "review", content="# original")
         manifest = load_manifest()
@@ -1456,19 +1465,19 @@ class TestDetectMergeRepo:
         fs: FakeFilesystem,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        fs.create_dir(SOURCE_REPO_ROOT / ".git")
+        fs.create_dir(Path(SOURCE_REPO_ROOT) / ".git")
         fs.create_dir("/somewhere/else")
 
         source_git = FakeGitRepo(
-            root=SOURCE_REPO_ROOT,
+            root=Path(SOURCE_REPO_ROOT),
             branch="skill-merge/claude/tdd",
             commits={"skills/tdd": "merged-commit"},
         )
-        _install_multi_git({SOURCE_REPO_ROOT: source_git})
+        _install_multi_git({Path(SOURCE_REPO_ROOT): source_git})
 
         monkeypatch.chdir("/somewhere/else")
 
-        register_source(SOURCE_REPO_ROOT, name="my-project")
+        register_source(Path(SOURCE_REPO_ROOT), name="my-project")
         create_source_skill(fs, "tdd", content="# merged")
         hashes = install_skill(fs, "tdd", content="# original")
         save_manifest(
@@ -1489,31 +1498,35 @@ class TestDetectMergeRepo:
         fs: FakeFilesystem,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        fs.create_dir(SOURCE_REPO_ROOT / ".git")
-        fs.create_dir(OTHER_REPO_ROOT / ".git")
+        fs.create_dir(Path(SOURCE_REPO_ROOT) / ".git")
+        fs.create_dir(Path(OTHER_REPO_ROOT) / ".git")
         fs.create_dir("/somewhere/else")
 
         git_a = FakeGitRepo(
-            root=SOURCE_REPO_ROOT,
+            root=Path(SOURCE_REPO_ROOT),
             branches=["skill-merge/claude/tdd"],
         )
         git_b = FakeGitRepo(
-            root=OTHER_REPO_ROOT,
+            root=Path(OTHER_REPO_ROOT),
             branches=["skill-merge/claude/review"],
         )
-        _install_multi_git({SOURCE_REPO_ROOT: git_a, OTHER_REPO_ROOT: git_b})
+        _install_multi_git(
+            {Path(SOURCE_REPO_ROOT): git_a, Path(OTHER_REPO_ROOT): git_b}
+        )
 
         monkeypatch.chdir("/somewhere/else")
 
         registry = SourceRegistry()
-        registry.register_source("my-project", SOURCE_REPO_ROOT)
-        registry.register_source("other-project", OTHER_REPO_ROOT)
+        registry.register_source("my-project", Path(SOURCE_REPO_ROOT))
+        registry.register_source("other-project", Path(OTHER_REPO_ROOT))
         save_source_registry(registry)
         save_source_config(
-            SourceConfig(name="my-project", skills_dirs=["skills"]), SOURCE_REPO_ROOT
+            SourceConfig(name="my-project", skills_dirs=["skills"]),
+            Path(SOURCE_REPO_ROOT),
         )
         save_source_config(
-            SourceConfig(name="other-project", skills_dirs=["skills"]), OTHER_REPO_ROOT
+            SourceConfig(name="other-project", skills_dirs=["skills"]),
+            Path(OTHER_REPO_ROOT),
         )
 
         hashes = install_skill(fs, "tdd", content="# original")
@@ -1534,31 +1547,35 @@ class TestDetectMergeRepo:
         fs: FakeFilesystem,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        fs.create_dir(SOURCE_REPO_ROOT / ".git")
-        fs.create_dir(OTHER_REPO_ROOT / ".git")
+        fs.create_dir(Path(SOURCE_REPO_ROOT) / ".git")
+        fs.create_dir(Path(OTHER_REPO_ROOT) / ".git")
 
         cwd_git = FakeGitRepo(
-            root=SOURCE_REPO_ROOT,
+            root=Path(SOURCE_REPO_ROOT),
             branch="skill-merge/claude/tdd",
             commits={"skills/tdd": "merged-commit"},
         )
         other_git = FakeGitRepo(
-            root=OTHER_REPO_ROOT,
+            root=Path(OTHER_REPO_ROOT),
             branches=["skill-merge/claude/review"],
         )
-        _install_multi_git({SOURCE_REPO_ROOT: cwd_git, OTHER_REPO_ROOT: other_git})
+        _install_multi_git(
+            {Path(SOURCE_REPO_ROOT): cwd_git, Path(OTHER_REPO_ROOT): other_git}
+        )
 
-        monkeypatch.chdir(SOURCE_REPO_ROOT)
+        monkeypatch.chdir(Path(SOURCE_REPO_ROOT))
 
         registry = SourceRegistry()
-        registry.register_source("my-project", SOURCE_REPO_ROOT)
-        registry.register_source("other-project", OTHER_REPO_ROOT)
+        registry.register_source("my-project", Path(SOURCE_REPO_ROOT))
+        registry.register_source("other-project", Path(OTHER_REPO_ROOT))
         save_source_registry(registry)
         save_source_config(
-            SourceConfig(name="my-project", skills_dirs=["skills"]), SOURCE_REPO_ROOT
+            SourceConfig(name="my-project", skills_dirs=["skills"]),
+            Path(SOURCE_REPO_ROOT),
         )
         save_source_config(
-            SourceConfig(name="other-project", skills_dirs=["skills"]), OTHER_REPO_ROOT
+            SourceConfig(name="other-project", skills_dirs=["skills"]),
+            Path(OTHER_REPO_ROOT),
         )
 
         create_source_skill(fs, "tdd", content="# merged")
@@ -1581,33 +1598,37 @@ class TestDetectMergeRepo:
         fs: FakeFilesystem,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        fs.create_dir(SOURCE_REPO_ROOT / ".git")
-        fs.create_dir(OTHER_REPO_ROOT / ".git")
+        fs.create_dir(Path(SOURCE_REPO_ROOT) / ".git")
+        fs.create_dir(Path(OTHER_REPO_ROOT) / ".git")
 
         cwd_git = FakeGitRepo(
-            root=SOURCE_REPO_ROOT,
+            root=Path(SOURCE_REPO_ROOT),
             branch="skill-merge/claude/tdd",
             commits={"skills/tdd": "merged-commit"},
         )
         other_git = FakeGitRepo(
-            root=OTHER_REPO_ROOT,
+            root=Path(OTHER_REPO_ROOT),
             branches=["skill-merge/claude/review"],
         )
-        _install_multi_git({SOURCE_REPO_ROOT: cwd_git, OTHER_REPO_ROOT: other_git})
+        _install_multi_git(
+            {Path(SOURCE_REPO_ROOT): cwd_git, Path(OTHER_REPO_ROOT): other_git}
+        )
 
-        nested = SOURCE_REPO_ROOT / "skills"
+        nested = Path(SOURCE_REPO_ROOT) / "skills"
         fs.create_dir(nested)
         monkeypatch.chdir(nested)
 
         registry = SourceRegistry()
-        registry.register_source("my-project", SOURCE_REPO_ROOT)
-        registry.register_source("other-project", OTHER_REPO_ROOT)
+        registry.register_source("my-project", Path(SOURCE_REPO_ROOT))
+        registry.register_source("other-project", Path(OTHER_REPO_ROOT))
         save_source_registry(registry)
         save_source_config(
-            SourceConfig(name="my-project", skills_dirs=["skills"]), SOURCE_REPO_ROOT
+            SourceConfig(name="my-project", skills_dirs=["skills"]),
+            Path(SOURCE_REPO_ROOT),
         )
         save_source_config(
-            SourceConfig(name="other-project", skills_dirs=["skills"]), OTHER_REPO_ROOT
+            SourceConfig(name="other-project", skills_dirs=["skills"]),
+            Path(OTHER_REPO_ROOT),
         )
 
         create_source_skill(fs, "tdd", content="# merged")
@@ -1893,7 +1914,7 @@ class TestExactMatchEarlyExit:
         entry = manifest.skills["tdd"]
         assert entry.baseline is not None
         assert entry.baseline.commit == "exact-commit"
-        assert entry.baseline.files == compute_file_hashes(INSTALL_DIR / "tdd")
+        assert entry.baseline.files == compute_file_hashes(Path(INSTALL_DIR) / "tdd")
 
 
 class TestComputeDistanceCRLF:

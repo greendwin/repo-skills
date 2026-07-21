@@ -51,11 +51,10 @@ class ErrorResult:
     message: str
 
 
-SOURCE_REPO_ROOT = Path("/repos/my-project")
-SOURCE_CONFIG_DIR = Path("/home/user/.config/repo-skills")
-INSTALL_DIR = Path("/home/user/.claude/skills")
-MANIFEST_PATH = INSTALL_DIR / ".skills-manifest.json"
-SKILLS_DIR = SOURCE_REPO_ROOT / "skills"
+SOURCE_REPO_ROOT = "/repos/my-project"
+SOURCE_CONFIG_DIR = "/home/user/.config/repo-skills"
+INSTALL_DIR = "/home/user/.claude/skills"
+SKILLS_DIR = f"{SOURCE_REPO_ROOT}/skills"
 
 
 @dataclass
@@ -323,9 +322,10 @@ def _skill_md(name: str, description: str | None) -> str:
 def create_repo_skill(
     fs: FakeFilesystem,
     name: str,
-    root: Path,
+    root: Path | None = None,
     description: str | None = None,
 ) -> Path:
+    root = Path(SKILLS_DIR) if root is None else root
     skill_dir = root / name
     fs.create_file(skill_dir / "SKILL.md", contents=_skill_md(name, description))
     return skill_dir
@@ -334,7 +334,7 @@ def create_repo_skill(
 def create_installed_skill(
     fs: FakeFilesystem, name: str, description: str | None = None
 ) -> Path:
-    skill_dir = INSTALL_DIR / name
+    skill_dir = Path(INSTALL_DIR) / name
     fs.create_file(skill_dir / "SKILL.md", contents=_skill_md(name, description))
     return skill_dir
 
@@ -455,8 +455,8 @@ def register_provider(name: str, install_dir: str) -> None:
     save_provider_registry(reg)
 
 
-OTHER_REPO_ROOT = Path("/repos/other-project")
-OTHER_SKILLS_DIR = OTHER_REPO_ROOT / "skills"
+OTHER_REPO_ROOT = "/repos/other-project"
+OTHER_SKILLS_DIR = f"{OTHER_REPO_ROOT}/skills"
 
 
 @dataclass
@@ -550,7 +550,8 @@ class SkillSetup:
             )
 
             if entry.user_edited is not None:
-                (INSTALL_DIR / entry.name / "SKILL.md").write_text(entry.user_edited)
+                skill_path = Path(INSTALL_DIR) / entry.name / "SKILL.md"
+                skill_path.write_text(entry.user_edited)
 
             if entry.latest_commit is not None:
                 fake = self._fake_repo(entry.source_root)

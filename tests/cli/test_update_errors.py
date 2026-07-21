@@ -26,8 +26,8 @@ from tests.cli.helper import (
     save_manifest,
 )
 
-SOURCE_A_ROOT = Path("/repos/source-a")
-SOURCE_B_ROOT = Path("/repos/source-b")
+SOURCE_A_ROOT = "/repos/source-a"
+SOURCE_B_ROOT = "/repos/source-b"
 
 
 class TestUpdateErrorMessages:
@@ -100,7 +100,7 @@ class TestUpdateBatchResilience:
             .build()
         )
         _fake_git.branch_commits[("skills/review", "main")] = "c-review"
-        (INSTALL_DIR / "tdd" / "SKILL.md").write_text("# user edit")
+        (Path(INSTALL_DIR) / "tdd" / "SKILL.md").write_text("# user edit")
 
         result = assert_invoke("update", "--offline")
 
@@ -114,24 +114,24 @@ class TestUpdatePullFailure:
         fs: FakeFilesystem,
         fake_git_manager: FakeGitRepoManager,
     ) -> dict[str, dict[str, str]]:
-        fake_git_manager.install(FakeGitRepo(root=SOURCE_A_ROOT, pull_fails=True))
-        fake_b = FakeGitRepo(root=SOURCE_B_ROOT)
+        fake_git_manager.install(FakeGitRepo(root=Path(SOURCE_A_ROOT), pull_fails=True))
+        fake_b = FakeGitRepo(root=Path(SOURCE_B_ROOT))
         fake_b.branch_commits[("skills/bravo", "main")] = "c-bravo-new"
         fake_git_manager.install(fake_b)
 
         return (
-            SkillSetup(fs, SOURCE_A_ROOT)
+            SkillSetup(fs, Path(SOURCE_A_ROOT))
             .add_skill(
                 "alpha",
                 source_name="source-a",
-                source_root=SOURCE_A_ROOT,
+                source_root=Path(SOURCE_A_ROOT),
                 source_content="# alpha v2",
                 installed_content="# alpha v1",
             )
             .add_skill(
                 "bravo",
                 source_name="source-b",
-                source_root=SOURCE_B_ROOT,
+                source_root=Path(SOURCE_B_ROOT),
                 source_content="# bravo v2",
                 installed_content="# bravo v1",
             )
@@ -151,13 +151,13 @@ class TestUpdatePullFailure:
         assert_words_in_message(result.output, "failed to pull")
         assert_words_in_message(result.output, "bravo", "updated")
 
-        installed = (INSTALL_DIR / "bravo" / "SKILL.md").read_text()
+        installed = (Path(INSTALL_DIR) / "bravo" / "SKILL.md").read_text()
         assert installed == "# bravo v2"
 
         manifest = load_manifest()
         bravo = manifest.skills["bravo"]
         assert bravo.baseline is not None
-        refreshed = compute_file_hashes(INSTALL_DIR / "bravo")
+        refreshed = compute_file_hashes(Path(INSTALL_DIR) / "bravo")
         assert bravo.baseline.files == refreshed
         assert bravo.baseline.files != hashes["bravo"]
 
@@ -175,7 +175,7 @@ class TestUpdatePullFailure:
         )
 
         # source pull failed: install dir keeps the OLD content, not copied
-        installed = (INSTALL_DIR / "alpha" / "SKILL.md").read_text()
+        installed = (Path(INSTALL_DIR) / "alpha" / "SKILL.md").read_text()
         assert installed == "# alpha v1"
 
         manifest = load_manifest()
@@ -189,25 +189,25 @@ class TestUpdatePullFailure:
         fs: FakeFilesystem,
         fake_git_manager: FakeGitRepoManager,
     ) -> None:
-        fake_a = FakeGitRepo(root=SOURCE_A_ROOT, pull_fails=True)
-        fake_b = FakeGitRepo(root=SOURCE_B_ROOT)
+        fake_a = FakeGitRepo(root=Path(SOURCE_A_ROOT), pull_fails=True)
+        fake_b = FakeGitRepo(root=Path(SOURCE_B_ROOT))
         fake_b.branch_commits[("skills/bravo", "main")] = "newcommit"
         fake_git_manager.install(fake_a)
         fake_git_manager.install(fake_b)
 
         (
-            SkillSetup(fs, SOURCE_A_ROOT)
+            SkillSetup(fs, Path(SOURCE_A_ROOT))
             .add_skill(
                 "alpha",
                 source_name="source-a",
-                source_root=SOURCE_A_ROOT,
+                source_root=Path(SOURCE_A_ROOT),
                 commit="c-alpha",
                 detached=True,
             )
             .add_skill(
                 "bravo",
                 source_name="source-b",
-                source_root=SOURCE_B_ROOT,
+                source_root=Path(SOURCE_B_ROOT),
                 commit="c-bravo",
                 detached=True,
             )
@@ -227,28 +227,28 @@ class TestUpdatePullFailure:
     ) -> None:
         fake_git_manager.install(
             FakeGitRepo(
-                root=SOURCE_A_ROOT,
+                root=Path(SOURCE_A_ROOT),
                 pull_fails=True,
                 pull_cause="ssh handshake refused",
             )
         )
-        fake_b = FakeGitRepo(root=SOURCE_B_ROOT)
+        fake_b = FakeGitRepo(root=Path(SOURCE_B_ROOT))
         fake_b.branch_commits[("skills/bravo", "main")] = "c-bravo-new"
         fake_git_manager.install(fake_b)
 
         (
-            SkillSetup(fs, SOURCE_A_ROOT)
+            SkillSetup(fs, Path(SOURCE_A_ROOT))
             .add_skill(
                 "alpha",
                 source_name="source-a",
-                source_root=SOURCE_A_ROOT,
+                source_root=Path(SOURCE_A_ROOT),
                 source_content="# alpha v2",
                 installed_content="# alpha v1",
             )
             .add_skill(
                 "bravo",
                 source_name="source-b",
-                source_root=SOURCE_B_ROOT,
+                source_root=Path(SOURCE_B_ROOT),
                 source_content="# bravo v2",
                 installed_content="# bravo v1",
             )

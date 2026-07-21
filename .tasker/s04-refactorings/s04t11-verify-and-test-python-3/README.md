@@ -1,7 +1,7 @@
 ---
 id: s04t11
 slug: verify-and-test-python-3
-status: pending
+status: in-progress
 ---
 
 # Verify and test Python 3.10 support
@@ -33,5 +33,5 @@ status: pending
 
 - [x] [s04t1101](s04t1101-defer-path-valued-defaults-in.md): Defer Path-valued defaults in test helpers
 - [x] [s04t1102](s04t1102-flip-path-constants-to-str.md): Flip Path constants to str and delete the runtime shim
-- [ ] [s04t1103](s04t1103-restore-python-3-10-support.md): Restore Python 3.10 support in config and CI matrix
+- [~] [s04t1103](s04t1103-restore-python-3-10-support.md): **review** Restore Python 3.10 support in config and CI matrix
 - [ ] [s04t1104](s04t1104-evaluate-a-loc-locations-fixture.md): Evaluate a `loc`/`Locations` fixture to centralize test Path construction

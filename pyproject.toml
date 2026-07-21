@@ -47,6 +47,7 @@ testpaths = ["tests"]
 
 [tool.mypy]
 strict = true
+python_version = "3.10"
 packages = ["repo_skills", "tests"]
 mypy_path = "src:."
 

@@ -1,7 +1,7 @@
 ---
 id: s04t1103
 slug: restore-python-3-10-support
-status: pending
+status: in-review
 ---
 
 # Restore Python 3.10 support in config and CI matrix
